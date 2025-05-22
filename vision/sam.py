@@ -5,7 +5,7 @@ from transformers import SamModel, SamProcessor, pipeline
 import numpy as np
 import matplotlib.pyplot as plt
 
-class SAMMasker:
+class SAM():
     def __init__(self, model_name="facebook/sam-vit-base"):
         self.generator = pipeline("mask-generation", device = 0, points_per_batch = 256)
         self.model = SamModel.from_pretrained(model_name)

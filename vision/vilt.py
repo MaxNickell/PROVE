@@ -2,7 +2,7 @@ from transformers import ViltProcessor, ViltForQuestionAnswering
 import requests
 from PIL import Image
 
-class ViLTAttributeExtractor():
+class ViLT():
     def __init__(self, model_name="dandelin/vilt-b32-finetuned-vqa"):
         self.processor = ViltProcessor.from_pretrained(model_name)
         self.model = ViltForQuestionAnswering.from_pretrained(model_name)

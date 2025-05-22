@@ -2,7 +2,7 @@ import requests, torch
 from PIL import Image
 from transformers import AutoProcessor, AutoModelForZeroShotObjectDetection 
 
-class GroundingDINODetector():
+class GroundingDINO():
     def __init__(self, model_name="IDEA-Research/grounding-dino-base"):
         self.processor = AutoProcessor.from_pretrained(model_name)
         self.model = AutoModelForZeroShotObjectDetection.from_pretrained(model_name).to("cuda")
