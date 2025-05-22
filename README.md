@@ -1,6 +1,11 @@
 # PROVE
 
 ## STEP 1 - Get Image Content
+YOLO -> list 1 of entities
+BLIP -> Captioner of nouns -> Grounding DINO -> list 2 of entities
+
+
+
 Need a solution to open vocabulary instance-segmentation
 - Thinking SAM
 - Pass results of SAM to some model to predict class and bounding boxe
@@ -39,8 +44,9 @@ Need a solution to open vocabulary instance-segmentation
 - Output response (+ confidence level if problog)
 - Output rationale (log outputs)
 
-# Model Cards 
+# Models
 - https://huggingface.co/IDEA-Research/grounding-dino-base
 - https://huggingface.co/Salesforce/blip2-flan-t5-xl
 - https://huggingface.co/dandelin/vilt-b32-finetuned-vqa
 - https://huggingface.co/facebook/sam-vit-base
+- 
