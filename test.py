@@ -12,7 +12,6 @@ if __name__ == "__main__":
     #grounding_dino = GroundingDINO()
     #sam = SAM()
     #vilt = ViLT()
-    yolo = YOLO()
+    #yolo = YOLO()
 
-    yolo.detect_and_save("https://ultralytics.com/images/zidane.jpg", "yolo_results.jpg")
 
