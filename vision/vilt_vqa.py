@@ -8,7 +8,7 @@ class ViltVqa():
         self.processor = ViltProcessor.from_pretrained(model_name)
         self.model = ViltForQuestionAnswering.from_pretrained(model_name)
     
-    def get_attribute(self, image_url, query):
+    def query_image(self, image_url, query):
         image = Image.open(requests.get(image_url, stream=True).raw).convert("RGB")
 
         encoding = self.processor(image, query, return_tensors="pt")

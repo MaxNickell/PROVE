@@ -11,11 +11,11 @@ class YoloObjectDetection():
         image = Image.open(requests.get(image_url, stream=True).raw).convert("RGB")
         results = self.model(image) 
 
-        return results
+        return results[0]
 
     def detect_and_save(self, image_url, save_path):
         image = Image.open(requests.get(image_url, stream=True).raw).convert("RGB")
         results = self.model(image) 
         results[0].save(save_path)
 
-        return results
+        return results[0]
