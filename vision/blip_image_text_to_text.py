@@ -2,7 +2,8 @@ import requests, torch
 from PIL import Image
 from transformers import Blip2Processor, Blip2ForConditionalGeneration
 
-class BLIP():
+
+class BlipImageTextToText():
     def __init__(self, model_name="Salesforce/blip2-flan-t5-xl"):
         self.processor = Blip2Processor.from_pretrained(model_name, use_fast=True)
         self.model = Blip2ForConditionalGeneration.from_pretrained(model_name, device_map="auto")
