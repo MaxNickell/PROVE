@@ -4,19 +4,16 @@ import matplotlib.pyplot as plt
 import numpy as np
 from transformers import AutoProcessor, AutoModelForZeroShotObjectDetection 
 
-
-class GroundingDinoZeroShotObjectDetection():
-    def __init__(self, model_name="IDEA-Research/grounding-dino-base"):
+class GroundingDinoZeroShotObjectDetection:
+    def __init__(self, model_name: str="IDEA-Research/grounding-dino-base") -> None:
         self.processor = AutoProcessor.from_pretrained(model_name)
         self.model = AutoModelForZeroShotObjectDetection.from_pretrained(model_name).to("cuda")
 
-    def detect(self, image_url, query):
+    def detect(self, image: Image.Image, query: str) -> list[dict[str, object]]:
         """
             Query must be in the format - "a lowercaseword1. a lowercaseword2. a loswercaseword3. ..."
             Example: "a glass. a bottle."
         """
-        image = Image.open(requests.get(image_url, stream=True).raw).convert("RGB")
-
         inputs = self.processor(images=image, text=query, return_tensors="pt").to("cuda")
         with torch.no_grad():
             outputs = self.model(**inputs)
@@ -29,19 +26,27 @@ class GroundingDinoZeroShotObjectDetection():
             target_sizes=[image.size[::-1]]
         )
 
-        return results
+        return self.parse_results(results)
         
-    def detect_and_save(self, image_url, query, output_path):
-        results = self.detect(image_url, query)
-        image = Image.open(requests.get(image_url, stream=True).raw).convert("RGB")
+    def detect_and_save(self, image: Image.Image, query: str, output_path: str) -> list[dict[str, object]]:
+        inputs = self.processor(images=image, text=query, return_tensors="pt").to("cuda")
+        with torch.no_grad():
+            outputs = self.model(**inputs)
+        
+        results = self.processor.post_process_grounded_object_detection(
+            outputs,
+            inputs.input_ids,
+            box_threshold=0.4,
+            text_threshold=0.3,
+            target_sizes=[image.size[::-1]]
+        )
 
         draw = ImageDraw.Draw(image)
         font = ImageFont.load_default()
 
-        for result in results:
-            boxes = result['boxes'].cpu().numpy()
-            scores = result['scores'].cpu().numpy()
-            labels = result['labels']
+        boxes = results[0]['boxes'].cpu().numpy()
+        scores = results[0]['scores'].cpu().numpy()
+        labels = results[0]['labels']
         
         for box, score, label in zip(boxes, scores, labels):
             box = [int(b) for b in box]
@@ -53,4 +58,23 @@ class GroundingDinoZeroShotObjectDetection():
         plt.axis("off")
         plt.savefig(output_path, bbox_inches="tight", dpi=300)
         plt.close()
-    
+
+        return self.parse_results(results)
+
+    def parse_results(self, results: object) -> list[dict[str, object]]:
+        boxes = results[0]['boxes'].cpu().numpy()
+        scores = results[0]['scores'].cpu().numpy()
+        labels = results[0]['text_labels']
+        
+        parsed = []
+        for i, box in enumerate(boxes):
+            confidence = scores[i]
+            label = labels[i]
+            x1, y1, x2, y2 = box.tolist()
+            parsed.append({
+                "label": label,
+                "confidence": confidence,
+                "coordinates": (x1, y1, x2, y2)
+            })
+        
+        return parsed

@@ -9,20 +9,39 @@ import requests
 
 
 def generate_graph(image_url):
-    img = Image.open(requests.get(image_url, stream=True).raw).convert("RGB")
+    image = Image.open(requests.get(image_url, stream=True).raw).convert("RGB")
     # Step 0: Initialize models
     object_detector = YoloObjectDetection()
     zero_shot_object_detector = GroundingDinoZeroShotObjectDetection()
     vqa = ViltVqa()
+    captioner = BlipImageTextToText()
 
     # Step 1: Object detection first pass
-    result = object_detector.detect_and_save(image_url, "yolo_result.jpg") 
+    print('----RUNNING YOLO----')
+    results = object_detector.detect_and_save(image, "yolo_result.jpg")
 
-    # Step 2: Object detection second pass
+    # Step 2: Noun Captioning
+    print('----RUNNING BLIP----')
+    prompt = (
+        "Look at the image and list every distinct object you can see.\n"
+        "FORMAT RULES – follow all four EXACTLY:\n"
+        "1. Output only common-noun words in lowercase (no adjectives, verbs, numbers, or proper nouns).\n"
+        "2. Separate nouns with a single comma and one space.\n"
+        "3. List each noun only once (no duplicates).\n"
+        "4. Do not add any other words, punctuation, or explanations.\n"
+        "Example (not related to the image): cat, glove, lamp, car\n"
+        "List the nouns now:"
+    )
+    nouns = captioner.caption_and_parse_nouns(image, prompt)
+    print(f'Extracted nouns: {nouns}')
+
+    # Step 3: Object detection second pass
+    print('----RUNNING GROUNDING DINO----')
+    result2 = zero_shot_object_detector.detect_and_save(image, nouns, "grounding_dino_result.jpg")
 
 
 
-    # Step 3: Get attributes
+    # Step 4: Get attributes
     attributes = {
         "color": "What is the color of the object?",
         "size": "What is the size of the object?",
@@ -31,29 +50,11 @@ def generate_graph(image_url):
         "texture": "What is the texture of the object?",
     }
 
-    boxes = result.boxes
-    for i, box in enumerate(boxes):
-        class_id = int(box.cls[0])
-        class_name = result.names[class_id]
-        confidence = float(box.conf[0])
-        x1, y1, x2, y2 = box.xyxy[0].tolist()
-
-        print(f'---Box {i}---\nClass: {class_name}\nConfidence: {confidence}\nCoords: {x1, y1, x2, y2}')
-
-        for key, value in zip(attributes.keys(), attributes.values()):
-            crop = img.crop((x1, y1, x2, y2))
-
-            answer = vqa.query_image(image_url, value)
-            print(f'Attribute {key}: {answer}')
-
-        
-
-
 
 if __name__ == "__main__":
     load_dotenv()
 
-    image_url = "http://2.bp.blogspot.com/_X1IWXuEbgXI/TNek4LTTeII/AAAAAAAACx8/ZAPpNypF-RA/s640/hyena_eating_zebra_vultures.jpg"
+    image_url = "https://s-media-cache-ak0.pinimg.com/236x/59/db/00/59db00f02326074db0e2db8a19ddc5ed--best-girl-pug-rescue.jpg"
     generate_graph(image_url)
 
 

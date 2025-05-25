@@ -1,1 +1,5 @@
 .env
+
+vision/__pycache__
+
+yolo11m.pt
