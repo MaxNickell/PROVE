@@ -1,16 +1,12 @@
 from transformers import ViltProcessor, ViltForQuestionAnswering
-import requests
 from PIL import Image
 
-
-class ViltVqa():
-    def __init__(self, model_name="dandelin/vilt-b32-finetuned-vqa"):
+class ViltVqa:
+    def __init__(self, model_name: str="dandelin/vilt-b32-finetuned-vqa") -> None:
         self.processor = ViltProcessor.from_pretrained(model_name)
         self.model = ViltForQuestionAnswering.from_pretrained(model_name)
     
-    def query_image(self, image_url, query):
-        image = Image.open(requests.get(image_url, stream=True).raw).convert("RGB")
-
+    def query_image(self, image: Image.Image, query: str) -> str:
         encoding = self.processor(image, query, return_tensors="pt")
         outputs = self.model(**encoding)
         logits = outputs.logits
