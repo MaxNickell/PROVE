@@ -9,6 +9,9 @@ import requests
 
 
 def generate_graph(image_url):
+    # YOLO -> can show exits object
+    # Verify that the object from YOLO is correct
+    
     image = Image.open(requests.get(image_url, stream=True).raw).convert("RGB")
     # Step 0: Initialize models
     object_detector = YoloObjectDetection()
@@ -54,8 +57,7 @@ def generate_graph(image_url):
 if __name__ == "__main__":
     load_dotenv()
 
-    image_url = "https://s-media-cache-ak0.pinimg.com/236x/59/db/00/59db00f02326074db0e2db8a19ddc5ed--best-girl-pug-rescue.jpg"
+    image_url = "http://www.louwphotography.com/Africa/Tanzania/Highlights/i-zVB3Zfj/0/L/IMG_5487-L.jpg"
     generate_graph(image_url)
-
 
 
