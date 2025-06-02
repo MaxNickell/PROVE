@@ -2,7 +2,7 @@ from transformers import ViltProcessor, ViltForQuestionAnswering
 from PIL import Image
 
 class ViltVqa:
-    def __init__(self, model_name: str="dandelin/vilt-b32-finetuned-vqa") -> None:
+    def __init__(self, model_name: str = "dandelin/vilt-b32-finetuned-vqa") -> None:
         self.processor = ViltProcessor.from_pretrained(model_name)
         self.model = ViltForQuestionAnswering.from_pretrained(model_name)
     

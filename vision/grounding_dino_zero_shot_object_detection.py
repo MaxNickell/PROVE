@@ -5,7 +5,7 @@ import numpy as np
 from transformers import AutoProcessor, AutoModelForZeroShotObjectDetection 
 
 class GroundingDinoZeroShotObjectDetection:
-    def __init__(self, model_name: str="IDEA-Research/grounding-dino-base") -> None:
+    def __init__(self, model_name: str = "IDEA-Research/grounding-dino-base") -> None:
         self.processor = AutoProcessor.from_pretrained(model_name)
         self.model = AutoModelForZeroShotObjectDetection.from_pretrained(model_name).to("cuda")
 

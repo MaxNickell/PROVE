@@ -7,7 +7,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 class SamMask:
-    def __init__(self, model_name: str="facebook/sam-vit-base") -> None:
+    def __init__(self, model_name: str = "facebook/sam-vit-base") -> None:
         self.generator = pipeline("mask-generation", device = 0, points_per_batch = 256)
         self.model = SamModel.from_pretrained(model_name)
         self.processor = SamProcessor.from_pretrained(model_name)

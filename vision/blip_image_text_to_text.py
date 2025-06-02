@@ -3,7 +3,7 @@ from PIL import Image
 from transformers import Blip2Processor, Blip2ForConditionalGeneration
 
 class BlipImageTextToText:
-    def __init__(self, model_name: str="Salesforce/blip2-flan-t5-xl") -> None:
+    def __init__(self, model_name: str = "Salesforce/blip2-flan-t5-xl") -> None:
         self.processor = Blip2Processor.from_pretrained(model_name, use_fast=True)
         self.model = Blip2ForConditionalGeneration.from_pretrained(model_name, device_map="auto")
 
