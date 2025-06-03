@@ -11,10 +11,17 @@ Activate virtual environment
 Download requirements
 - `pip install -r requirements.txt`
 
+Download deepseek
+- `git clone git@github.com:deepseek-ai/DeepSeek-VL2.git`
+
+Downlad deepseek requirements
+- `cd DeepSeek-VL2`
+- `pip install -e .`
 
 ## Problems
 - YOLO is mislabeling objects and missing other key objects
 - Grounding Dino is missing objects passed in, giving low confidence, and not using labels properly
+- I have having the entire deepseek repository in this codebase
 
 ## Hyperparameters
 - model checkpoints
