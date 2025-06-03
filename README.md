@@ -8,15 +8,17 @@ Set up virtual environment (If you haven't already)
 Activate virtual environment
 - `conda activate PROVE`
 
-Download requirements
-- `pip install -r requirements.txt`
-
 Download deepseek
 - `git clone git@github.com:deepseek-ai/DeepSeek-VL2.git`
 
 Downlad deepseek requirements
 - `cd DeepSeek-VL2`
-- `pip install -e .`
+- `pip install.`
+- `cd ..`
+- `rm -Rf DeepSeek-VL2`
+
+Download requirements
+- `pip install -r requirements.txt`
 
 ## Problems
 - YOLO is mislabeling objects and missing other key objects
