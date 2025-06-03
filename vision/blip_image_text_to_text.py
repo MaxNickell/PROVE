@@ -1,14 +1,16 @@
 import requests
+import torch
 from PIL import Image
 from transformers import Blip2Processor, Blip2ForConditionalGeneration
 
 class BlipImageTextToText:
     def __init__(self, model_name: str = "Salesforce/blip2-flan-t5-xl") -> None:
         self.processor = Blip2Processor.from_pretrained(model_name, use_fast=True)
-        self.model = Blip2ForConditionalGeneration.from_pretrained(model_name, device_map="auto")
+        self.device = "cuda:0"
+        self.model = Blip2ForConditionalGeneration.from_pretrained(model_name, device_map={"": self.device})
 
     def caption(self, image: Image.Image, query: str) -> str: 
-        inputs = self.processor(image, query, return_tensors="pt").to("cuda")
+        inputs = self.processor(image, query, return_tensors="pt").to(self.device)
         out = self.model.generate(**inputs)
         return self.processor.decode(out[0], skip_special_tokens=True)
 
