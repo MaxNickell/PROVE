@@ -13,7 +13,7 @@ Download deepseek
 
 Downlad deepseek requirements
 - `cd DeepSeek-VL2`
-- `pip install.`
+- `pip install .`
 - `cd ..`
 - `rm -Rf DeepSeek-VL2`
 
@@ -23,7 +23,8 @@ Download requirements
 ## Problems
 - YOLO is mislabeling objects and missing other key objects
 - Grounding Dino is missing objects passed in, giving low confidence, and not using labels properly
-- I have having the entire deepseek repository in this codebase
+- Grounding DINO is broken
+- Bunch of random warnings possibly related to transformers
 
 ## Hyperparameters
 - model checkpoints
