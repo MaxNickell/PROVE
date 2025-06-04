@@ -25,6 +25,7 @@ Download requirements
 - Grounding Dino is missing objects passed in, giving low confidence, and not using labels properly
 - Grounding DINO is broken
 - Bunch of random warnings possibly related to transformers
+- DeepSeek-VL2 requires an old version of Transformers to run (transformers==4.38.2) but Grounding Dino needs a newer version(transformers>=4.40.0)
 
 ## Hyperparameters
 - model checkpoints
@@ -35,4 +36,4 @@ Download requirements
 - Vilt - https://huggingface.co/dandelin/vilt-b32-finetuned-vqa
 - Sam - https://huggingface.co/facebook/sam-vit-base
 - Yolo - https://github.com/ultralytics/ultralytics
-- Deepseek - https://github.com/deepseek-ai/DeepSeek-VL2
+- Deepseek-VL2 - https://github.com/deepseek-ai/DeepSeek-VL2
