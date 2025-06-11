@@ -3,6 +3,7 @@
 
 # Python cache files
 vision/__pycache__
+tests/__pycache__
 
 # for yolo model
 yolo11m.pt
