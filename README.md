@@ -2,23 +2,41 @@
 Programmatic Reasoning Over Visual Evidence
 
 ## Getting Started
-Set up virtual environment (If you haven't already)
+Set up conda environment for project
 - `conda create -n PROVE python=3.10`
 
-Activate virtual environment
+Activate conda environment
 - `conda activate PROVE`
 
-Download deepseek
+Download requirements
+- `pip install -r requirements.txt`
+
+Deactivate conda environment
+- `conda deactivate`
+
+Set up conda environment for deepseek vl2
+- `conda create -n DEEPSEEK_VL2_ENV python=3.10`
+
+Activate conda environment
+- `conda activate DEEPSEEK_VL2_ENV`
+
+Download deepseek vl2
 - `git clone git@github.com:deepseek-ai/DeepSeek-VL2.git`
 
-Downlad deepseek requirements
+Downlad deepseek vl2 requirements
 - `cd DeepSeek-VL2`
 - `pip install .`
 - `cd ..`
 - `rm -Rf DeepSeek-VL2`
+- `pip install "numpy<2.0.0"`
 
-Download requirements
-- `pip install -r requirements.txt`
+Confirm download
+- `pip show deepseek_vl2`
+
+Switch back to main conda environment
+- `conda deactivate`
+- `conda activate PROVE`
+
 
 ## Problems
 - YOLO is mislabeling objects and missing other key objects
