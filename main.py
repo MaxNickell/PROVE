@@ -1,16 +1,14 @@
-import subprocess
+import argparse
+from src.pipeline.orchestrator import Orchestrator
 
-def run_deepseek_tests():
-    result = subprocess.run(
-        ["conda", "run", "-n", "DEEPSEEK_VL2_ENV", "python3", "-m", "tests.test_deepseek_vl2"],
-        capture_output=True,
-        text=True
-    )
+def main():
+    parser = argparse.ArgumentParser(description="PROVE Vision Pipeline")
+    parser.add_argument("image_path", type=str, help="Path to the image to process")
     
-    print("STDOUT:\n", result.stdout)
-    if result.returncode != 0:
-        print("STDERR:\n", result.stderr)
-        raise RuntimeError("Test script failed")
+    args = parser.parse_args()
+    
+    orchestrator = Orchestrator()
+    results = orchestrator.process_image(args.image_path)
 
 if __name__ == "__main__":
-    run_deepseek_tests()
+    main()

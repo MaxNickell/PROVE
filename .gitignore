@@ -1,12 +1,19 @@
 # environment variables
 .env
 
+out.png
+
 # Python cache files
-vision/__pycache__
+src/vision/__pycache__
+src/vision/utils/__pycache__
 tests/__pycache__
+src/scene_graph/__pycache__
+src/pipeline/__pycache__
+__pycache__
 
 # for yolo model
 yolo11m.pt
+yolov8l-worldv2.pt
 
 # for deepseek model
 DeepSeek-VL2
