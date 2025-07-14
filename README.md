@@ -39,11 +39,9 @@ Switch back to main conda environment
 
 
 ## Problems
-- YOLO is mislabeling objects and missing other key objects
-- Grounding Dino is missing objects passed in, giving low confidence, and not using labels properly
-- Grounding DINO is broken
-- Bunch of random warnings possibly related to transformers
-- DeepSeek-VL2 requires an old version of Transformers to run (transformers==4.38.2) but Grounding Dino needs a newer version(transformers>=4.40.0)
+- Sometimes grabbing the entire image and need to remove those
+- Deepseek proving not reliable labeling all the images
+
 
 ## Hyperparameters
 - model checkpoints
@@ -56,15 +54,3 @@ Switch back to main conda environment
 - Yolo - https://github.com/ultralytics/ultralytics
 - Deepseek-VL2 - https://github.com/deepseek-ai/DeepSeek-VL2
 
-
-## Ideads
-- instruct blip
-- grounding dino 1.5
-- choosing bounding box from IOU
-
-
-Step 1: Yolo World -> boxes
-Step 2: Blip2 Instruct -> Nouns -> Grounding Dino -> boxes
-Step 3: Deepseek vl2 -> boxes
-Step 4: Normalize w/ IOU
-Step 5: Classify individual boxes with Deepseek vl2

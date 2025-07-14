@@ -14,7 +14,7 @@ class GroundingDino:
             Query must be in the format - "a lowercaseword1. a lowercaseword2. a loswercaseword3. ..."
             Example: "a glass. a bottle."
         """
-        inputs = self.processor(images=image, text=query, return_tensors="pt").to("cuda")
+        inputs = self.processor(images=image, text="a animal.", return_tensors="pt").to("cuda")
         with torch.no_grad():
             outputs = self.model(**inputs)
         

@@ -6,7 +6,6 @@ from transformers import AutoModelForCausalLM
 from deepseek_vl2.models import DeepseekVLV2Processor, DeepseekVLV2ForCausalLM
 from deepseek_vl2.utils.io import load_pil_images
 
-
 class DeepSeekVL2:
     def __init__(self, model_name: str = "deepseek-ai/deepseek-vl2-tiny") -> None:
         self.vl_chat_processor: DeepseekVLV2Processor = DeepseekVLV2Processor.from_pretrained(model_name)
@@ -15,13 +14,12 @@ class DeepSeekVL2:
         self.vl_gpt: DeepseekVLV2ForCausalLM = AutoModelForCausalLM.from_pretrained(model_name, trust_remote_code=True)
         self.vl_gpt = self.vl_gpt.to(torch.bfloat16).cuda().eval()
     
-    # Can use this to verify object classification
     def classify_object(self, image_path: str) -> str:
         conversation = [
             {
                 "role": "<|User|>",
-                "content": "This is image_4: <image>\n"
-                        "In this image, what is the object within the red rectangle? Output a single object name.",
+                "content": "Here is an image: <image>\n"
+                        "In this image, an object within a red rectangle is marked. What is this object? Output a single object name.",
                 "images": [
                     image_path,
                 ],
@@ -33,33 +31,13 @@ class DeepSeekVL2:
         ]
         
         return self.run_inference(conversation)
-    
-    # Can use this to generate a list of objects in an image
-    def list_objects(self, image_path: str) -> str:
-        conversation = [
-            {
-                "role": "<|User|>",
-                "content": "This is image_3: <image>\n"
-                        "List every person, animal, and object in this image in a comma-separated list.",
-                "images": [
-                    image_path,
-                ],
-            },
-            {
-                "role": "<|Assistant|>", 
-                "content": ""
-            },
-        ]
-        
-        return self.run_inference(conversation)
-    
-    # Can use this to generate a list of objects in an image and find their bounding boxes
+
     def list_and_bound_objects(self, image_path: str) -> str:
         conversation = [
             {
                 "role": "<|User|>",
                 "content": "This is the image: <image>\n"
-                        "<|grounding|>Identify every person, animal, and object in the image.",
+                        "<|grounding|>Identify all objects in the image and output them in bounding boxes.",
                 "images": [
                     image_path,
                 ],
@@ -70,28 +48,7 @@ class DeepSeekVL2:
             },
         ]
         
-        return self.run_inference(conversation)
-    
-    # Can use this to locate an object in the image
-    # WIP - Hallucinating 
-    def locate_objects(self, image_path: str):
-        conversation = [
-            {
-                "role": "<|User|>",
-                "content": "This is image_2: <image>\n"
-                    "<|ref|>Paper towels<|/ref|>",
-                "images": [
-                    image_path,
-                ],
-            },
-            {
-                "role": "<|Assistant|>", 
-                "content": ""
-            },
-        ]
-        
-        return self.run_inference(conversation)
-        
+        return self.run_inference(conversation)   
     
     def run_inference(self, conversation) -> str:
         pil_images = load_pil_images(conversation)

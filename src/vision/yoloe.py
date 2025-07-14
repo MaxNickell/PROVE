@@ -1,9 +1,9 @@
-from ultralytics import YOLO
+from ultralytics import YOLOE
 from PIL import Image
 
-class Yolo11:
-    def __init__(self, model_name: str = "yolo11m.pt") -> None:
-        self.model = YOLO(model_name)
+class YoloE:
+    def __init__(self, model_name: str = "yoloe-11l-seg-pf.pt") -> None:
+        self.model = YOLOE(model_name)
 
     def detect(self, image: Image.Image) -> list[dict[str, object]]:
         results = self.model.predict(image) 
@@ -28,4 +28,3 @@ class Yolo11:
             })
         
         return parsed
-        

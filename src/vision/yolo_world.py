@@ -6,7 +6,7 @@ class YoloWorld:
         self.model = YOLOWorld(model_name)
 
     def detect(self, image: Image.Image) -> list[dict[str, object]]:
-        results = self.model(image) 
+        results = self.model.predict(image) 
         return self.parse_results(results)
 
     def detect_and_save(self, image: Image.Image, save_path: str) -> list[dict[str, object]]:
