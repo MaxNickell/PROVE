@@ -19,7 +19,7 @@ class DeepSeekVL2:
             {
                 "role": "<|User|>",
                 "content": "Here is an image: <image>\n"
-                        "In this image, an object within a red rectangle is marked. What is this object? Output a single object name.",
+                        "What is the largest object in this image? Output the label of the object.",
                 "images": [
                     image_path,
                 ],
