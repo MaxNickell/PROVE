@@ -1,14 +1,13 @@
-import argparse
-from src.pipeline.orchestrator import Orchestrator
-
-def main():
-    parser = argparse.ArgumentParser(description="PROVE Vision Pipeline")
-    parser.add_argument("image_path", type=str, help="Path to the image to process")
-    
-    args = parser.parse_args()
-    
-    orchestrator = Orchestrator()
-    results = orchestrator.process_image(args.image_path)
+import json, argparse
+from src.pipeline.detector import ObjectDetector
 
 if __name__ == "__main__":
-    main()
+    ap = argparse.ArgumentParser(description="Multi-detector demo")
+    ap.add_argument("image", help="Path to image file")
+    args = ap.parse_args()
+
+    det = ObjectDetector()
+    out = det.detect(args.image)
+
+    print("\nFINAL DETECTIONS")
+    print(json.dumps(out, indent=2))

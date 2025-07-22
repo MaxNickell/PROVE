@@ -1,4 +1,3 @@
-# Wok in progress: We need to add typing hints.
 from PIL import Image
 import requests
 import torch

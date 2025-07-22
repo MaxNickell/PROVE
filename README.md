@@ -54,3 +54,11 @@ Switch back to main conda environment
 - Yolo - https://github.com/ultralytics/ultralytics
 - Deepseek-VL2 - https://github.com/deepseek-ai/DeepSeek-VL2
 
+
+
+
+use llm to parse deepseek output
+
+use llm to help determine what relationships we should get
+
+determing query(s) -> finding what we still need -> prolog (python)
