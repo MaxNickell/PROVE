@@ -15,7 +15,7 @@ class ForgeLLM:
         self.model = model or self.DEFAULT_MODEL
         self.client = OpenAI(base_url=base_url, api_key=api_key)
 
-    def chat(self, messages: List[Dict[str, str]], **kwargs: Any) -> str:
+    def _chat(self, messages: List[Dict[str, str]], **kwargs: Any) -> str:
         resp = self.client.chat.completions.create(
             model=self.model,
             messages=messages,
@@ -23,16 +23,7 @@ class ForgeLLM:
         )
         return resp.choices[0].message.content
 
-    @staticmethod
-    def _strip_md_fences(text: str) -> str:
-        text = text.strip()
-        if text.startswith("```"):
-            m = re.search(r"```(?:json)?\s*(.*?)\s*```", text, re.DOTALL)
-            if m:
-                return m.group(1).strip()
-        return text
-
-    def _parse_caption(self, caption: str) -> List[Dict[str, Any]]:
+    def parse_caption(self, caption: str) -> List[Dict[str, Any]]:
         system_prompt = """
             You are an expert at parsing image descriptions that contain object locations. Extract objects and their bounding boxes from descriptions where objects are followed by [[x1,y1,x2,y2]] coordinate tags.
             IMPORTANT RULES:
@@ -66,7 +57,7 @@ class ForgeLLM:
         ]
 
         try:
-            raw_response = self.chat(messages, temperature=0)
+            raw_response = self._chat(messages, temperature=0)
             raw_response = self._strip_md_fences(raw_response)
             
             parsed = json.loads(raw_response)
@@ -104,3 +95,185 @@ class ForgeLLM:
             })
         
         return items
+    
+    def infer_required_relationships(self, image_1_dets: Dict[str, Any], image_2_dets: Dict[str, Any], question: str) -> Dict[str, Any]:
+        system_prompt = """
+            You are an intelligent visual reasoning assistant.
+
+            You will receive:
+            - An **ultimate question** that compares two images (e.g., "Who is wealthier?" or "Which room is messier?")
+            - Two lists of **objects**—one per image—where each object has a label, bounding box, confidence, and ID
+
+            Your task is to generate a set of **intra-image relational questions** for each image. These are natural-language questions that relate **two or more objects within the same image**. They should capture **meaningful relationships** that could help an AI reason about the ultimate question.
+
+            You do **not** have access to the images—only the object metadata. Focus only on **within-image relationships**. Do **not** generate questions that compare objects across the two images.
+
+            ---
+
+            Input Format (You Will Receive):
+
+            question: str
+
+            image_1_objects: [
+                {
+                    "object_id": int,
+                    "label": str,
+                    "coordinates": [x1, y1, x2, y2],
+                    "confidence": float
+                },
+                ...
+            ]
+
+            image_2_objects: [
+                {
+                    "object_id": int,
+                    "label": str,
+                    "coordinates": [x1, y1, x2, y2],
+                    "confidence": float
+                },
+                ...
+            ]
+
+            ---
+
+            Output Format (You Must Return):
+
+            {
+            "image_1_questions": [
+                {
+                "question": str,
+                "object_ids": [int, int, ...]
+                },
+                ...
+            ],
+            "image_2_questions": [
+                {
+                "question": str,
+                "object_ids": [int, int, ...]
+                },
+                ...
+            ]
+            }
+
+            ---
+
+            Example 1:
+
+            Input:
+
+            question: "Which person is more powerful?"
+
+            image_1_objects: [
+                {"label": "woman", "object_id": 1, "coordinates": [...], "confidence": 0.95},
+                {"label": "throne", "object_id": 2, "coordinates": [...], "confidence": 0.92},
+                {"label": "crown", "object_id": 3, "coordinates": [...], "confidence": 0.90}
+            ]
+
+            image_2_objects: [
+                {"label": "man", "object_id": 1, "coordinates": [...], "confidence": 0.94},
+                {"label": "suit", "object_id": 2, "coordinates": [...], "confidence": 0.91},
+                {"label": "briefcase", "object_id": 3, "coordinates": [...], "confidence": 0.89}
+            ]
+
+            Output:
+
+            {
+            "image_1_questions": [
+                {
+                "question": "Is the woman wearing a crown?",
+                "object_ids": [1, 3]
+                },
+                {
+                "question": "Is the woman sitting on a throne?",
+                "object_ids": [1, 2]
+                }
+            ],
+            "image_2_questions": [
+                {
+                "question": "Is the man wearing a suit?",
+                "object_ids": [1, 2]
+                },
+                {
+                "question": "Is the man holding a briefcase?",
+                "object_ids": [1, 3]
+                }
+            ]
+            }
+
+            ---
+
+            Example 2:
+
+            Input:
+
+            question: "Which place is cleaner?"
+
+            image_1_objects: [
+                {"label": "countertop", "object_id": 1, "coordinates": [...], "confidence": 0.96},
+                {"label": "trash bin", "object_id": 2, "coordinates": [...], "confidence": 0.94},
+                {"label": "sink", "object_id": 3, "coordinates": [...], "confidence": 0.92}
+            ]
+
+            image_2_objects: [
+                {"label": "floor", "object_id": 1, "coordinates": [...], "confidence": 0.93},
+                {"label": "toys", "object_id": 2, "coordinates": [...], "confidence": 0.90},
+                {"label": "laundry basket", "object_id": 3, "coordinates": [...], "confidence": 0.88}
+            ]
+
+            Output:
+
+            {
+            "image_1_questions": [
+                {
+                "question": "Is the trash bin full near the sink?",
+                "object_ids": [2, 3]
+                },
+                {
+                "question": "Is the countertop clean near the sink?",
+                "object_ids": [1, 3]
+                }
+            ],
+            "image_2_questions": [
+                {
+                "question": "Are toys scattered on the floor?",
+                "object_ids": [1, 2]
+                },
+                {
+                "question": "Is the laundry basket overflowing onto the floor?",
+                "object_ids": [1, 3]
+                }
+            ]
+            }
+
+            ---
+
+            Instructions:
+
+            - Use the **labels** and the **ultimate question** to infer relationships that might help answer it.
+            - Each question must reference **two or more object IDs** from the **same image**.
+            - Do **not** refer to objects across different images.
+            - Be plausible—base reasoning **only on object labels**, not assumed image content.
+            - Output must strictly follow the required **JSON format** above.
+        """
+
+        user_prompt = f"""
+            question: {question}
+            image_1_objects: {image_1_dets}
+            image_2_objects: {image_2_dets}
+        """
+
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt}
+        ]
+
+        try:
+            raw_response = self._chat(messages, temperature=0)
+            raw_response = self._strip_md_fences(raw_response)
+            
+            parsed = json.loads(raw_response)
+            return parsed
+        
+        except Exception as e:
+            print(f"Error inferring required relationships with LLM: {e}")
+            return {}
