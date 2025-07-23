@@ -13,14 +13,16 @@ class ObjectDetector:
     def __init__(
         self, 
         deepseek_env: str = "DEEPSEEK_VL2_ENV",
-        confidence_threshold: float = 0.7,
+        yolo_world_confidence_threshold: float = 0.7,
+        yolo_e_confidence_threshold: float = 0.7,
         nms_iou_threshold: float = 0.6,
-        
+        deepseek_confidence: float = 0.95,
     ):
         self.deepseek_env = deepseek_env
-        self.confidence_threshold = confidence_threshold
+        self.yolo_world_confidence_threshold = yolo_world_confidence_threshold
+        self.yolo_e_confidence_threshold = yolo_e_confidence_threshold
         self.nms_iou_threshold = nms_iou_threshold
-        self.deepseek_confidence = 0.90
+        self.deepseek_confidence = deepseek_confidence
         
         self.yolo_world = YoloWorld()
         self.yolo_e = YoloE()
@@ -46,19 +48,15 @@ class ObjectDetector:
             all_detections = deepseek_dets + yolo_world_dets + yolo_e_dets
             final_detections = IOUHelper.non_max_suppression(all_detections, self.nms_iou_threshold)
             
-            self._save_visualization(image_path, final_detections, output_dir / "final_detections.png", (255, 255, 0))
+            for i, detection in enumerate(final_detections):
+                detection["object_id"] = i + 1
             
-            return {
-                "objects": final_detections,
-                "output_dir": str(output_dir)
-            }
+            self._save_visualization(image_path, final_detections, output_dir / "final_detections.png", (255, 128, 0))
+            
+            return final_detections
             
         except Exception as e:
-            return {
-                "objects": [],
-                "output_dir": str(output_dir),
-                "error": str(e)
-            }
+            return []
 
     def _get_deepseek_detections(self, image_path: str) -> List[Dict[str, Any]]:
         try:
@@ -75,7 +73,7 @@ class ObjectDetector:
             caption = match.group(1).strip()
             print(f"DeepSeek raw caption: {caption}")
             
-            parsed_items = self.llm._parse_caption(caption)
+            parsed_items = self.llm.parse_caption(caption)
             print(f"Parsed items: {parsed_items}")
             
             w, h = Image.open(image_path).size
@@ -106,7 +104,7 @@ class ObjectDetector:
         try:
             image = Image.open(image_path).convert("RGB")
             detections = self.yolo_world.detect(image)
-            return [d for d in detections if d.get("confidence", 0) >= self.confidence_threshold]
+            return [d for d in detections if d.get("confidence", 0) >= self.yolo_world_confidence_threshold]
         except Exception:
             return []
 
@@ -114,7 +112,7 @@ class ObjectDetector:
         try:
             image = Image.open(image_path).convert("RGB")
             detections = self.yolo_e.detect(image)
-            return [d for d in detections if d.get("confidence", 0) >= self.confidence_threshold]
+            return [d for d in detections if d.get("confidence", 0) >= self.yolo_e_confidence_threshold]
         except Exception:
             return []
 
