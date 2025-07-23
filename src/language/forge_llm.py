@@ -92,7 +92,7 @@ class ForgeLLM:
             items.append({
                 "object": object_name,
                 "bbox": [int(x1), int(y1), int(x2), int(y2)]
-            })
+            }
         
         return items
     

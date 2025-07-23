@@ -19,5 +19,3 @@ class Orchestrator:
     
     def _infer_required_relationships(self, image_1_dets: Dict[str, Any], image_2_dets: Dict[str, Any], question: str) -> Dict[str, Any]:
         return self.llm.infer_required_relationships(image_1_dets, image_2_dets, question)
-
-    
