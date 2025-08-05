@@ -14,23 +14,6 @@ class DeepSeekVL2:
         self.vl_gpt: DeepseekVLV2ForCausalLM = AutoModelForCausalLM.from_pretrained(model_name, trust_remote_code=True)
         self.vl_gpt = self.vl_gpt.to(torch.bfloat16).cuda().eval()
     
-    def classify_object(self, image_path: str) -> str:
-        conversation = [
-            {
-                "role": "<|User|>",
-                "content": "Here is an image: <image>\n"
-                        "What is the largest object in this image? Output the label of the object.",
-                "images": [
-                    image_path,
-                ],
-            },
-            {
-                "role": "<|Assistant|>", 
-                "content": ""
-            },
-        ]
-        
-        return self.run_inference(conversation)
 
     def list_and_bound_objects(self, image_path: str) -> str:
         conversation = [

@@ -6,13 +6,13 @@ from transformers import AutoProcessor, LlavaForConditionalGeneration
 
 class Llava:
     def __init__(self, model_name: str = "llava-hf/llava-1.5-7b-hf"):
-        self.device = "cuda:0"
+        self.device = "cuda:4"
         
         self.model = LlavaForConditionalGeneration.from_pretrained(
             model_name,
             torch_dtype=torch.float16,
             low_cpu_mem_usage=True,
-            device_map={"": 0}
+            device_map={"": 4}
         )
         
         self.processor = AutoProcessor.from_pretrained(model_name)

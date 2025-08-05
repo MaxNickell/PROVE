@@ -62,3 +62,7 @@ use llm to parse deepseek output
 use llm to help determine what relationships we should get
 
 determing query(s) -> finding what we still need -> prolog (python)
+
+
+LLAVA-SG
+https://arxiv.org/html/2408.16224v1?utm_source=chatgpt.com
