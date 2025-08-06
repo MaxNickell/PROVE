@@ -1,18 +1,20 @@
 from typing import Dict, List, Any, Tuple
 
 from src.pipeline.detector import Detector
-from src.language.tasks.label_canonicalizer import LabelCanonicalizer
-from src.language.llm_client import LLMClient
 from src.pipeline.attribute_extractor import AttributeExtractor
-
+from src.pipeline.salient_intra_relationship_extractor import SalientIntraRelationshipExtractor
+from src.language.llm_client import LLMClient
+import json
 class Orchestrator:
 
-    def __init__(self) -> None:
-        self.llm_client = LLMClient()
-        self.label_canonicalizer = LabelCanonicalizer(self.llm_client)
+    def __init__(self, explainable: bool = False) -> None:
+        self.explainable = explainable
 
-        self.detector = Detector(label_canonicalizer=self.label_canonicalizer, explainable=True)
+        self.llm_client = LLMClient()
+
+        self.detector = Detector()
         self.attribute_extractor = AttributeExtractor()
+        self.salient_intra_relationship_extractor = SalientIntraRelationshipExtractor(self.llm_client)
 
         self.objects: Dict[str, List[Dict[str, Any]]] = {}
         self.attributes: Dict[str, Dict[int, List[str]]] = {}
@@ -29,8 +31,6 @@ class Orchestrator:
 
         self._extract_attributes(image_a_path, image_id="A")
         self._extract_attributes(image_b_path, image_id="B")
-        print(self.objects)
-        print(self.attributes)
 
         self._extract_scene_descriptors(image_id="A")
         self._extract_scene_descriptors(image_id="B")
@@ -38,19 +38,14 @@ class Orchestrator:
         self._mine_generic_relations(image_id="A")
         self._mine_generic_relations(image_id="B")
 
-        self._select_salient_intra_relations(question) # LLM -> determine whats important -> crop with object pairs to vlm -> answers
-        self._select_salient_inter_relations(question) # LLM -> determine whats important -> comparisons (based off attributes of objects) -> larger(weight_a, weight_b) = True
+        self._select_salient_intra_relations(question, image_id="A", image_path=image_a_path, objects=self.objects["A"])
+        self._select_salient_intra_relations(question, image_id="B", image_path=image_b_path, objects=self.objects["B"])
+        print(json.dumps(self.objects, indent=4))
+        print(json.dumps(self.intra_rels, indent=4))
+
+        self._select_salient_inter_relations(question) 
 
         self._build_knowledge_base()
-        # larger(weight_a, weight_b) = True
-        # larger(arm_a, arm_b) = False
-        # holding(mana, wiehgt_a)
-        # leaner(body_a, body_b) = True
-
-        # \phi_1 = stonger(man_a, man_b)
-        # \phi_2 = stronger(man_b, man_a)
-
-        # stronger(man_a, man_b) l
         
 
         self._map_answer_options_to_queries(answer_options, question)
@@ -65,10 +60,15 @@ class Orchestrator:
         }
 
     def _detect_objects(self, image_path: str, *, image_id: str) -> None:
-        self.objects[image_id] = self.detector.detect(image_path)
+        if self.explainable:
+            self.objects[image_id] = self.detector.detect(image_path, visualize=True)
+        else:
+            self.objects[image_id] = self.detector.detect(image_path)
 
     def _extract_attributes(self, image_path: str, *, image_id: str) -> None:
-        self.attributes[image_id] = self.attribute_extractor.extract_attributes(image_path, self.objects[image_id])
+        """Extract attributes from the image."""
+        # TODO: Implement attribute extraction
+        pass
 
     def _extract_scene_descriptors(self, *, image_id: str) -> None:
         """Run global taggers (Tag2Text, Places-365, VLM caption) to get scene-level facts."""
@@ -80,11 +80,8 @@ class Orchestrator:
         # TODO: Implement relation mining
         self.intra_rels[image_id] = []
 
-    def _select_salient_intra_relations(self, question: str) -> None:
-        """Call LLM to pick WHICH intra-image relations are important wrt the question, then
-        verify them via DeepSeek-VL2 yes/no queries; store into self.intra_rels."""
-        # TODO: Implement salient intra-relation selection
-        pass
+    def _select_salient_intra_relations(self, question: str, *, image_id: str, image_path: str, objects: List[Dict[str, Any]]) -> None:
+        self.intra_rels[image_id] = self.salient_intra_relationship_extractor.extract(question, objects, image_path)
 
     def _select_salient_inter_relations(self, question: str) -> None:
         """Similar to above but for cross-image relations that may resolve comparative queries."""

@@ -6,11 +6,9 @@ from openai import OpenAI
 
 
 class LLMClient:
-    DEFAULT_MODEL = "OpenAI/gpt-4o"
-
     def __init__(self, model: str | None = None) -> None:
         load_dotenv()
-        self.model = model or self.DEFAULT_MODEL
+        self.model = os.environ["FORGE_MODEL_NAME"]
         self.client = OpenAI(
             base_url=os.environ["FORGE_BASE_URL"],
             api_key=os.environ["FORGE_KEY"],

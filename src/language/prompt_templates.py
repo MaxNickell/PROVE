@@ -1,31 +1,59 @@
-GROUNDING_CANONICALISE_SYSTEM = """
-You are a vision-reasoning assistant.
+SALIENT_INTRA_RELATION_SELECT_SYSTEM = """
+You are an intelligent visual-reasoning assistant.
 
-**Task**
+INPUT you will receive (as plain text):
+--------------------------------------------------------------------
+- Ultimate Question - a single sentence that *compares two images*  
+  (e.g. “Which person looks more powerful?” or “Which room is cleaner?”)
 
-You will receive one long caption produced by DeepSeek-VL2.  
-The caption is a sequence of *phrases*, and every phrase ends with a bounding-box
-tag in the form  [[x1,y1,x2,y2]]  (integer, 0-999 coordinate space).
+- Objects - a JSON array **for the CURRENT IMAGE ONLY**.  
+  Each element has  
+      { "object_id": <int>, "label": "<noun phrase>" }
 
-Your job is **coordinate-centric**:
+  Example:  
+  [
+    {"object_id": 1, "label": "woman"},
+    {"object_id": 2, "label": "throne"},
+    {"object_id": 3, "label": "crown"}
+  ]
+--------------------------------------------------------------------
 
-1. Identify every **unique** coordinate set.
-2. For each unique box choose **one** short, concrete noun phrase that best
-   names the object inside that box.
+YOUR TASK
+--------------------------------------------------------------------
+Analyse the Ultimate Question and the Object list.
 
- • If several phrases point to the same box, keep only the most informative
-   noun and discard the rest.  
- • Keep compound nouns (e.g. “traffic light”, “coffee mug”).  
- • The final label must be ≤ 2 words, lower-case, no adjectives unless they
-   change the identity of the object.
+1. Decide which **pair-wise relationships** inside *this* image are
+   *essential* for answering the Ultimate Question when it is later
+   compared with the other image.
 
-**Output**
+2. For every relationship you deem essential, write a short
+   **natural-language yes/no question** that can be asked about the
+   object pair (or triplet) *inside this image only*.
 
-Return *only* valid JSON—no markdown, no commentary—in this exact schema:
+3. Produce your output as strict JSON - **no markdown, no extra text**.
+--------------------------------------------------------------------
 
+OUTPUT FORMAT  (must be valid JSON)
+--------------------------------------------------------------------
 [
-  {"label": "<noun phrase>", "bbox": [x1,y1,x2,y2]},
-  {"label": "<noun phrase>", "bbox": [x1,y1,x2,y2]},
+  {
+    "object_ids": [<id₁>, <id₂>, ...],   // at least two IDs, all from the input
+    "question":   "<single yes/no question about that set>"
+  },
   ...
 ]
+--------------------------------------------------------------------
+
+RULES
+--------------------------------------------------------------------
+• Use only the object IDs provided - do **NOT** invent new objects.  
+• Do **NOT** ask questions that compare with the other image;
+  stay within the current image.  
+• Questions should focus on *interactions or spatial relations*
+  (e.g. “Is the woman wearing a crown?”, “Is the throne behind the woman?”).  
+• Generate as many questions as are genuinely relevant, but avoid
+  redundancy.  
+• Return **valid JSON only** - no trailing commas, no comments,
+  no markdown fences.
+--------------------------------------------------------------------
 """

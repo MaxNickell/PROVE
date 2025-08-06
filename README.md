@@ -39,8 +39,9 @@ Switch back to main conda environment
 
 
 ## Problems
-- Sometimes grabbing the entire image and need to remove those
-- Deepseek proving not reliable labeling all the images
+- What granualarity of object detection should we choose?
+- Not grabbing all the relationships we may need because it does not see the image
+    - Maybe we can use the blip and union detection first pass where objects are overlapping (doesn't consider relationships that are far away, so we may need geometry)
 
 
 ## Hyperparameters
@@ -54,15 +55,3 @@ Switch back to main conda environment
 - Yolo - https://github.com/ultralytics/ultralytics
 - Deepseek-VL2 - https://github.com/deepseek-ai/DeepSeek-VL2
 
-
-
-
-use llm to parse deepseek output
-
-use llm to help determine what relationships we should get
-
-determing query(s) -> finding what we still need -> prolog (python)
-
-
-LLAVA-SG
-https://arxiv.org/html/2408.16224v1?utm_source=chatgpt.com
