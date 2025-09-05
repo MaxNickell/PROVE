@@ -55,3 +55,28 @@ Switch back to main conda environment
 - Yolo - https://github.com/ultralytics/ultralytics
 - Deepseek-VL2 - https://github.com/deepseek-ai/DeepSeek-VL2
 
+
+# Pipeline Plan
+1. Object Detection
+    - Florence-2 -> bbox, class, confidence
+2. Attribute Recognition
+    - Crop -> Florence-2 -> Description -> LLM -> attributes list
+3. Salient Intra-Relationship Questions 
+    - List of objects -> LLM -> List of questions for relationships
+4. Salient Inter-Comparison Questions
+    - List of objects -> LLM -> list of questions for comparisons
+5. Intra-Relationships Answers
+    - List of questions for relationships from step 3 -> Union Crop + Bounding boxes + Questions -> VLM -> answer
+6. Inter-Comparision Answers
+    - list of questions for comparisons from step 4 -> Crop on each image + Bounding box + Questions -> VLM -> attributes for each object involved in each image
+7. Subqueries
+    - Knowledge base + Main Query (context) -> Sub queries
+8. Convert knowledge base to ProbLog
+    - Objects, Attributes, Inter Relations -> LLM -> Problog Generation Engine -> Problog facts
+9. Problog query 
+    - Subqueries -> LLM -> Problog Generation Engine -> Problog queries
+10. Reasoned Output
+    - Problog queries -> Problog Execution Engine -> Outputs + Problog Trace -> LLM -> answer + reasoned explanation
+    
+
+

@@ -23,7 +23,7 @@ class Detector:
             if visualize:
                 detections = self.florence2.detect_and_visualize(image, output_path)
             else:
-                detections = self.florence2.detect(image)
+                detections = self.florence2.dense_detail_detect(image)
             return detections
         except Exception as err:
             raise DetectorError(f"Florence-2 detection failed: {err}")
