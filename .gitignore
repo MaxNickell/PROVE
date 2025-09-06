@@ -16,11 +16,8 @@ yolo11m.pt
 yolov8l-worldv2.pt
 yoloe-11l-seg-pf.pt
 
-# for deepseek model
-DeepSeek-VL2
-
 # vscode settings
 .vscode
 
-
-out
+#
+.claude

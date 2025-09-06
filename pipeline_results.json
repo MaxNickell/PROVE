@@ -1,0 +1,350 @@
+{
+  "question": "What is uniquely similar about these images?",
+  "image_a": {
+    "objects": [
+      {
+        "object_id": 0,
+        "label": "carnivore",
+        "bbox": [
+          176.75,
+          70.50749969482422,
+          499.75,
+          276.4964904785156
+        ],
+        "confidence": 0.95
+      },
+      {
+        "object_id": 1,
+        "label": "zebra",
+        "bbox": [
+          0.25,
+          162.97048950195312,
+          294.75,
+          315.7664794921875
+        ],
+        "confidence": 0.94
+      }
+    ],
+    "attributes": [
+      {
+        "object_id": 0,
+        "attributes": {
+          "color": [
+            {
+              "value": "brown",
+              "confidence": 1.0
+            }
+          ],
+          "material": [
+            {
+              "value": "fur",
+              "confidence": 1.0
+            }
+          ],
+          "texture": [
+            {
+              "value": "shaggy",
+              "confidence": 1.0
+            }
+          ],
+          "shape": [
+            {
+              "value": "quadrupedal",
+              "confidence": 1.0
+            }
+          ],
+          "size": [
+            {
+              "value": "large",
+              "confidence": 1.0
+            }
+          ],
+          "state": [
+            {
+              "value": "alive",
+              "confidence": 1.0
+            },
+            {
+              "value": "moving",
+              "confidence": 1.0
+            }
+          ],
+          "pattern": [
+            {
+              "value": "spotted",
+              "confidence": 1.0
+            }
+          ],
+          "style": [
+            {
+              "value": "wild",
+              "confidence": 1.0
+            }
+          ],
+          "condition": [
+            {
+              "value": "injured",
+              "confidence": 1.0
+            }
+          ],
+          "function": [
+            {
+              "value": "hunting",
+              "confidence": 1.0
+            }
+          ]
+        }
+      },
+      {
+        "object_id": 1,
+        "attributes": {
+          "color": [
+            {
+              "value": "black",
+              "confidence": 1.0
+            },
+            {
+              "value": "white",
+              "confidence": 1.0
+            }
+          ],
+          "material": [],
+          "texture": [
+            {
+              "value": "smooth",
+              "confidence": 1.0
+            }
+          ],
+          "shape": [
+            {
+              "value": "elongated",
+              "confidence": 1.0
+            }
+          ],
+          "size": [
+            {
+              "value": "large",
+              "confidence": 1.0
+            }
+          ],
+          "state": [
+            {
+              "value": "dead",
+              "confidence": 1.0
+            }
+          ],
+          "pattern": [
+            {
+              "value": "striped",
+              "confidence": 1.0
+            }
+          ],
+          "style": [
+            {
+              "value": "natural",
+              "confidence": 1.0
+            }
+          ],
+          "condition": [
+            {
+              "value": "dead",
+              "confidence": 1.0
+            }
+          ],
+          "function": []
+        }
+      }
+    ],
+    "intra_relations": [
+      {
+        "object_1": 0,
+        "object_2": 1,
+        "relation": "chasing",
+        "probability": 0.9
+      },
+      {
+        "object_1": 0,
+        "object_2": 1,
+        "relation": "near",
+        "probability": 0.9
+      },
+      {
+        "object_1": 0,
+        "object_2": 1,
+        "relation": "looking at",
+        "probability": 0.9
+      },
+      {
+        "object_1": 0,
+        "object_2": 1,
+        "relation": "hunting",
+        "probability": 0.9
+      }
+    ]
+  },
+  "image_b": {
+    "objects": [
+      {
+        "object_id": 0,
+        "label": "carnivore",
+        "bbox": [
+          320.3999938964844,
+          124.15499877929688,
+          668.4000244140625,
+          470.7209777832031
+        ],
+        "confidence": 0.95
+      }
+    ],
+    "attributes": [
+      {
+        "object_id": 0,
+        "attributes": {
+          "color": [
+            {
+              "value": "brown",
+              "confidence": 1.0
+            },
+            {
+              "value": "gray",
+              "confidence": 1.0
+            }
+          ],
+          "material": [],
+          "texture": [
+            {
+              "value": "furred",
+              "confidence": 1.0
+            }
+          ],
+          "shape": [
+            {
+              "value": "elongated",
+              "confidence": 1.0
+            }
+          ],
+          "size": [
+            {
+              "value": "small",
+              "confidence": 1.0
+            }
+          ],
+          "state": [
+            {
+              "value": "alive",
+              "confidence": 1.0
+            },
+            {
+              "value": "moving",
+              "confidence": 1.0
+            }
+          ],
+          "pattern": [
+            {
+              "value": "spotted",
+              "confidence": 1.0
+            }
+          ],
+          "style": [],
+          "condition": [
+            {
+              "value": "injured",
+              "confidence": 1.0
+            }
+          ],
+          "function": [
+            {
+              "value": "predatory",
+              "confidence": 1.0
+            }
+          ]
+        }
+      }
+    ],
+    "intra_relations": []
+  },
+  "inter_comparisons": [
+    {
+      "image_a_object_id": 0,
+      "image_b_object_id": 0,
+      "attribute": "size",
+      "value_a": "small",
+      "value_b": "small",
+      "confidence_a": 1.0,
+      "confidence_b": 1.0
+    },
+    {
+      "image_a_object_id": 0,
+      "image_b_object_id": 0,
+      "attribute": "color",
+      "value_a": "brown",
+      "value_b": "brown",
+      "confidence_a": 1.0,
+      "confidence_b": 1.0
+    },
+    {
+      "image_a_object_id": 0,
+      "image_b_object_id": 0,
+      "attribute": "state",
+      "value_a": "dead",
+      "value_b": "alive",
+      "confidence_a": 1.0,
+      "confidence_b": 1.0
+    },
+    {
+      "image_a_object_id": 0,
+      "image_b_object_id": 0,
+      "attribute": "state",
+      "value_a": "dead",
+      "value_b": "dirty",
+      "confidence_a": 1.0,
+      "confidence_b": 1.0
+    },
+    {
+      "image_a_object_id": 1,
+      "image_b_object_id": 0,
+      "attribute": "size",
+      "value_a": "small",
+      "value_b": "small",
+      "confidence_a": 1.0,
+      "confidence_b": 1.0
+    },
+    {
+      "image_a_object_id": 1,
+      "image_b_object_id": 0,
+      "attribute": "color",
+      "value_a": "black and white",
+      "value_b": "brown",
+      "confidence_a": 1.0,
+      "confidence_b": 1.0
+    },
+    {
+      "image_a_object_id": 1,
+      "image_b_object_id": 0,
+      "attribute": "state",
+      "value_a": "dead",
+      "value_b": "alive",
+      "confidence_a": 1.0,
+      "confidence_b": 1.0
+    },
+    {
+      "image_a_object_id": 1,
+      "image_b_object_id": 0,
+      "attribute": "state",
+      "value_a": "dead",
+      "value_b": "dirty",
+      "confidence_a": 1.0,
+      "confidence_b": 1.0
+    }
+  ],
+  "subqueries": [],
+  "problog": {
+    "facts": "",
+    "queries": "",
+    "results": []
+  },
+  "answer": {
+    "text": "",
+    "explanation": ""
+  }
+}

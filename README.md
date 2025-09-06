@@ -1,18 +1,65 @@
 # PROVE
-Programmatic Reasoning Over Visual Evidence
+**Programmatic Reasoning Over Visual Evidence**
 
-## Getting Started
-Set up conda environment for project
-- `conda create -n PROVE python=3.10`
+A research pipeline for comparative visual reasoning that combines computer vision models with probabilistic logical reasoning. The system answers comparative questions about two images by extracting visual evidence, generating probabilistic facts, and executing ProbLog queries.
 
-Activate conda environment
-- `conda activate PROVE`
+## Quick Start
 
-Download requirements
-- `pip install -r requirements.txt`
+### 1. Environment Setup
+```bash
+# Create and activate conda environment
+conda create -n PROVE python=3.10
+conda activate PROVE
 
-Deactivate conda environment
-- `conda deactivate`
+# Install all dependencies
+pip install -r requirements.txt
+```
+
+### 2. Run the Pipeline
+```bash
+python main.py
+```
+
+This will process the sample images in `./images/` and output results to `result.json`.
+
+### 3. View Results
+```bash
+# Pretty print the JSON results
+python -c "import json; print(json.dumps(json.load(open('result.json')), indent=2))"
+```
+
+## Pipeline Architecture
+
+The PROVE pipeline consists of 10 processing steps:
+
+1. **Object Detection** - Florence-2 detects objects with bounding boxes and confidence scores
+2. **Attribute Recognition** - Florence-2 dense captions → LLM parsing into 10 attribute categories
+3. **Intra-Relationship Questions** - LLM generates spatial/interaction questions for object pairs
+4. **Inter-Comparison Questions** - LLM generates cross-image comparison questions
+5. **Intra-Relationship Verification** - LLaVA verifies relationships using union crops with bounding boxes
+6. **Inter-Comparison Verification** - LLaVA extracts attribute values for cross-image comparisons
+7. **Subquery Planning** - LLM decomposes main question into answerable sub-questions
+8. **ProbLog Fact Generation** - Convert evidence to NAVER-style probabilistic facts
+9. **ProbLog Query Execution** - Execute probabilistic queries and collect proof traces
+10. **Answer Generation** - Synthesize final answer with evidence-based explanation
+
+## Key Features
+
+- **Memory Efficient**: ModelManager singleton ensures only one instance of each model
+- **Schema Compliant**: Exact JSON output matching research specifications
+- **Probabilistic Reasoning**: ProbLog integration for uncertainty handling
+- **Modular Architecture**: Clean, testable components suitable for publication
+
+## Environment Management
+
+### Main Environment (PROVE)
+```bash
+# Activate for development and running
+conda activate PROVE
+
+# Deactivate when done
+conda deactivate
+```
 
 Set up conda environment for deepseek vl2
 - `conda create -n DEEPSEEK_VL2_ENV python=3.10`

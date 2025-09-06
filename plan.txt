@@ -1,26 +1,692 @@
-Image A, Image B   ──►  (1) CV & VLM extraction
-                         • objects, attrs
-                         • candidate relations
-                         • global scene descriptors
+# PROVE Pipeline Implementation Plan
+# Programmatic Reasoning Over Visual Evidence
+# Claude Code Step-by-Step Implementation Guide
 
-                     ──►  (2) LLM consolidation
-                         • choose salient attrs/relations
-                         • enrich with commonsense (e.g. "heavy ⇒ strenuous")
+## OVERVIEW
+Build a minimal end-to-end pipeline that answers comparative questions for two images by:
+1. Collecting image evidence (objects, attributes, intra relations, inter comparisons)
+2. Converting evidence into probabilistic facts
+3. Running ProbLog queries
+4. Returning open-ended answer + short explanation
 
-                     ──►  (3) KB builder
-                         • Encode facts in Problog
-                         • Import reusable rules: stronger/cleaner/smarter…
+═══════════════════════════════════════════════════════════════════════════════
 
-Multiple-choice options
-   ┌────────┐
-A) │ text   │
-B) │ text   │ ──► (4) Option-to-logic
-C) │ text   │     • LLM maps each answer string → FOL hypothesis ϕ_i
-D) │ text   │
-   └────────┘
-                     ──►  (5) Problog inference
-                         • For each ϕ_i compute P(KB ⊨ ϕ_i)
+## STEP 1: CORE INFRASTRUCTURE FOUNDATION
+**Goal**: Create the foundational classes that all other components will use
 
-                     ──►  (6) Selection & explanation
-                         • pick argmax P
-                         • surface proof steps for paper figs
+### 1A: Create Core Directory Structure
+```bash
+mkdir -p src/core src/reasoning src/prompts tests
+```
+
+### 1B: Install Required Dependencies
+```bash
+pip install problog pydantic pytest
+```
+
+### 1C: Create Type Definitions (src/core/types.py)
+**Purpose**: Define all data structures with proper typing
+**Files to create**: 1 new file
+**Dependencies**: None
+
+```python
+from typing import List, Dict, Any, Optional, Union
+from dataclasses import dataclass
+from enum import Enum
+
+@dataclass
+class ObjectDetection:
+    object_id: int
+    label: str
+    bbox: List[float]  # [x1, y1, x2, y2]
+    confidence: float
+
+@dataclass 
+class AttributeData:
+    object_id: int
+    attributes: Dict[str, List[AttributeValue]]  # 10 categories with individual confidences
+
+@dataclass
+class IntraRelation:
+    object_1: int
+    object_2: int
+    relation: str  # Specific relationship (eating, near, above, etc.)
+    probability: float  # 0.9 for Yes, 0.1 for No
+
+@dataclass
+class InterComparison:
+    image_a_object_id: int
+    image_b_object_id: int
+    attribute: str  # The compared attribute (size, color, etc.)
+    value_a: str  # Attribute value in image A
+    value_b: str  # Attribute value in image B
+    confidence_a: float  # Confidence in value_a (1.0 for MVP)
+    confidence_b: float  # Confidence in value_b (1.0 for MVP)
+
+# Additional types for questions, ProbLog results, etc.
+```
+
+### 1D: Create ModelManager Singleton (src/core/model_manager.py)
+**Purpose**: Single instance management for all models (critical for memory)
+**Files to create**: 1 new file
+**Dependencies**: types.py, existing vision modules
+
+```python
+class ModelManager:
+    _instance = None
+    _models = {}
+    
+    def __new__(cls):
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+        return cls._instance
+    
+    def get_florence2(self):
+        # Lazy load Florence-2 once, return cached instance
+    
+    def get_llava(self):
+        # Lazy load LLaVA once, return cached instance
+        
+    def get_llm_client(self):
+        # Lazy load LLM client once, return cached instance
+        
+    def cleanup(self):
+        # Clean up GPU memory when done
+```
+
+### 1E: Create KnowledgeBase Structure (src/core/knowledge_base.py)
+**Purpose**: Central data structure with exact JSON schema compliance
+**Files to create**: 1 new file  
+**Dependencies**: types.py
+
+```python
+class KnowledgeBase:
+    def __init__(self, question: str):
+        self.question = question
+        self.image_a: Dict = {"objects": [], "attributes": [], "intra_relations": []}
+        self.image_b: Dict = {"objects": [], "attributes": [], "intra_relations": []}
+        self.inter_comparisons: List[InterComparison] = []
+        self.subqueries: List[str] = []
+        self.problog: Dict = {"facts": "", "queries": "", "results": []}
+        self.answer: Dict = {"text": "", "explanation": ""}
+    
+    def to_json(self) -> dict:
+        # Return exact JSON schema from build brief
+        
+    def add_objects(self, image_id: str, objects: List[ObjectDetection]):
+        # Add objects to appropriate image
+        
+    def add_attributes(self, image_id: str, attributes: List[AttributeData]):
+        # Add attributes to appropriate image
+```
+
+**DELIVERABLE**: After Step 1, we have the foundational infrastructure ready for all components to use.
+
+═══════════════════════════════════════════════════════════════════════════════
+
+## STEP 2: ENHANCE EXISTING COMPONENTS
+**Goal**: Refactor existing working code to use ModelManager and produce exact JSON output
+
+### 2A: Refactor Object Detection (src/pipeline/detector.py)
+**Purpose**: Use ModelManager singleton and ensure exact output format
+**Files to modify**: 1 existing file
+**Dependencies**: ModelManager, types.py
+
+**Changes needed**:
+- Replace `self.florence2 = Florence2()` with `ModelManager().get_florence2()`
+- Ensure output matches ObjectDetection schema exactly
+- Add proper error handling and validation
+
+### 2B: Refactor Attribute Extraction (src/pipeline/attribute_extractor.py) 
+**Purpose**: Use ModelManager singleton with LLM candidate generation and 10-category compliance
+**Files to modify**: 1 existing file
+**Dependencies**: ModelManager, types.py
+
+**Changes needed**:
+- Use ModelManager for both Florence-2 and LLM client
+- Generate contextual attribute candidates using LLM reasoning
+- Use VLM verification for candidate filtering and value extraction
+- Enforce exact 10-category output format with AttributeValue objects
+- Individual confidence tracking per attribute value
+- Add JSON validation
+
+### 2C: Create Enhanced Prompt Templates (src/prompts/attribute_extraction.py)
+**Purpose**: Ensure strict JSON output for attribute extraction
+**Files to create**: 1 new file
+**Dependencies**: None
+
+```python
+ATTRIBUTE_EXTRACTION_PROMPT = """
+Extract attributes into the 10 categories; return strict JSON with arrays per category; no extra text; unknown → empty list; keep values short.
+
+Categories: color, material, texture, shape, size, state, pattern, style, condition, function
+
+Object: {object_label}
+Description: {description}
+
+Return only JSON:
+"""
+
+SYSTEM_MESSAGE = "You are an expert at analyzing objects and extracting structured attributes from descriptions."
+```
+
+**DELIVERABLE**: After Step 2, existing object detection and attribute extraction work with ModelManager and produce compliant output.
+
+═══════════════════════════════════════════════════════════════════════════════
+
+## STEP 3: IMPLEMENT QUESTION GENERATION
+**Goal**: Create LLM-based question generation for intra-relationships and inter-comparisons
+
+### 3A: Create Intra-Relationship Question Generator (src/pipeline/intra_question_generator.py)
+**Purpose**: Generate relation candidates and questions for object pairs within an image using LLM reasoning
+**Files to create**: 1 new file
+**Dependencies**: ModelManager, types.py
+
+```python
+class IntraQuestionGenerator:
+    def __init__(self):
+        self.llm_client = ModelManager().get_llm_client()
+    
+    def generate_relation_candidates(self, ultimate_question: str, objects: List[ObjectDetection]) -> Dict[tuple, List[str]]:
+        # Use LLM to generate contextual relation candidates for each object pair
+        # Return mapping from (obj1_id, obj2_id) to list of potential relations
+    
+    def generate_questions(self, ultimate_question: str, objects: List[ObjectDetection]) -> List[Dict]:
+        # Use LLM to generate intra-relationship questions (backward compatibility)
+        # Return exact JSON schema from build brief
+```
+
+### 3B: Create Inter-Comparison Question Generator (src/pipeline/inter_question_generator.py)
+**Purpose**: Generate cross-image comparison questions  
+**Files to create**: 1 new file
+**Dependencies**: ModelManager, types.py
+
+```python
+class InterQuestionGenerator:
+    def __init__(self):
+        self.llm_client = ModelManager().get_llm_client()
+        
+    def generate_questions(self, ultimate_question: str, objects_a: List[ObjectDetection], 
+                          objects_b: List[ObjectDetection]) -> List[Dict]:
+        # Use LLM to generate inter-comparison questions
+        # Return exact JSON schema from build brief
+```
+
+### 3C: Create Question Generation Prompts (src/prompts/question_generation.py)
+**Purpose**: Structured prompts for consistent question generation
+**Files to create**: 1 new file
+**Dependencies**: None
+
+```python
+INTRA_QUESTION_PROMPT = """
+Given (question, objects for one image), list every useful pairwise relationship question that would help answer the comparative question; return JSON list with object_ids:[s,o] and question (short). No limits on count; use only provided IDs.
+
+Main question: {question}
+Objects: {objects}
+
+Return strict JSON only:
+"""
+
+INTER_QUESTION_PROMPT = """
+Given (question, objects for image A and B), list all useful cross-image comparisons and which attribute(s) must be compared; return JSON with exact schema.
+
+Main question: {question}
+Image A objects: {objects_a}  
+Image B objects: {objects_b}
+
+Return strict JSON only:
+"""
+```
+
+**DELIVERABLE**: After Step 3, we can generate structured questions for both intra-relationships and inter-comparisons.
+
+═══════════════════════════════════════════════════════════════════════════════
+
+## STEP 4: IMPLEMENT IMAGE PROCESSING UTILITIES
+**Goal**: Create union-crop and annotation functionality for LLaVA verification
+
+### 4A: Create Image Processing Utilities (src/vision/image_utils.py)
+**Purpose**: Union crops, bounding box overlays, batch processing
+**Files to create**: 1 new file
+**Dependencies**: PIL, numpy
+
+```python
+from PIL import Image, ImageDraw
+from typing import List, Tuple
+import numpy as np
+
+def union_crop(image: Image.Image, bbox_list: List[List[float]], 
+               padding: int = 10) -> Image.Image:
+    """Create union crop of multiple bounding boxes."""
+    # Calculate union of all bounding boxes
+    # Add padding while staying within image bounds
+    # Crop and return
+
+def draw_bounding_boxes(image: Image.Image, subject_bbox: List[float], 
+                       object_bbox: List[float]) -> Image.Image:
+    """Draw red rectangle around subject, yellow around object."""
+    # Draw colored rectangles for relationship visualization
+    
+def batch_crop_objects(image: Image.Image, objects: List[ObjectDetection]) -> List[Image.Image]:
+    """Efficiently crop multiple objects from same image."""
+    # Batch crop for performance
+    
+def blackout_outside_union(image: Image.Image, bbox_list: List[List[float]]) -> Image.Image:
+    """Black out content outside the union of bounding boxes."""
+    # Create mask and apply blackout
+```
+
+### 4B: Test Image Processing Functions (tests/test_image_utils.py)
+**Purpose**: Ensure image processing works correctly
+**Files to create**: 1 new file
+**Dependencies**: pytest, image_utils.py
+
+**DELIVERABLE**: After Step 4, we have robust image processing capabilities for LLaVA verification.
+
+═══════════════════════════════════════════════════════════════════════════════
+
+## STEP 5: IMPLEMENT LLAVA VERIFICATION ENGINE
+**Goal**: Use LLaVA to verify relationships and comparisons with proper image crops
+
+### 5A: Create LLaVA Verifier (src/pipeline/llava_verifier.py)
+**Purpose**: Verify LLM-generated candidates using LLaVA with binary verification
+**Files to create**: 1 new file
+**Dependencies**: ModelManager, image_utils.py, types.py
+
+```python
+class LlavaVerifier:
+    def __init__(self):
+        self.llava = ModelManager().get_llava()
+        
+    def verify_intra_relations(self, image_path: str, objects: List[ObjectDetection], 
+                              relation_candidates: Dict[tuple, List[str]]) -> List[IntraRelation]:
+        # For each relation candidate:
+        # 1. Create union crop of object pair with bounding boxes
+        # 2. Ask binary question: "Is object 1 [relation] object 2?"
+        # 3. Map Yes/No to probability (Yes→0.9, No→0.1)
+        # 4. Return IntraRelation with specific relation field
+        
+    def verify_inter_comparisons(self, image_a_path: str, image_b_path: str,
+                                objects_a: List[ObjectDetection], objects_b: List[ObjectDetection],
+                                questions: List[InterQuestion]) -> List[InterComparison]:
+        # For each question:
+        # 1. Crop individual objects from both images
+        # 2. Ask LLaVA for specific attribute values
+        # 3. Store individual values with confidence_a and confidence_b
+        # 4. Return InterComparison with attribute values (no comparison field)
+```
+
+### 5B: Create Verification Prompts (src/prompts/verification_prompts.py)
+**Purpose**: Structured prompts for LLaVA verification
+**Files to create**: 1 new file  
+**Dependencies**: None
+
+```python
+INTRA_RELATION_PROMPT = """
+Look at this image showing two objects highlighted with colored rectangles (red for subject, yellow for object). 
+
+Question: {question}
+
+Answer with Yes, No, or a short predicate phrase describing their relationship.
+"""
+
+INTER_COMPARISON_PROMPT = """
+Look at this object and describe its {attribute}. Be specific and concise.
+"""
+```
+
+**DELIVERABLE**: After Step 5, we can verify relationships and comparisons using LLaVA with proper visual context.
+
+═══════════════════════════════════════════════════════════════════════════════
+
+## STEP 6: IMPLEMENT PROBLOG REASONING ENGINE  
+**Goal**: Convert evidence to ProbLog facts and execute probabilistic queries
+
+### 6A: Create ProbLog Fact Generator (src/reasoning/problog_engine.py)
+**Purpose**: Convert structured evidence to NAVER-style ProbLog facts
+**Files to create**: 1 new file
+**Dependencies**: problog, types.py
+
+```python
+from problog.program import PrologString
+from problog import get_evaluatable
+
+class ProbLogEngine:
+    def generate_facts(self, kb: KnowledgeBase) -> str:
+        """Convert KB evidence to ProbLog facts."""
+        facts = []
+        
+        # Objects: p::obj(img, oid, label).
+        for img_id, img_data in [("a", kb.image_a), ("b", kb.image_b)]:
+            for obj in img_data["objects"]:
+                facts.append(f"{obj.confidence}::obj({img_id}, {obj.object_id}, {obj.label}).")
+        
+        # Attributes: 1.0::has_attr(img, oid, name, value).
+        # Intra relations: p::rel(img, predicate, subj_oid, obj_oid).
+        # Inter comparisons: p::comp(predicate, imgA, oidA, imgB, oidB, valueA, valueB).
+        
+        return "\n".join(facts)
+    
+    def execute_queries(self, facts: str, queries: List[str]) -> List[Dict]:
+        """Execute ProbLog queries and return results with probabilities."""
+        # Use ProbLog to run inference
+        # Return query results with probabilities
+```
+
+### 6B: Create Subquery Planner (src/reasoning/subquery_planner.py)
+**Purpose**: Break main question into answerable sub-questions
+**Files to create**: 1 new file
+**Dependencies**: ModelManager, types.py
+
+```python
+class SubqueryPlanner:
+    def __init__(self):
+        self.llm_client = ModelManager().get_llm_client()
+    
+    def generate_subqueries(self, kb: KnowledgeBase) -> List[str]:
+        """Generate minimal subqueries needed to answer main question."""
+        # Use LLM to decompose main question
+        # Only reference available facts in KB
+        # Keep subqueries textual (next step converts to ProbLog)
+        
+    def subqueries_to_problog(self, subqueries: List[str]) -> List[str]:
+        """Convert textual subqueries to ProbLog queries."""
+        # Use LLM to translate subqueries to ProbLog syntax
+        # Only use obj/3, has_attr/4, rel/4, comp/7 predicates
+```
+
+### 6C: Create ProbLog Prompts (src/prompts/problog_generation.py)
+**Purpose**: Structured prompts for ProbLog conversion
+**Files to create**: 1 new file
+**Dependencies**: None
+
+**DELIVERABLE**: After Step 6, we can convert evidence to ProbLog facts and execute probabilistic reasoning.
+
+═══════════════════════════════════════════════════════════════════════════════
+
+## STEP 7: CREATE EVIDENCE COLLECTOR ORCHESTRATOR
+**Goal**: Coordinate all evidence collection components efficiently
+
+### 7A: Create Evidence Collector (src/pipeline/evidence_collector.py)
+**Purpose**: Orchestrate all evidence collection steps (Phases 1-6 from build brief)
+**Files to create**: 1 new file
+**Dependencies**: All previous components
+
+```python
+class EvidenceCollector:
+    def __init__(self):
+        self.model_manager = ModelManager()
+        self.detector = Detector()  # Enhanced version from Step 2A
+        self.attribute_extractor = AttributeExtractor()  # Enhanced version from Step 2B
+        self.intra_question_gen = IntraQuestionGenerator()
+        self.inter_question_gen = InterQuestionGenerator()
+        self.llava_verifier = LlavaVerifier()
+    
+    def collect_evidence(self, kb: KnowledgeBase, image_a_path: str, 
+                        image_b_path: str) -> KnowledgeBase:
+        """Run complete evidence collection pipeline."""
+        
+        # Phase 1: Object detection for both images
+        # Phase 2: Attribute recognition for all objects
+        # Phase 3: Generate intra-relationship questions
+        # Phase 4: Generate inter-comparison questions  
+        # Phase 5: Verify intra-relationships with LLaVA
+        # Phase 6: Verify inter-comparisons with LLaVA
+        
+        return kb
+```
+
+**DELIVERABLE**: After Step 7, we have complete evidence collection from both images.
+
+═══════════════════════════════════════════════════════════════════════════════
+
+## STEP 8: CREATE REASONING ENGINE ORCHESTRATOR
+**Goal**: Coordinate subquery planning, ProbLog execution, and answer generation
+
+### 8A: Create Reasoning Engine (src/pipeline/reasoning_engine.py)  
+**Purpose**: Orchestrate probabilistic reasoning (Phases 7-10 from build brief)
+**Files to create**: 1 new file
+**Dependencies**: ProbLogEngine, SubqueryPlanner
+
+```python
+class ReasoningEngine:
+    def __init__(self):
+        self.subquery_planner = SubqueryPlanner()
+        self.problog_engine = ProbLogEngine()
+        self.llm_client = ModelManager().get_llm_client()
+        
+    def generate_answer(self, kb: KnowledgeBase) -> KnowledgeBase:
+        """Run complete reasoning pipeline."""
+        
+        # Phase 7: Generate subqueries from evidence + main question
+        kb.subqueries = self.subquery_planner.generate_subqueries(kb)
+        
+        # Phase 8: Convert evidence to ProbLog facts
+        kb.problog["facts"] = self.problog_engine.generate_facts(kb)
+        
+        # Phase 9: Convert subqueries to ProbLog queries
+        problog_queries = self.subquery_planner.subqueries_to_problog(kb.subqueries)
+        kb.problog["queries"] = "\n".join(problog_queries)
+        
+        # Phase 10: Execute ProbLog inference + generate explanation
+        kb.problog["results"] = self.problog_engine.execute_queries(
+            kb.problog["facts"], problog_queries)
+        kb.answer = self._generate_final_answer(kb)
+        
+        return kb
+        
+    def _generate_final_answer(self, kb: KnowledgeBase) -> Dict:
+        """Generate open-ended answer + explanation from ProbLog results."""
+        # Use LLM to synthesize final answer
+        # Quote top contributing facts with probabilities
+        # Provide reasoning trace
+```
+
+**DELIVERABLE**: After Step 8, we have complete probabilistic reasoning and answer generation.
+
+═══════════════════════════════════════════════════════════════════════════════
+
+## STEP 9: CREATE MAIN PROVE PIPELINE
+**Goal**: Create the main end-to-end pipeline that ties everything together
+
+### 9A: Create Main Pipeline (src/pipeline/prove_pipeline.py)
+**Purpose**: End-to-end pipeline orchestration  
+**Files to create**: 1 new file
+**Dependencies**: EvidenceCollector, ReasoningEngine, KnowledgeBase
+
+```python
+class PROVEPipeline:
+    """Main PROVE pipeline for comparative visual reasoning."""
+    
+    def __init__(self):
+        self.evidence_collector = EvidenceCollector()
+        self.reasoning_engine = ReasoningEngine()
+        
+    def run(self, image_a_path: str, image_b_path: str, question: str) -> KnowledgeBase:
+        """Run complete PROVE pipeline."""
+        
+        # Initialize knowledge base
+        kb = KnowledgeBase(question)
+        
+        # Collect evidence from both images
+        kb = self.evidence_collector.collect_evidence(kb, image_a_path, image_b_path)
+        
+        # Generate probabilistic reasoning and answer
+        kb = self.reasoning_engine.generate_answer(kb)
+        
+        return kb
+    
+    def run_and_save(self, image_a_path: str, image_b_path: str, 
+                     question: str, output_path: str) -> Dict:
+        """Run pipeline and save results to JSON."""
+        kb = self.run(image_a_path, image_b_path, question)
+        result_json = kb.to_json()
+        
+        with open(output_path, 'w') as f:
+            json.dump(result_json, f, indent=2)
+            
+        return result_json
+```
+
+### 9B: Update Main Entry Point (main.py)
+**Purpose**: Replace existing orchestrator with new PROVE pipeline
+**Files to modify**: 1 existing file
+**Dependencies**: PROVEPipeline
+
+```python
+from src.pipeline.prove_pipeline import PROVEPipeline
+
+if __name__ == "__main__":
+    pipeline = PROVEPipeline()
+    result = pipeline.run_and_save(
+        image_a_path="./images/dev-473-3-img0.png",
+        image_b_path="./images/dev-473-3-img1.png", 
+        question="What is uniquely similar about these two images?",
+        output_path="./result.json"
+    )
+    
+    print("Pipeline completed successfully!")
+    print(f"Answer: {result['answer']['text']}")
+    print(f"Explanation: {result['answer']['explanation']}")
+```
+
+**DELIVERABLE**: After Step 9, we have a complete end-to-end PROVE pipeline ready for testing.
+
+═══════════════════════════════════════════════════════════════════════════════
+
+## STEP 10: TESTING AND VALIDATION
+**Goal**: Ensure pipeline works correctly and produces compliant output
+
+### 10A: Create Basic Tests (tests/test_basic.py)
+**Purpose**: Test core functionality
+**Files to create**: 1 new file
+**Dependencies**: pytest, all pipeline components
+
+```python
+def test_model_manager_singleton():
+    """Test that ModelManager is truly singleton."""
+    
+def test_knowledge_base_json_schema():
+    """Test KB produces exact JSON schema from build brief."""
+    
+def test_pipeline_end_to_end():
+    """Test complete pipeline with sample images."""
+```
+
+### 10B: Run Pipeline Validation
+**Purpose**: Verify acceptance criteria are met
+**Commands to run**:
+
+```bash
+# Run the pipeline
+python main.py
+
+# Validate JSON output schema
+python -c "
+import json
+with open('result.json', 'r') as f:
+    result = json.load(f)
+    
+# Check required fields exist
+assert 'question' in result
+assert 'image_a' in result
+assert 'image_b' in result  
+assert 'inter_comparisons' in result
+assert 'subqueries' in result
+assert 'problog' in result
+assert 'answer' in result
+
+print('✓ JSON schema validation passed')
+"
+
+# Run tests
+pytest tests/ -v
+```
+
+### 10C: Performance Validation  
+**Purpose**: Ensure memory efficiency and performance targets
+**Files to create**: tests/test_performance.py
+
+```python
+def test_memory_usage():
+    """Test that pipeline uses <8GB GPU memory."""
+    
+def test_single_model_instances():
+    """Test that only one instance of each model exists."""
+    
+def test_processing_time():
+    """Test that pipeline completes in <5 minutes."""
+```
+
+**DELIVERABLE**: After Step 10, we have a fully validated, tested PROVE pipeline that meets all acceptance criteria.
+
+═══════════════════════════════════════════════════════════════════════════════
+
+## SUCCESS CRITERIA FOR EACH STEP
+
+### Step 1 Complete When:
+✓ ModelManager singleton works correctly
+✓ KnowledgeBase has exact JSON schema from build brief
+✓ All type definitions are properly structured
+
+### Step 2 Complete When:  
+✓ Existing object detection uses ModelManager
+✓ Existing attribute extraction uses ModelManager
+✓ Both produce exact JSON output format
+
+### Step 3 Complete When:
+✓ Intra-question generator produces valid JSON
+✓ Inter-question generator produces valid JSON  
+✓ Questions are relevant to comparative reasoning
+
+### Step 4 Complete When:
+✓ Union crop function works correctly
+✓ Bounding box annotation works correctly
+✓ Image processing is efficient and reliable
+
+### Step 5 Complete When:
+✓ LLaVA verification works with union crops
+✓ Probability mapping works (Yes→0.9, No→0.1, other→0.5)
+✓ Inter-comparison verification extracts attributes correctly
+
+### Step 6 Complete When:
+✓ ProbLog facts generated in NAVER style
+✓ Subqueries converted to valid ProbLog queries
+✓ ProbLog inference runs successfully
+
+### Step 7 Complete When:
+✓ Evidence collector coordinates all components
+✓ Batch processing works efficiently
+✓ Error handling is robust
+
+### Step 8 Complete When:
+✓ Reasoning engine generates meaningful subqueries
+✓ ProbLog execution produces valid probabilities
+✓ Final answer includes evidence-based explanation
+
+### Step 9 Complete When:
+✓ End-to-end pipeline runs without errors
+✓ JSON output matches exact build brief schema
+✓ Processing completes in reasonable time
+
+### Step 10 Complete When:
+✓ All tests pass
+✓ Performance targets met
+✓ Memory usage under limits
+✓ Acceptance criteria validated
+
+═══════════════════════════════════════════════════════════════════════════════
+
+## IMPLEMENTATION APPROACH
+
+Each step builds on the previous ones and can be implemented incrementally. After each step, you can test that component independently before moving to the next step.
+
+**Key Principles**:
+1. **Incremental Development**: Each step produces working, testable code
+2. **Dependency Management**: Steps are ordered to minimize dependencies  
+3. **Memory Efficiency**: ModelManager singleton used throughout
+4. **Schema Compliance**: JSON output validation at every step
+5. **Error Handling**: Robust error handling and validation
+6. **Testing**: Test each component as it's built
+
+**Ready to Begin**: Start with Step 1A (creating directory structure) and proceed step by step through the implementation.
