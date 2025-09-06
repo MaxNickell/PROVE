@@ -404,8 +404,8 @@ Fill in arrays with relevant short attributes (1-2 words). Leave empty arrays fo
             # Crop object region
             object_crop = image.crop((crop_x1, crop_y1, crop_x2, crop_y2))
             
-            # Get dense caption for the cropped object
-            description = florence2.generate_caption(object_crop, task="<DETAILED_CAPTION>")
+            # Get detailed description for the cropped object
+            description = florence2.describe_region(object_crop, task="<MORE_DETAILED_CAPTION>")
             
             return description
             
@@ -500,58 +500,41 @@ Keep values short (1-2 words) and visually verifiable."""
                                            candidates: Dict[str, List[str]], save_crops: bool, 
                                            crop_dir: str) -> AttributeData:
         """
-        Use VLM to verify and extract attribute values from LLM candidates.
+        Use Qwen to extract unconstrained attribute values for LLM-determined categories.
         
         Args:
             image: PIL Image object
             obj: ObjectDetection instance
-            candidates: LLM-generated attribute candidates
-            save_crops: Whether to save crops
-            crop_dir: Directory for crops
+            candidates: LLM-determined relevant attribute categories (not constraining values)
+            save_crops: Whether to save crops (kept for compatibility, not used)
+            crop_dir: Directory for crops (kept for compatibility, not used)
             
         Returns:
-            AttributeData: Extracted attributes with individual confidences
+            AttributeData: Extracted attributes with individual confidences from Qwen logits
         """
         try:
-            # Get VLM client for verification
-            vlm_client = self.model_manager.get_vlm()
+            # Get Qwen VL client for unconstrained extraction
+            qwen_client = self.model_manager.get_qwen_vl()
             
-            # Crop object for VLM analysis
-            x1, y1, x2, y2 = obj.bbox
-            width, height = image.size
-            
-            # Add padding
-            padding = 20
-            crop_x1 = max(0, x1 - padding)
-            crop_y1 = max(0, y1 - padding)
-            crop_x2 = min(width, x2 + padding)
-            crop_y2 = min(height, y2 + padding)
-            
-            object_crop = image.crop((crop_x1, crop_y1, crop_x2, crop_y2))
-            
-            # Save crop if requested
-            if save_crops:
-                os.makedirs(crop_dir, exist_ok=True)
-                crop_filename = f"object_{obj.object_id}_{obj.label.replace(' ', '_')}.jpg"
-                crop_path = os.path.join(crop_dir, crop_filename)
-                object_crop.save(crop_path)
-            
-            # Extract values for each category with candidates
+            # Verify each LLM candidate using binary VLM questions
             final_attributes = {}
             
             for category in self.attribute_categories:
-                candidate_values = candidates.get(category, [])
-                
-                if not candidate_values:
+                # Check if LLM determined this category as relevant
+                if category in candidates and candidates[category]:
+                    # Verify each candidate value with binary questions
+                    verified_values = []
+                    for candidate_value in candidates[category]:
+                        attr_value = self._verify_attribute_value_binary(
+                            qwen_client, image, obj, category, candidate_value
+                        )
+                        if attr_value and attr_value.confidence > 0.6:  # Threshold for acceptance
+                            verified_values.append(attr_value)
+                    
+                    final_attributes[category] = verified_values
+                else:
+                    # Category not relevant according to LLM
                     final_attributes[category] = []
-                    continue
-                
-                # Use VLM to select and extract the most appropriate value
-                verified_values = self._verify_attribute_candidates(
-                    vlm_client, object_crop, obj.label, category, candidate_values
-                )
-                
-                final_attributes[category] = verified_values
             
             return AttributeData(
                 object_id=obj.object_id,
@@ -559,70 +542,57 @@ Keep values short (1-2 words) and visually verifiable."""
             )
             
         except Exception as e:
-            print(f"Warning: Failed to verify attributes for {obj.label}: {e}")
+            print(f"Warning: Failed to extract attributes for {obj.label}: {e}")
             # Return empty attributes for all categories
             empty_attrs = {category: [] for category in self.attribute_categories}
             return AttributeData(object_id=obj.object_id, attributes=empty_attrs)
     
-    def _verify_attribute_candidates(self, vlm_client, object_crop: Image.Image, 
-                                   object_label: str, category: str, 
-                                   candidates: List[str]) -> List[AttributeValue]:
+    def _verify_attribute_value_binary(self, qwen_client, image: Image.Image, 
+                                     obj: ObjectDetection, category: str, candidate_value: str) -> Optional[AttributeValue]:
         """
-        Use VLM to verify and select the best attribute values from LLM candidates.
+        Verify attribute value using binary Qwen question with direct logit confidence.
         
         Args:
-            vlm_client: VLM client instance
-            object_crop: Cropped object image
-            object_label: Label of the object
-            category: Attribute category (color, size, etc.)
-            candidates: List of candidate values
+            qwen_client: Qwen VL client instance
+            image: PIL Image object (full image, not cropped)
+            obj: ObjectDetection instance
+            category: Attribute category being verified
+            candidate_value: Specific value to verify (from LLM candidates)
             
         Returns:
-            List[AttributeValue]: Verified attribute values with confidences
+            Optional[AttributeValue]: Attribute value with logit confidence, or None if verification fails
         """
         try:
-            if not candidates:
-                return []
+            from src.vision.qwen_vl import convert_florence_to_qwen_bbox
             
-            # Create verification prompt
-            candidates_text = ", ".join(candidates)
-            prompt = f"""Look at this {object_label} and determine its {category}.
+            # Create binary verification prompt with bounding box
+            prompt = f"""Look at this object in the image:
+{convert_florence_to_qwen_bbox(obj.bbox)}{obj.label}
 
-Based on what you observe, which of these {category} values best describe this {object_label}?
-Candidates: {candidates_text}
+Is this {obj.label} {candidate_value}?
 
-Select the 1-2 most accurate values from the candidates. If none fit well, you can describe the {category} in your own words (1-2 words maximum).
-
-Answer with just the {category} value(s), separated by commas if multiple."""
-
-            response = vlm_client.run_inference(object_crop, prompt)
+Answer: Yes or No"""
             
-            # Parse response to extract values
-            response_clean = response.strip().lower()
+            # Get response with logits for probability extraction
+            response, logits = qwen_client.run_inference_with_logits(image, prompt)
             
-            # Extract values from response
-            extracted_values = []
+            # Extract confidence from model logits
+            confidence = qwen_client.extract_response_probability(logits)
             
-            # Check if response contains any candidates
-            for candidate in candidates:
-                if candidate.lower() in response_clean:
-                    extracted_values.append(AttributeValue(value=candidate, confidence=1.0))
+            # Determine if verification is positive
+            is_positive = response.lower().strip().startswith('yes')
             
-            # If no candidates found, use the response itself (cleaned)
-            if not extracted_values:
-                # Extract first 1-2 words from response
-                words = response_clean.replace(',', ' ').split()[:2]
-                if words:
-                    value = ' '.join(words)
-                    extracted_values.append(AttributeValue(value=value, confidence=1.0))
+            # Use confidence directly if positive, complement if negative
+            final_confidence = confidence if is_positive else (1.0 - confidence)
             
-            return extracted_values[:2]  # Limit to 2 values per category
+            # Only return if verification is positive (binary verification pattern)
+            if is_positive:
+                return AttributeValue(value=candidate_value, confidence=final_confidence)
+            else:
+                return None
             
         except Exception as e:
-            print(f"Warning: Failed to verify {category} candidates for {object_label}: {e}")
-            # Return first candidate as fallback
-            if candidates:
-                return [AttributeValue(value=candidates[0], confidence=1.0)]
-            return []
+            print(f"Warning: Failed to verify {category} value '{candidate_value}' for {obj.label}: {e}")
+            return None
 
 

@@ -32,65 +32,45 @@
           "color": [
             {
               "value": "brown",
-              "confidence": 1.0
+              "confidence": 0.8809468348821005
             }
           ],
           "material": [
             {
-              "value": "fur",
-              "confidence": 1.0
+              "value": "meat",
+              "confidence": 0.8617587288220724
             }
           ],
           "texture": [
             {
-              "value": "shaggy",
-              "confidence": 1.0
+              "value": "rough",
+              "confidence": 0.8432168960571289
             }
           ],
-          "shape": [
-            {
-              "value": "quadrupedal",
-              "confidence": 1.0
-            }
-          ],
-          "size": [
-            {
-              "value": "large",
-              "confidence": 1.0
-            }
-          ],
-          "state": [
-            {
-              "value": "alive",
-              "confidence": 1.0
-            },
-            {
-              "value": "moving",
-              "confidence": 1.0
-            }
-          ],
+          "shape": [],
+          "size": [],
+          "state": [],
           "pattern": [
             {
               "value": "spotted",
-              "confidence": 1.0
+              "confidence": 0.8525388439496359
             }
           ],
-          "style": [
-            {
-              "value": "wild",
-              "confidence": 1.0
-            }
-          ],
+          "style": [],
           "condition": [
             {
-              "value": "injured",
-              "confidence": 1.0
+              "value": "bloody",
+              "confidence": 0.8334200382232666
             }
           ],
           "function": [
             {
-              "value": "hunting",
-              "confidence": 1.0
+              "value": "scavenger",
+              "confidence": 0.8526605566342672
+            },
+            {
+              "value": "predator",
+              "confidence": 0.8954701026280721
             }
           ]
         }
@@ -98,57 +78,49 @@
       {
         "object_id": 1,
         "attributes": {
-          "color": [
+          "color": [],
+          "material": [
             {
-              "value": "black",
-              "confidence": 1.0
+              "value": "fur",
+              "confidence": 0.8783174157142639
             },
             {
-              "value": "white",
-              "confidence": 1.0
+              "value": "skin",
+              "confidence": 0.8970905542373657
             }
           ],
-          "material": [],
-          "texture": [
-            {
-              "value": "smooth",
-              "confidence": 1.0
-            }
-          ],
-          "shape": [
-            {
-              "value": "elongated",
-              "confidence": 1.0
-            }
-          ],
-          "size": [
-            {
-              "value": "large",
-              "confidence": 1.0
-            }
-          ],
+          "texture": [],
+          "shape": [],
+          "size": [],
           "state": [
             {
-              "value": "dead",
-              "confidence": 1.0
+              "value": "lying",
+              "confidence": 0.8670781850814819
+            },
+            {
+              "value": "injured",
+              "confidence": 0.6762724413591272
             }
           ],
           "pattern": [
             {
               "value": "striped",
-              "confidence": 1.0
-            }
-          ],
-          "style": [
+              "confidence": 0.8495283722877502
+            },
             {
-              "value": "natural",
-              "confidence": 1.0
+              "value": "blood-stained",
+              "confidence": 0.86141304175059
             }
           ],
+          "style": [],
           "condition": [
             {
-              "value": "dead",
-              "confidence": 1.0
+              "value": "injured",
+              "confidence": 0.6762724413591272
+            },
+            {
+              "value": "bloody",
+              "confidence": 0.8578150471051534
             }
           ],
           "function": []
@@ -160,25 +132,25 @@
         "object_1": 0,
         "object_2": 1,
         "relation": "chasing",
-        "probability": 0.9
+        "probability": 0.17025404903623798
       },
       {
         "object_1": 0,
         "object_2": 1,
         "relation": "near",
-        "probability": 0.9
+        "probability": 0.8952087223529815
       },
       {
         "object_1": 0,
         "object_2": 1,
         "relation": "looking at",
-        "probability": 0.9
+        "probability": 0.2224574584800464
       },
       {
         "object_1": 0,
         "object_2": 1,
         "relation": "hunting",
-        "probability": 0.9
+        "probability": 0.31491728141903874
       }
     ]
   },
@@ -203,59 +175,58 @@
           "color": [
             {
               "value": "brown",
-              "confidence": 1.0
+              "confidence": 0.8907677332560221
             },
             {
-              "value": "gray",
-              "confidence": 1.0
+              "value": "spotted",
+              "confidence": 0.8906019330024719
+            },
+            {
+              "value": "multicolored",
+              "confidence": 0.6974458893140157
             }
           ],
-          "material": [],
+          "material": [
+            {
+              "value": "bone",
+              "confidence": 0.7967924873034159
+            },
+            {
+              "value": "meat",
+              "confidence": 0.8690772652626038
+            }
+          ],
           "texture": [
             {
-              "value": "furred",
-              "confidence": 1.0
+              "value": "rough",
+              "confidence": 0.7916594743728638
             }
           ],
-          "shape": [
-            {
-              "value": "elongated",
-              "confidence": 1.0
-            }
-          ],
+          "shape": [],
           "size": [
             {
-              "value": "small",
-              "confidence": 1.0
+              "value": "medium",
+              "confidence": 0.7734845081965128
             }
           ],
-          "state": [
-            {
-              "value": "alive",
-              "confidence": 1.0
-            },
-            {
-              "value": "moving",
-              "confidence": 1.0
-            }
-          ],
+          "state": [],
           "pattern": [
             {
               "value": "spotted",
-              "confidence": 1.0
+              "confidence": 0.8906019330024719
             }
           ],
           "style": [],
           "condition": [
             {
-              "value": "injured",
-              "confidence": 1.0
+              "value": "alert",
+              "confidence": 0.8385087251663208
             }
           ],
           "function": [
             {
-              "value": "predatory",
-              "confidence": 1.0
+              "value": "feeding",
+              "confidence": 0.9364471038182577
             }
           ]
         }
@@ -268,10 +239,10 @@
       "image_a_object_id": 0,
       "image_b_object_id": 0,
       "attribute": "size",
-      "value_a": "small",
-      "value_b": "small",
-      "confidence_a": 1.0,
-      "confidence_b": 1.0
+      "value_a": "unknown",
+      "value_b": "medium",
+      "confidence_a": 0.0,
+      "confidence_b": 0.7734845081965128
     },
     {
       "image_a_object_id": 0,
@@ -279,62 +250,62 @@
       "attribute": "color",
       "value_a": "brown",
       "value_b": "brown",
-      "confidence_a": 1.0,
-      "confidence_b": 1.0
+      "confidence_a": 0.8809468348821005,
+      "confidence_b": 0.8907677332560221
     },
     {
       "image_a_object_id": 0,
       "image_b_object_id": 0,
-      "attribute": "state",
-      "value_a": "dead",
-      "value_b": "alive",
-      "confidence_a": 1.0,
-      "confidence_b": 1.0
+      "attribute": "pattern",
+      "value_a": "brown",
+      "value_b": "brown spots",
+      "confidence_a": 0.8809468348821005,
+      "confidence_b": 0.9266858895619711
     },
     {
       "image_a_object_id": 0,
       "image_b_object_id": 0,
-      "attribute": "state",
-      "value_a": "dead",
-      "value_b": "dirty",
-      "confidence_a": 1.0,
-      "confidence_b": 1.0
+      "attribute": "texture",
+      "value_a": "spotted",
+      "value_b": "brown",
+      "confidence_a": 0.8525388439496359,
+      "confidence_b": 0.8907677332560221
     },
     {
       "image_a_object_id": 1,
       "image_b_object_id": 0,
-      "attribute": "size",
-      "value_a": "small",
-      "value_b": "small",
-      "confidence_a": 1.0,
-      "confidence_b": 1.0
+      "attribute": "pattern",
+      "value_a": "white stripes",
+      "value_b": "brown spots",
+      "confidence_a": 0.9315143624941508,
+      "confidence_b": 0.9266858895619711
+    },
+    {
+      "image_a_object_id": 1,
+      "image_b_object_id": 0,
+      "attribute": "texture",
+      "value_a": "bloody",
+      "value_b": "brown spots",
+      "confidence_a": 0.8578150471051534,
+      "confidence_b": 0.9266858895619711
+    },
+    {
+      "image_a_object_id": 1,
+      "image_b_object_id": 0,
+      "attribute": "shape",
+      "value_a": "sideways",
+      "value_b": "spotted",
+      "confidence_a": 0.8906493584314982,
+      "confidence_b": 0.8906019330024719
     },
     {
       "image_a_object_id": 1,
       "image_b_object_id": 0,
       "attribute": "color",
-      "value_a": "black and white",
+      "value_a": "bloody",
       "value_b": "brown",
-      "confidence_a": 1.0,
-      "confidence_b": 1.0
-    },
-    {
-      "image_a_object_id": 1,
-      "image_b_object_id": 0,
-      "attribute": "state",
-      "value_a": "dead",
-      "value_b": "alive",
-      "confidence_a": 1.0,
-      "confidence_b": 1.0
-    },
-    {
-      "image_a_object_id": 1,
-      "image_b_object_id": 0,
-      "attribute": "state",
-      "value_a": "dead",
-      "value_b": "dirty",
-      "confidence_a": 1.0,
-      "confidence_b": 1.0
+      "confidence_a": 0.8578150471051534,
+      "confidence_b": 0.8907677332560221
     }
   ],
   "subqueries": [],

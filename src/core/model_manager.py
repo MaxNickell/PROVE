@@ -8,9 +8,8 @@ from typing import Optional, Dict, Any
 import torch
 
 from src.vision.florence2 import Florence2
-from src.vision.llava import Llava
+from src.vision.qwen_vl import QwenVL
 from src.language.llm_client import LLMClient
-from src.core.vlm_interface import VLMInterface, VLMRegistry, DEFAULT_VLM_PROVIDER
 
 
 class ModelManager:
@@ -19,7 +18,6 @@ class ModelManager:
     _instance: Optional['ModelManager'] = None
     _lock = threading.Lock()
     _models: Dict[str, Any] = {}
-    _vlm_provider: str = DEFAULT_VLM_PROVIDER
     
     def __new__(cls) -> 'ModelManager':
         """Ensure only one instance exists (thread-safe singleton pattern)."""
@@ -50,69 +48,18 @@ class ModelManager:
             print("Florence-2 model loaded successfully.")
         return self._models['florence2']
     
-    def get_llava(self) -> Llava:
+    def get_qwen_vl(self) -> QwenVL:
         """
-        Get LLaVA model instance (lazy loaded).
+        Get Qwen VL model instance (lazy loaded).
         
         Returns:
-            Llava: The LLaVA model instance
-            
-        Deprecated: Use get_vlm() instead for VLM abstraction
+            QwenVL: The Qwen 2.5-VL-7B model instance
         """
-        if 'llava' not in self._models:
-            print("Loading LLaVA model...")
-            self._models['llava'] = Llava()
-            print("LLaVA model loaded successfully.")
-        return self._models['llava']
-    
-    def get_vlm(self) -> VLMInterface:
-        """
-        Get VLM model instance (lazy loaded, supports multiple providers).
-        
-        Returns:
-            VLMInterface: The VLM model instance
-        """
-        vlm_key = f"vlm_{self._vlm_provider}"
-        
-        if vlm_key not in self._models:
-            print(f"Loading {self._vlm_provider} VLM model...")
-            self._models[vlm_key] = VLMRegistry.create_provider(self._vlm_provider)
-            print(f"{self._vlm_provider} VLM model loaded successfully.")
-        
-        return self._models[vlm_key]
-    
-    def set_vlm_provider(self, provider: str) -> None:
-        """
-        Set the VLM provider (e.g., 'llava', 'gpt4v', 'claude').
-        
-        Args:
-            provider: Name of the VLM provider
-            
-        Raises:
-            ValueError: If provider is not registered
-        """
-        if provider not in VLMRegistry.list_providers():
-            available = ", ".join(VLMRegistry.list_providers())
-            raise ValueError(f"VLM provider '{provider}' not available. Available: {available}")
-        
-        # Clear existing VLM if different provider
-        if provider != self._vlm_provider:
-            old_key = f"vlm_{self._vlm_provider}"
-            if old_key in self._models:
-                del self._models[old_key]
-                print(f"Cleared previous VLM provider: {self._vlm_provider}")
-            
-            self._vlm_provider = provider
-            print(f"VLM provider set to: {provider}")
-    
-    def get_vlm_provider(self) -> str:
-        """
-        Get the current VLM provider name.
-        
-        Returns:
-            str: Current VLM provider name
-        """
-        return self._vlm_provider
+        if 'qwen_vl' not in self._models:
+            print("Loading Qwen 2.5-VL-7B model...")
+            self._models['qwen_vl'] = QwenVL()
+            print("Qwen VL model loaded successfully.")
+        return self._models['qwen_vl']
         
     def get_llm_client(self) -> LLMClient:
         """
@@ -132,7 +79,7 @@ class ModelManager:
         Check if a specific model is loaded.
         
         Args:
-            model_name: Name of the model ('florence2', 'llava', 'llm_client')
+            model_name: Name of the model ('florence2', 'qwen_vl', 'llm_client')
             
         Returns:
             bool: True if model is loaded, False otherwise

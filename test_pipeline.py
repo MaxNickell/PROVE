@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-PROVE pipeline test - Steps 1-5: Object detection through VLM verification.
-Tests the complete evidence collection pipeline with real models and VLM abstraction.
+PROVE pipeline test - Steps 1-5: Object detection through Qwen verification.
+Tests the complete evidence collection pipeline with Qwen 2.5-VL-7B integration.
 """
 
 import sys
@@ -12,7 +12,7 @@ from src.pipeline.detector import Detector
 from src.pipeline.attribute_extractor import AttributeExtractor
 from src.pipeline.intra_question_generator import IntraQuestionGenerator
 from src.pipeline.inter_question_generator import InterQuestionGenerator
-from src.pipeline.vlm_verifier import VLMVerifier
+from src.pipeline.qwen_verifier import QwenVerifier
 from src.core.knowledge_base import KnowledgeBase
 
 def main():
@@ -26,7 +26,7 @@ def main():
     extractor = AttributeExtractor()
     intra_generator = IntraQuestionGenerator()
     inter_generator = InterQuestionGenerator()
-    verifier = VLMVerifier()
+    verifier = QwenVerifier()
     kb = KnowledgeBase("What is uniquely similar about these images?")
     print("✓ All components initialized with ModelManager singleton")
     
@@ -124,8 +124,8 @@ def main():
             obj_b = next(obj for obj in all_objects['b'] if obj.object_id == obj_b_id)
             print(f"    - {obj_a.label}-{obj_b.label}: {', '.join(attributes[:3])}")
     
-    # Step 5: VLM verification with LLM-generated candidates
-    print("\nStep 5: Verifying LLM candidates with VLM...")
+    # Step 5: Qwen verification with LLM-generated candidates
+    print("\nStep 5: Verifying LLM candidates with Qwen VL...")
     
     # Verify intra-relationships using new LLM-driven approach
     for image_id, objects in all_objects.items():
@@ -133,7 +133,7 @@ def main():
         if relation_candidates and len(objects) >= 2:
             image_path = image_paths[0 if image_id == 'a' else 1]
             
-            # Use NEW method with LLM candidates
+            # Use Qwen with LLM candidates and full image context
             intra_results = verifier.verify_intra_relations(
                 image_path, objects, relation_candidates
             )
@@ -149,17 +149,15 @@ def main():
                 print(f"    - {obj1_label} {relation} {obj2_label}: {probability:.1f}")
     
     # Verify inter-comparisons using attribute candidates (enhanced)
-    if 'a' in all_objects and 'b' in all_objects:
-        inter_questions = kb.get_inter_questions()
-        if inter_questions:
-            inter_results = verifier.verify_inter_comparisons(
-                image_paths[0], image_paths[1],
-                all_objects['a'], all_objects['b'],
-                inter_questions
-            )
-            kb.add_inter_comparisons(inter_results)
-            print(f"  ✓ Verified {len(inter_results)} inter-comparisons")
-            for result in inter_results[:3]:  # Show first 3
+    if 'a' in all_objects and 'b' in all_objects and attribute_candidates:
+        inter_results = verifier.verify_inter_comparisons(
+            image_paths[0], image_paths[1],
+            all_objects['a'], all_objects['b'],
+            attribute_candidates
+        )
+        kb.add_inter_comparisons(inter_results)
+        print(f"  ✓ Verified {len(inter_results)} inter-comparisons")
+        for result in inter_results[:3]:  # Show first 3
                 attribute = result.get('attribute', 'unknown')
                 value_a = result.get('value_a', 'unknown')
                 value_b = result.get('value_b', 'unknown')
@@ -177,10 +175,10 @@ def main():
     print(f"✓ Step 1: Core infrastructure initialized with ModelManager singleton")
     print(f"✓ Step 2: {len(all_objects)} images processed with contextual attribute extraction") 
     print(f"✓ Step 3: LLM-generated relation & attribute candidates")
-    print(f"✓ Step 4: Image processing utilities ready for VLM verification")
-    print(f"✓ Step 5: Binary VLM verification of LLM candidates (0.9/0.1 probabilities)")
-    print(f"\n🎯 Results: Specific relations (eating, near, etc.) with binary confidence")
-    print(f"🎯 Enhanced: LLM contextual reasoning drives all candidate generation")
+    print(f"✓ Step 4: Image processing utilities ready for Qwen verification")
+    print(f"✓ Step 5: Qwen VL verification with direct logit probabilities")
+    print(f"\n🎯 Results: Unconstrained Qwen responses with direct logit confidence")
+    print(f"🎯 Enhanced: LLM reasoning + Qwen visual extraction with native bbox support")
     print(f"\nReady for Steps 6-10: ProbLog reasoning and answer generation")
 
 if __name__ == "__main__":
