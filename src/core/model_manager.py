@@ -37,42 +37,69 @@ class ModelManager:
     
     def get_florence2(self) -> Florence2:
         """
-        Get Florence-2 model instance (lazy loaded).
-        
+        Get Florence-2 model instance (lazy loaded with auto device allocation).
+
         Returns:
             Florence2: The Florence-2 model instance
         """
         if 'florence2' not in self._models:
-            print("Loading Florence-2 model...")
-            self._models['florence2'] = Florence2()
-            print("Florence-2 model loaded successfully.")
+            print("Loading Florence-2 model with auto device allocation...")
+            self._models['florence2'] = Florence2(device="auto")
+            print("Florence-2 model loaded successfully with auto device allocation.")
         return self._models['florence2']
     
     def get_qwen_vl(self) -> QwenVL:
         """
-        Get Qwen VL model instance (lazy loaded).
-        
+        Get Qwen VL model instance (lazy loaded with auto device allocation).
+
         Returns:
             QwenVL: The Qwen 2.5-VL-7B model instance
         """
         if 'qwen_vl' not in self._models:
-            print("Loading Qwen 2.5-VL-7B model...")
-            self._models['qwen_vl'] = QwenVL()
-            print("Qwen VL model loaded successfully.")
+            print("Loading Qwen 2.5-VL-7B model with auto device allocation...")
+            self._models['qwen_vl'] = QwenVL(device="auto")
+            print("Qwen VL model loaded successfully with auto device allocation.")
         return self._models['qwen_vl']
         
     def get_llm_client(self) -> LLMClient:
         """
-        Get LLM client instance (lazy loaded).
-        
+        Get LLM client instance (lazy loaded with auto device allocation).
+
         Returns:
             LLMClient: The LLM client instance
         """
         if 'llm_client' not in self._models:
-            print("Initializing LLM client...")
-            self._models['llm_client'] = LLMClient()
-            print("LLM client initialized successfully.")
+            print("Initializing LLM client with auto device allocation...")
+            # Use auto device mapping for better memory distribution
+            self._models['llm_client'] = LLMClient(device_map="auto")
+            print("LLM client initialized successfully with auto device allocation.")
         return self._models['llm_client']
+    
+    # Preserved for easy reversion to custom GPU mapping
+    # def _create_llama_device_map(self) -> dict:
+    #     """
+    #     Create device map for distributing Llama-3.3-70B across GPUs 0-5.
+    #
+    #     Returns:
+    #         dict: Device mapping for model layers
+    #     """
+    #     # Llama-3.3-70B has 80 layers, distribute across 6 GPUs (0-5)
+    #     layers_per_gpu = 80 // 6  # ~13 layers per GPU
+    #     device_map = {}
+    #
+    #     # Embedding and initial layers
+    #     device_map["model.embed_tokens"] = "cuda:0"
+    #
+    #     # Distribute transformer layers
+    #     for i in range(80):
+    #         gpu_id = min(i // layers_per_gpu, 5)  # Ensure we don't exceed GPU 5
+    #         device_map[f"model.layers.{i}"] = f"cuda:{gpu_id}"
+    #
+    #     # Final layers
+    #     device_map["model.norm"] = "cuda:5"
+    #     device_map["lm_head"] = "cuda:5"
+    #
+    #     return device_map
     
     def is_model_loaded(self, model_name: str) -> bool:
         """

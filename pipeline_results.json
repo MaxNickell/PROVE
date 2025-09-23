@@ -1,321 +1,491 @@
 {
-  "question": "What is uniquely similar about these images?",
-  "image_a": {
-    "objects": [
-      {
-        "object_id": 0,
-        "label": "carnivore",
-        "bbox": [
-          176.75,
-          70.50749969482422,
-          499.75,
-          276.4964904785156
-        ],
-        "confidence": 0.95
-      },
-      {
-        "object_id": 1,
-        "label": "zebra",
-        "bbox": [
-          0.25,
-          162.97048950195312,
-          294.75,
-          315.7664794921875
-        ],
-        "confidence": 0.94
-      }
-    ],
-    "attributes": [
-      {
-        "object_id": 0,
-        "attributes": {
-          "color": [
-            {
-              "value": "brown",
-              "confidence": 0.8809468348821005
-            }
+  "ultimate_question": "What is uniquely similar about these images?",
+  "images": {
+    "image_a": {
+      "objects": [
+        {
+          "object_id": 0,
+          "label": "bird",
+          "bbox": [
+            196.01699829101562,
+            96.31999969482422,
+            270.4989929199219,
+            202.55999755859375
           ],
-          "material": [
-            {
-              "value": "meat",
-              "confidence": 0.8617587288220724
-            }
+          "confidence": 0.565
+        },
+        {
+          "object_id": 1,
+          "label": "cattle",
+          "bbox": [
+            94.7750015258789,
+            185.27999877929688,
+            400.73101806640625,
+            595.5199584960938
           ],
-          "texture": [
-            {
-              "value": "rough",
-              "confidence": 0.8432168960571289
-            }
+          "confidence": 0.348
+        },
+        {
+          "object_id": 2,
+          "label": "cattle",
+          "bbox": [
+            0.22300000488758087,
+            134.72000122070312,
+            214.30300903320312,
+            400.3199768066406
           ],
-          "shape": [],
-          "size": [],
-          "state": [],
-          "pattern": [
-            {
-              "value": "spotted",
-              "confidence": 0.8525388439496359
-            }
+          "confidence": 0.15
+        },
+        {
+          "object_id": 3,
+          "label": "cattle",
+          "bbox": [
+            139.375,
+            29.760000228881836,
+            408.3130187988281,
+            202.55999755859375
           ],
-          "style": [],
-          "condition": [
-            {
-              "value": "bloody",
-              "confidence": 0.8334200382232666
-            }
+          "confidence": 0.169
+        },
+        {
+          "object_id": 4,
+          "label": "cattle",
+          "bbox": [
+            0.6690000295639038,
+            83.5199966430664,
+            242.8470001220703,
+            210.239990234375
           ],
-          "function": [
-            {
-              "value": "scavenger",
-              "confidence": 0.8526605566342672
-            },
-            {
-              "value": "predator",
-              "confidence": 0.8954701026280721
-            }
-          ]
+          "confidence": 0.251
+        }
+      ],
+      "attributes": {
+        "0": {
+          "attributes": {
+            "color": [
+              {
+                "value": "white",
+                "confidence": 0.7215936952988239
+              },
+              {
+                "value": "yellowish-orange",
+                "confidence": 0.5148765035158114
+              },
+              {
+                "value": "brown",
+                "confidence": 0.3902101913252146
+              }
+            ],
+            "orientation": [
+              {
+                "value": "head turned left",
+                "confidence": 0.5738603258832955
+              },
+              {
+                "value": "slightly rotated",
+                "confidence": 0.5592442085786642
+              },
+              {
+                "value": "facing right",
+                "confidence": 0.5148766226195711
+              },
+              {
+                "value": "profile view",
+                "confidence": 0.4261396741167045
+              }
+            ],
+            "position": [
+              {
+                "value": "standing",
+                "confidence": 0.6580827177457568
+              },
+              {
+                "value": "facing slightly left",
+                "confidence": 0.6308149686989736
+              },
+              {
+                "value": "facing right",
+                "confidence": 0.5
+              },
+              {
+                "value": "on rock",
+                "confidence": 0.45547532825114795
+              }
+            ]
+          }
+        },
+        "1": {
+          "attributes": {
+            "color": [
+              {
+                "value": "dark",
+                "confidence": 0.7614624553057346
+              },
+              {
+                "value": "black",
+                "confidence": 0.73339273984071
+              },
+              {
+                "value": "brown",
+                "confidence": 0.44810419342340724
+              }
+            ],
+            "orientation": [
+              {
+                "value": "frontal",
+                "confidence": 0.6907379837425702
+              },
+              {
+                "value": "direct",
+                "confidence": 0.6097898086747854
+              }
+            ],
+            "position": [
+              {
+                "value": "facing camera",
+                "confidence": 0.7824093064712228
+              },
+              {
+                "value": "standing",
+                "confidence": 0.6778803291879592
+              },
+              {
+                "value": "in field",
+                "confidence": 0.6513548646660542
+              }
+            ]
+          }
+        },
+        "2": {
+          "attributes": {
+            "color": [
+              {
+                "value": "black",
+                "confidence": 0.6907378818810739
+              },
+              {
+                "value": "brown",
+                "confidence": 0.544524671748852
+              },
+              {
+                "value": "dark brown",
+                "confidence": 0.5445245534848641
+              }
+            ]
+          }
+        },
+        "3": {
+          "attributes": {
+            "color": [
+              {
+                "value": "black",
+                "confidence": 0.6445660201222121
+              },
+              {
+                "value": "gray",
+                "confidence": 0.49256010135091455
+              },
+              {
+                "value": "brown",
+                "confidence": 0.4851233773804289
+              },
+              {
+                "value": "white",
+                "confidence": 0.29669305814918967
+              }
+            ]
+          }
+        },
+        "4": {
+          "attributes": {
+            "color": [
+              {
+                "value": "black",
+                "confidence": 0.7033069418508103
+              },
+              {
+                "value": "brown",
+                "confidence": 0.5518958065765928
+              },
+              {
+                "value": "white",
+                "confidence": 0.3691850313010263
+              }
+            ]
+          }
         }
       },
-      {
-        "object_id": 1,
-        "attributes": {
-          "color": [],
-          "material": [
-            {
-              "value": "fur",
-              "confidence": 0.8783174157142639
-            },
-            {
-              "value": "skin",
-              "confidence": 0.8970905542373657
-            }
-          ],
-          "texture": [],
-          "shape": [],
-          "size": [],
-          "state": [
-            {
-              "value": "lying",
-              "confidence": 0.8670781850814819
-            },
-            {
-              "value": "injured",
-              "confidence": 0.6762724413591272
-            }
-          ],
-          "pattern": [
-            {
-              "value": "striped",
-              "confidence": 0.8495283722877502
-            },
-            {
-              "value": "blood-stained",
-              "confidence": 0.86141304175059
-            }
-          ],
-          "style": [],
-          "condition": [
-            {
-              "value": "injured",
-              "confidence": 0.6762724413591272
-            },
-            {
-              "value": "bloody",
-              "confidence": 0.8578150471051534
-            }
-          ],
-          "function": []
+      "relationships": [
+        {
+          "subject_id": "bird_a_0",
+          "object_id": "cattle_a_1",
+          "relation": "on",
+          "probability": 0.7721054670289347
+        },
+        {
+          "subject_id": "bird_a_0",
+          "object_id": "cattle_a_2",
+          "relation": "on",
+          "probability": 0.7094794204239494
+        },
+        {
+          "subject_id": "bird_a_0",
+          "object_id": "cattle_a_3",
+          "relation": "on",
+          "probability": 0.7094794204239494
+        },
+        {
+          "subject_id": "bird_a_0",
+          "object_id": "cattle_a_4",
+          "relation": "on",
+          "probability": 0.7614624553057345
         }
-      }
-    ],
-    "intra_relations": [
-      {
-        "object_1": 0,
-        "object_2": 1,
-        "relation": "chasing",
-        "probability": 0.17025404903623798
+      ],
+      "scene_context": {}
+    },
+    "image_b": {
+      "objects": [
+        {
+          "object_id": 0,
+          "label": "animal",
+          "bbox": [
+            28.024999618530273,
+            80.5999984741211,
+            560.2049560546875,
+            362.6000061035156
+          ],
+          "confidence": 0.269
+        },
+        {
+          "object_id": 1,
+          "label": "bird",
+          "bbox": [
+            210.33499145507812,
+            226.60000610351562,
+            287.03497314453125,
+            328.20001220703125
+          ],
+          "confidence": 0.394
+        },
+        {
+          "object_id": 2,
+          "label": "bird",
+          "bbox": [
+            293.5249938964844,
+            35.79999923706055,
+            340.1349792480469,
+            99.0
+          ],
+          "confidence": 0.232
+        }
+      ],
+      "attributes": {
+        "1": {
+          "attributes": {
+            "color": [
+              {
+                "value": "white",
+                "confidence": 0.7275332125553451
+              }
+            ],
+            "orientation": [
+              {
+                "value": "profile view",
+                "confidence": 0.5445246717488521
+              },
+              {
+                "value": "right-oriented",
+                "confidence": 0.4407557914213357
+              },
+              {
+                "value": "facing right",
+                "confidence": 0.42613967411670445
+              }
+            ],
+            "position": [
+              {
+                "value": "in a grassy field",
+                "confidence": 0.6168478173601446
+              },
+              {
+                "value": "facing right",
+                "confidence": 0.397314585900587
+              },
+              {
+                "value": "elevated",
+                "confidence": 0.3156556261095164
+              }
+            ]
+          }
+        },
+        "2": {
+          "attributes": {
+            "color": [
+              {
+                "value": "black",
+                "confidence": 0.6026852999180292
+              },
+              {
+                "value": "gray",
+                "confidence": 0.5592442085786642
+              },
+              {
+                "value": "brown",
+                "confidence": 0.5445246717488521
+              }
+            ]
+          }
+        },
+        "0": {
+          "attributes": {
+            "orientation": [
+              {
+                "value": "facing right",
+                "confidence": 0.5592442085786643
+              },
+              {
+                "value": "profile view",
+                "confidence": 0.5297266917326008
+              },
+              {
+                "value": "right-facing",
+                "confidence": 0.4407557914213357
+              }
+            ]
+          }
+        }
       },
-      {
-        "object_1": 0,
-        "object_2": 1,
-        "relation": "near",
-        "probability": 0.8952087223529815
-      },
-      {
-        "object_1": 0,
-        "object_2": 1,
-        "relation": "looking at",
-        "probability": 0.2224574584800464
-      },
-      {
-        "object_1": 0,
-        "object_2": 1,
-        "relation": "hunting",
-        "probability": 0.31491728141903874
-      }
-    ]
+      "relationships": [
+        {
+          "subject_id": "bird_b_1",
+          "object_id": "animal_b_0",
+          "relation": "above",
+          "probability": 0.5
+        },
+        {
+          "subject_id": "bird_b_1",
+          "object_id": "animal_b_0",
+          "relation": "touching",
+          "probability": 0.4407557914213357
+        },
+        {
+          "subject_id": "bird_b_1",
+          "object_id": "animal_b_0",
+          "relation": "on",
+          "probability": 0.5811220303079576
+        },
+        {
+          "subject_id": "bird_b_2",
+          "object_id": "animal_b_0",
+          "relation": "on",
+          "probability": 0.7504831155211436
+        }
+      ],
+      "scene_context": {}
+    }
   },
-  "image_b": {
-    "objects": [
-      {
-        "object_id": 0,
-        "label": "carnivore",
-        "bbox": [
-          320.3999938964844,
-          124.15499877929688,
-          668.4000244140625,
-          470.7209777832031
-        ],
-        "confidence": 0.95
-      }
-    ],
-    "attributes": [
-      {
-        "object_id": 0,
-        "attributes": {
-          "color": [
-            {
-              "value": "brown",
-              "confidence": 0.8907677332560221
-            },
-            {
-              "value": "spotted",
-              "confidence": 0.8906019330024719
-            },
-            {
-              "value": "multicolored",
-              "confidence": 0.6974458893140157
-            }
-          ],
-          "material": [
-            {
-              "value": "bone",
-              "confidence": 0.7967924873034159
-            },
-            {
-              "value": "meat",
-              "confidence": 0.8690772652626038
-            }
-          ],
-          "texture": [
-            {
-              "value": "rough",
-              "confidence": 0.7916594743728638
-            }
-          ],
-          "shape": [],
-          "size": [
-            {
-              "value": "medium",
-              "confidence": 0.7734845081965128
-            }
-          ],
-          "state": [],
-          "pattern": [
-            {
-              "value": "spotted",
-              "confidence": 0.8906019330024719
-            }
-          ],
-          "style": [],
-          "condition": [
-            {
-              "value": "alert",
-              "confidence": 0.8385087251663208
-            }
-          ],
-          "function": [
-            {
-              "value": "feeding",
-              "confidence": 0.9364471038182577
-            }
-          ]
-        }
-      }
-    ],
-    "intra_relations": []
-  },
-  "inter_comparisons": [
+  "subqueries": [
     {
-      "image_a_object_id": 0,
-      "image_b_object_id": 0,
-      "attribute": "size",
-      "value_a": "unknown",
-      "value_b": "medium",
-      "confidence_a": 0.0,
-      "confidence_b": 0.7734845081965128
+      "question": "Is bird_a_0 black?",
+      "referenced_objects": [
+        "bird_a_0"
+      ],
+      "subquery_type": "attribute"
     },
     {
-      "image_a_object_id": 0,
-      "image_b_object_id": 0,
-      "attribute": "color",
-      "value_a": "brown",
-      "value_b": "brown",
-      "confidence_a": 0.8809468348821005,
-      "confidence_b": 0.8907677332560221
+      "question": "Is cattle_a_1 brown?",
+      "referenced_objects": [
+        "cattle_a_1"
+      ],
+      "subquery_type": "attribute"
     },
     {
-      "image_a_object_id": 0,
-      "image_b_object_id": 0,
-      "attribute": "pattern",
-      "value_a": "brown",
-      "value_b": "brown spots",
-      "confidence_a": 0.8809468348821005,
-      "confidence_b": 0.9266858895619711
+      "question": "Is bird_b_1 black and brown?",
+      "referenced_objects": [
+        "bird_b_1"
+      ],
+      "subquery_type": "attribute"
     },
     {
-      "image_a_object_id": 0,
-      "image_b_object_id": 0,
-      "attribute": "texture",
-      "value_a": "spotted",
-      "value_b": "brown",
-      "confidence_a": 0.8525388439496359,
-      "confidence_b": 0.8907677332560221
+      "question": "Is there a bird on cattle_a_1's head?",
+      "referenced_objects": [
+        "cattle_a_1",
+        "bird_a_0"
+      ],
+      "subquery_type": "relationship"
     },
     {
-      "image_a_object_id": 1,
-      "image_b_object_id": 0,
-      "attribute": "pattern",
-      "value_a": "white stripes",
-      "value_b": "brown spots",
-      "confidence_a": 0.9315143624941508,
-      "confidence_b": 0.9266858895619711
+      "question": "Is bird_b_1 on animal_b_0's head?",
+      "referenced_objects": [
+        "animal_b_0",
+        "bird_b_1"
+      ],
+      "subquery_type": "relationship"
     },
     {
-      "image_a_object_id": 1,
-      "image_b_object_id": 0,
-      "attribute": "texture",
-      "value_a": "bloody",
-      "value_b": "brown spots",
-      "confidence_a": 0.8578150471051534,
-      "confidence_b": 0.9266858895619711
+      "question": "Are there more than one bird in IMAGE_A?",
+      "referenced_objects": [
+        "bird_a_0"
+      ],
+      "subquery_type": "count"
     },
     {
-      "image_a_object_id": 1,
-      "image_b_object_id": 0,
-      "attribute": "shape",
-      "value_a": "sideways",
-      "value_b": "spotted",
-      "confidence_a": 0.8906493584314982,
-      "confidence_b": 0.8906019330024719
+      "question": "Are there more than one bird in IMAGE_B?",
+      "referenced_objects": [
+        "bird_b_1",
+        "bird_b_2"
+      ],
+      "subquery_type": "count"
     },
     {
-      "image_a_object_id": 1,
-      "image_b_object_id": 0,
-      "attribute": "color",
-      "value_a": "bloody",
-      "value_b": "brown",
-      "confidence_a": 0.8578150471051534,
-      "confidence_b": 0.8907677332560221
+      "question": "Do both images show a grassy field?",
+      "referenced_objects": [],
+      "subquery_type": "scene_attribute"
+    },
+    {
+      "question": "Is the sky blue in both images?",
+      "referenced_objects": [],
+      "subquery_type": "scene_attribute"
+    },
+    {
+      "question": "Is cattle_a_1 facing the camera?",
+      "referenced_objects": [
+        "cattle_a_1"
+      ],
+      "subquery_type": "attribute"
+    },
+    {
+      "question": "Is animal_b_0 facing the right side of the image?",
+      "referenced_objects": [
+        "animal_b_0"
+      ],
+      "subquery_type": "attribute"
+    },
+    {
+      "question": "Are bird_a_0 and bird_b_1 looking at the camera?",
+      "referenced_objects": [
+        "bird_a_0",
+        "bird_b_1"
+      ],
+      "subquery_type": "attribute"
+    },
+    {
+      "question": "Is the grass tall and green in both images?",
+      "referenced_objects": [],
+      "subquery_type": "scene_attribute"
+    },
+    {
+      "question": "Do both images have buffalo or cows with birds on their heads?",
+      "referenced_objects": [
+        "cattle_a_1",
+        "bird_a_0",
+        "animal_b_0",
+        "bird_b_1"
+      ],
+      "subquery_type": "relationship"
     }
   ],
-  "subqueries": [],
-  "problog": {
-    "facts": "",
-    "queries": "",
-    "results": []
-  },
-  "answer": {
-    "text": "",
-    "explanation": ""
-  }
+  "problog_facts": [],
+  "subquery_results": [],
+  "answer": null
 }

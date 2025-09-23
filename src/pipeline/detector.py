@@ -115,8 +115,8 @@ class Detector:
         
         for i, detection in enumerate(raw_detections):
             try:
-                # Ensure we have required fields with proper types
-                object_id = detection.get('id', i)
+                # Use sequential object ID assignment (0, 1, 2, ...)
+                object_id = i  # Always use sequential index
                 label = detection.get('label', 'unknown')
                 bbox = detection.get('bbox', [0, 0, 0, 0])
                 confidence = detection.get('confidence', 0.5)
@@ -185,6 +185,39 @@ class Detector:
             
         except AssertionError:
             return False
+    
+    def generate_detailed_captions(self, image_paths: Dict[str, str]) -> Dict[str, str]:
+        """
+        Generate detailed captions for images using Florence-2.
+        
+        Args:
+            image_paths: Dictionary mapping image_id to image path
+            
+        Returns:
+            Dict[str, str]: Detailed captions per image
+            
+        Raises:
+            DetectorError: If caption generation fails
+        """
+        try:
+            florence2 = self.model_manager.get_florence2()
+            captions = {}
+            
+            for image_id, image_path in image_paths.items():
+                if not os.path.exists(image_path):
+                    raise DetectorError(f"Image file not found: {image_path}")
+                
+                # Load image
+                image = Image.open(image_path).convert("RGB")
+                
+                # Generate detailed caption
+                caption = florence2.describe_region(image, task="<MORE_DETAILED_CAPTION>")
+                captions[image_id] = caption
+            
+            return captions
+            
+        except Exception as err:
+            raise DetectorError(f"Caption generation failed: {err}")
     
     def get_detection_summary(self, objects: List[ObjectDetection]) -> Dict[str, Any]:
         """

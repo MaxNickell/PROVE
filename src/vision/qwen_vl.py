@@ -27,18 +27,19 @@ class QwenVL:
     - Memory efficient GPU usage
     """
     
-    def __init__(self, model_name: str = "Qwen/Qwen2.5-VL-7B-Instruct"):
+    def __init__(self, model_name: str = "Qwen/Qwen2.5-VL-7B-Instruct", device: str = "auto"):
         """
         Initialize Qwen VL model.
-        
+
         Args:
             model_name: Model identifier from HuggingFace
-            
+            device: Device allocation strategy (default: "auto" for automatic allocation)
+
         Raises:
             QwenVLError: If model loading fails
         """
         self.model_name = model_name
-        self.device = "cuda" if torch.cuda.is_available() else "cpu"
+        self.device = device  # Keep for compatibility, but model uses device_map="auto"
         self._model_loaded = False
         
         try:
@@ -171,7 +172,180 @@ class QwenVL:
         except Exception as e:
             print(f"Warning: Failed to extract probability from logits: {e}")
             return 1.0
-    
+
+    def extract_yes_no_probability_with_verbalizers(
+        self,
+        logits_sequence: List[torch.Tensor],
+        response: str
+    ) -> float:
+        """
+        Extract P(statement is true) using verbalizer sets for robustness.
+
+        Uses verbalizer sets ["yes", "Yes", "YES"] and ["no", "No", "NO"] to handle
+        tokenization variants and improve probability estimation stability.
+
+        Args:
+            logits_sequence: List of logit tensors from generation
+            response: The actual response text (for validation)
+
+        Returns:
+            float: P(statement is true) = P(Yes_total) / (P(Yes_total) + P(No_total))
+        """
+        if not logits_sequence:
+            return 0.5  # Default neutral probability
+
+        try:
+            # Get final generation step logits (where Yes/No token is produced)
+            final_logits = logits_sequence[-1][0]  # Shape: [vocab_size]
+
+            # Define verbalizer sets for robustness
+            yes_verbalizers = ["yes", "Yes", "YES"]
+            no_verbalizers = ["no", "No", "NO"]
+
+            # Convert logits to probabilities for all tokens
+            all_probs = torch.softmax(final_logits, dim=-1)
+
+            # Sum probabilities for all Yes verbalizers
+            yes_prob_total = 0.0
+            for verbalizer in yes_verbalizers:
+                try:
+                    # Get token IDs for this verbalizer (handle multi-token cases)
+                    token_ids = self.processor.tokenizer.encode(
+                        verbalizer,
+                        add_special_tokens=False
+                    )
+                    # Sum probabilities for all tokens of this verbalizer
+                    for token_id in token_ids:
+                        if token_id < len(all_probs):
+                            yes_prob_total += all_probs[token_id].item()
+                except Exception as e:
+                    # Skip verbalizers that cause encoding issues
+                    continue
+
+            # Sum probabilities for all No verbalizers
+            no_prob_total = 0.0
+            for verbalizer in no_verbalizers:
+                try:
+                    # Get token IDs for this verbalizer (handle multi-token cases)
+                    token_ids = self.processor.tokenizer.encode(
+                        verbalizer,
+                        add_special_tokens=False
+                    )
+                    # Sum probabilities for all tokens of this verbalizer
+                    for token_id in token_ids:
+                        if token_id < len(all_probs):
+                            no_prob_total += all_probs[token_id].item()
+                except Exception as e:
+                    # Skip verbalizers that cause encoding issues
+                    continue
+
+            # Calculate P(statement is true) using verbalizer probabilities
+            total_verbalizer_prob = yes_prob_total + no_prob_total
+
+            if total_verbalizer_prob > 0:
+                prob_statement_true = yes_prob_total / total_verbalizer_prob
+            else:
+                # No verbalizer tokens found - return neutral probability for failed extraction
+                print(f"Warning: No verbalizer tokens found in response: '{response}'")
+                prob_statement_true = 0.5  # Neutral probability for failed verbalizer extraction
+
+            return float(prob_statement_true)
+
+        except Exception as e:
+            print(f"Warning: Failed to extract yes/no probability with verbalizers: {e}")
+            # Return neutral probability for extraction failure
+            return 0.5
+
+    def extract_yes_no_probability_with_proper_softmax(
+        self,
+        logits_sequence: List[torch.Tensor],
+        response: str
+    ) -> float:
+        """
+        Extract P(statement is true) using proper 2-token softmax calculation.
+
+        This method avoids probability inflation by applying softmax only over
+        "Yes" and "No" tokens, giving more realistic confidence scores.
+
+        Formula: P(yes) = e^(z_yes) / (e^(z_yes) + e^(z_no))
+
+        Args:
+            logits_sequence: List of logit tensors from generation
+            response: The actual response text (for validation)
+
+        Returns:
+            float: P(statement is true) using proper softmax over yes/no tokens only
+        """
+        if not logits_sequence:
+            return 0.5  # Default neutral probability
+
+        try:
+            # Get final generation step logits (where Yes/No token is produced)
+            final_logits = logits_sequence[-1][0]  # Shape: [vocab_size]
+
+            # Try to get token IDs for "Yes" and "No" (with fallbacks for robustness)
+            yes_candidates = ["Yes", "yes", "YES"]
+            no_candidates = ["No", "no", "NO"]
+
+            yes_token_id = None
+            no_token_id = None
+
+            # Find the best yes token
+            for yes_word in yes_candidates:
+                try:
+                    token_ids = self.processor.tokenizer.encode(yes_word, add_special_tokens=False)
+                    if len(token_ids) == 1:  # Single token only
+                        yes_token_id = token_ids[0]
+                        break
+                except:
+                    continue
+
+            # Find the best no token
+            for no_word in no_candidates:
+                try:
+                    token_ids = self.processor.tokenizer.encode(no_word, add_special_tokens=False)
+                    if len(token_ids) == 1:  # Single token only
+                        no_token_id = token_ids[0]
+                        break
+                except:
+                    continue
+
+            if yes_token_id is None or no_token_id is None:
+                print(f"Warning: Could not find single-token yes/no tokens, falling back to verbalizer method")
+                return self.extract_yes_no_probability_with_verbalizers(logits_sequence, response)
+
+            # Extract raw logits for yes and no tokens
+            yes_logit = final_logits[yes_token_id].item()
+            no_logit = final_logits[no_token_id].item()
+
+            # Apply proper 2-token softmax: P(yes) = e^z_yes / (e^z_yes + e^z_no)
+            import math
+            exp_yes = math.exp(yes_logit)
+            exp_no = math.exp(no_logit)
+
+            prob_yes = exp_yes / (exp_yes + exp_no)
+
+            return float(prob_yes)
+
+        except Exception as e:
+            print(f"Warning: Failed to extract yes/no probability with proper softmax: {e}")
+            # Fallback to verbalizer method
+            return self.extract_yes_no_probability_with_verbalizers(logits_sequence, response)
+
+    def validate_yes_no_response(self, response: str) -> bool:
+        """
+        Validate that response matches expected Yes/No format.
+
+        Args:
+            response: The model's response text
+
+        Returns:
+            bool: True if response is a valid Yes/No answer
+        """
+        clean_response = response.strip().lower()
+        valid_responses = ["yes", "no"]
+        return clean_response in valid_responses
+
     def run_inference(self, image: Union[Image.Image, str], prompt: str) -> str:
         """
         Simple inference method that returns only the response text.

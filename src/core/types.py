@@ -25,15 +25,15 @@ class AttributeValue:
     """Individual attribute value with confidence."""
     value: str
     confidence: float = 1.0  # MVP fixed at 1.0
-    
+
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
 
-@dataclass 
+
+@dataclass
 class AttributeData:
-    """Attribute extraction result for an object."""
-    object_id: int
-    attributes: Dict[str, List[AttributeValue]]  # 10 categories with individual confidences
+    """Attribute extraction result for an object - clean structure with no redundant references."""
+    attributes: Dict[str, List[AttributeValue]]  # attribute categories with individual confidences
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -41,10 +41,10 @@ class AttributeData:
 
 @dataclass
 class IntraRelation:
-    """Intra-image relationship verification result."""
-    object_1: int
-    object_2: int
-    relation: str  # Specific relationship (eating, near, above, etc.)
+    """Intra-image relationship between objects using string object identifiers."""
+    subject_id: str     # Full object ID (e.g., "bird_a_0", "cattle_a_1")
+    object_id: str      # Full object ID (e.g., "bird_a_0", "cattle_a_1")
+    relation: str       # Specific relationship (perched_on, near, lifting, etc.)
     probability: float  # 0.9 for Yes, 0.1 for No
 
     def to_dict(self) -> Dict[str, Any]:
@@ -52,37 +52,77 @@ class IntraRelation:
 
 
 @dataclass
-class InterComparison:
-    """Inter-image comparison verification result."""
-    image_a_object_id: int
-    image_b_object_id: int
-    attribute: str  # The compared attribute (size, color, etc.)
-    value_a: str  # Attribute value in image A
-    value_b: str  # Attribute value in image B
-    confidence_a: float  # Confidence in value_a (1.0 for MVP)
-    confidence_b: float  # Confidence in value_b (1.0 for MVP)
+class ImageData:
+    """Complete data structure for a single image - contains everything related to that image."""
+    objects: List[ObjectDetection]
+    attributes: Dict[int, AttributeData]  # {object_id: AttributeData}
+    relationships: List[IntraRelation]
+    scene_context: Dict[str, Any]
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
 
 
 @dataclass
-class IntraQuestion:
-    """Generated question for intra-image relationship."""
-    object_ids: List[int]  # [subject_id, object_id]
-    question: str
+class BinarySubquery:
+    """Binary subquery with object references for contextual reasoning."""
+    question: str  # Binary question answerable with Yes/No
+    referenced_objects: List[str]  # Object IDs referenced in question
+    subquery_type: str  # "attribute_comparison", "relationship", "state", etc.
+    
+    def to_dict(self) -> Dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass
+class AttributeRequirement:
+    """Attribute extraction requirement for specific object using simple identifiers."""
+    image_id: str             # "image_a", "image_b", etc.
+    object_id: int            # Object index within the image (0, 1, 2...)
+    attribute_classes: List[str]  # e.g., ["muscle_mass", "body_size"]
+    required_for_subqueries: List[str]  # Which subqueries need these attributes
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
 
 
 @dataclass
-class InterQuestion:
-    """Generated question for inter-image comparison."""
-    image_a_object_id: int
-    image_b_object_id: int
-    question: str
+class RelationshipCandidate:
+    """Relationship candidate for binary verification using simple object indices."""
+    image_id: str             # Image containing the relationship
+    subject_id: int           # Subject object index within the image
+    object_id: int            # Target object index within the image
+    relation: str             # e.g., "lifting"
+    required_for_subqueries: List[str]  # Which subqueries need this relationship
 
+    def to_dict(self) -> Dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass
+class ProbLogFact:
+    """Probabilistic logical fact for knowledge base."""
+    probability: float  # 0.0 to 1.0
+    predicate: str  # e.g., "attribute", "relation", "object"
+    arguments: List[str]  # e.g., ["person_a_0", "muscle_mass", "high"]
+    
+    def to_prolog_string(self) -> str:
+        """Convert to ProbLog fact string."""
+        args_str = ", ".join(self.arguments)
+        return f"{self.probability}::{self.predicate}({args_str})."
+    
+    def to_dict(self) -> Dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass
+class SubqueryResult:
+    """Result from ProbLog execution of a subquery."""
+    subquery: str  # Original binary subquery
+    probability: float  # Computed probability
+    supporting_facts: List[str]  # ProbLog facts that contributed
+    evidence_trail: List[str]  # Human-readable evidence chain
+    
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
 
@@ -142,7 +182,9 @@ ATTRIBUTE_CATEGORIES = [
 Objects = List[ObjectDetection]
 Attributes = List[AttributeData] 
 IntraRelations = List[IntraRelation]
-InterComparisons = List[InterComparison]
-IntraQuestions = List[IntraQuestion]
-InterQuestions = List[InterQuestion]
+BinarySubqueries = List[BinarySubquery]
+AttributeRequirements = List[AttributeRequirement]
+RelationshipCandidates = List[RelationshipCandidate]
+ProbLogFacts = List[ProbLogFact]
+SubqueryResults = List[SubqueryResult]
 ProbLogResults = List[ProbLogResult]
