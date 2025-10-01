@@ -8,14 +8,16 @@ import torch
 from pydantic import BaseModel, ValidationError
 
 from .output_models import (
-    SubqueryResponse, 
+    SubqueryResponse,
     SubqueryItem,
-    AttributeResponse, 
-    VerificationResponse, 
-    RelationshipResponse, 
+    AttributeResponse,
+    VerificationResponse,
+    RelationshipResponse,
     ContextResponse,
     AttributePlanningResponse,
-    CandidateResponse
+    CandidateResponse,
+    CountRequirementResponse,
+    SceneAttributeResponse
 )
 
 T = TypeVar('T', bound=BaseModel)
@@ -237,3 +239,11 @@ class LLMClient:
     def generate_candidates(self, messages: List[Dict[str, str]], **kwargs) -> CandidateResponse:
         """Generate attribute value candidates with validation."""
         return self.chat_with_validation(messages, CandidateResponse, **kwargs)
+
+    def analyze_count_requirements(self, messages: List[Dict[str, str]], **kwargs) -> CountRequirementResponse:
+        """Analyze count requirements with validation."""
+        return self.chat_with_validation(messages, CountRequirementResponse, **kwargs)
+
+    def analyze_scene_attributes(self, messages: List[Dict[str, str]], **kwargs) -> SceneAttributeResponse:
+        """Analyze scene attributes with validation."""
+        return self.chat_with_validation(messages, SceneAttributeResponse, **kwargs)

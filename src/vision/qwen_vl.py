@@ -8,6 +8,8 @@ from PIL import Image
 from transformers import Qwen2_5_VLForConditionalGeneration, AutoProcessor
 from typing import List, Tuple, Union
 
+from src.core.probability import get_verifier_probability
+
 
 class QwenVLError(Exception):
     """Custom exception for Qwen VL related errors."""
@@ -262,75 +264,23 @@ class QwenVL:
         response: str
     ) -> float:
         """
-        Extract P(statement is true) using proper 2-token softmax calculation.
+        Extract P(statement is true) using verbalizer summing + 2-token softmax.
 
-        This method avoids probability inflation by applying softmax only over
-        "Yes" and "No" tokens, giving more realistic confidence scores.
-
-        Formula: P(yes) = e^(z_yes) / (e^(z_yes) + e^(z_no))
+        This method delegates to the unified get_verifier_probability() function
+        which sums logits for all Yes/No variants and applies proper softmax.
 
         Args:
             logits_sequence: List of logit tensors from generation
             response: The actual response text (for validation)
 
         Returns:
-            float: P(statement is true) using proper softmax over yes/no tokens only
+            float: P(statement is true) between 0.0 and 1.0
         """
-        if not logits_sequence:
-            return 0.5  # Default neutral probability
-
-        try:
-            # Get final generation step logits (where Yes/No token is produced)
-            final_logits = logits_sequence[-1][0]  # Shape: [vocab_size]
-
-            # Try to get token IDs for "Yes" and "No" (with fallbacks for robustness)
-            yes_candidates = ["Yes", "yes", "YES"]
-            no_candidates = ["No", "no", "NO"]
-
-            yes_token_id = None
-            no_token_id = None
-
-            # Find the best yes token
-            for yes_word in yes_candidates:
-                try:
-                    token_ids = self.processor.tokenizer.encode(yes_word, add_special_tokens=False)
-                    if len(token_ids) == 1:  # Single token only
-                        yes_token_id = token_ids[0]
-                        break
-                except:
-                    continue
-
-            # Find the best no token
-            for no_word in no_candidates:
-                try:
-                    token_ids = self.processor.tokenizer.encode(no_word, add_special_tokens=False)
-                    if len(token_ids) == 1:  # Single token only
-                        no_token_id = token_ids[0]
-                        break
-                except:
-                    continue
-
-            if yes_token_id is None or no_token_id is None:
-                print(f"Warning: Could not find single-token yes/no tokens, falling back to verbalizer method")
-                return self.extract_yes_no_probability_with_verbalizers(logits_sequence, response)
-
-            # Extract raw logits for yes and no tokens
-            yes_logit = final_logits[yes_token_id].item()
-            no_logit = final_logits[no_token_id].item()
-
-            # Apply proper 2-token softmax: P(yes) = e^z_yes / (e^z_yes + e^z_no)
-            import math
-            exp_yes = math.exp(yes_logit)
-            exp_no = math.exp(no_logit)
-
-            prob_yes = exp_yes / (exp_yes + exp_no)
-
-            return float(prob_yes)
-
-        except Exception as e:
-            print(f"Warning: Failed to extract yes/no probability with proper softmax: {e}")
-            # Fallback to verbalizer method
-            return self.extract_yes_no_probability_with_verbalizers(logits_sequence, response)
+        return get_verifier_probability(
+            logits_sequence,
+            response,
+            self.processor.tokenizer
+        )
 
     def validate_yes_no_response(self, response: str) -> bool:
         """

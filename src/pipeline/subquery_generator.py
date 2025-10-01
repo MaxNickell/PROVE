@@ -125,7 +125,7 @@ Objects: {objects_str}""")
     
     def _create_subquery_prompt(self, ultimate_question: str, context: str) -> str:
         """
-        Create prompt for binary subquery generation with clear category definitions.
+        Create simplified prompt for binary subquery generation.
 
         Args:
             ultimate_question: Main comparative question
@@ -134,72 +134,30 @@ Objects: {objects_str}""")
         Returns:
             str: Formatted prompt for LLM
         """
-        prompt = f"""Given the ultimate question "{ultimate_question}" and this visual context:
+        prompt = f"""Your task is to break down the ultimate question into binary (Yes/No) subquestions.
 
+Ultimate Question: "{ultimate_question}"
+
+Visual Context:
 {context}
 
-Generate specific binary subquestions that collectively provide the information needed to answer the ultimate question.
+PROCESS:
+1. First, understand what the ultimate question is asking
+2. Consider what each scene depicts based on the image captions provided
+3. Then break the ultimate question into binary subquestions that will collectively answer it
 
-CATEGORY DEFINITIONS:
-- **attribute**: Object characteristics (color, size, position, shape, etc.) of specific detected objects
-- **relationship**: Spatial or interaction relations between two or more detected objects (on, above, near, holding, etc.)
-- **scene_attribute**: Scene-level characteristics, environment, background, or image-wide properties
-- **count**: Questions about the number/quantity of objects of a certain class in an image
+SUBQUESTION CATEGORIES:
+- **attribute**: Characteristics of specific detected objects
+- **relationship**: Spatial or interaction relations between detected objects
+- **scene_attribute**: Scene-level characteristics that apply to the entire image, not individual objects
+- **count**: Quantities of object classes in an image
 
-CRITICAL RULES:
-1. ONLY reference objects from the Objects list above using EXACT IDs (like object1_a_0, object2_a_1)
-2. Each question must be binary (answerable with Yes/No)
-3. For "referenced_objects", list ALL object IDs that are relevant to answering the question
-4. Do NOT reference objects that aren't detected (no generic terms like "camera", "buffalo", etc.)
-5. Generate subqueries covering all 4 categories systematically
-
-Return JSON with this EXACT format:
-{{
-  "subqueries": [
-    {{
-      "question": "Does object1_a_0 have [color_attribute]?",
-      "referenced_objects": ["object1_a_0"],
-      "subquery_type": "attribute"
-    }},
-    {{
-      "question": "Does object1_a_0 have the same [attribute_type] as object2_b_1?",
-      "referenced_objects": ["object1_a_0", "object2_b_1"],
-      "subquery_type": "attribute"
-    }},
-    {{
-      "question": "Is object1_a_0 positioned above object2_a_1?",
-      "referenced_objects": ["object1_a_0", "object2_a_1"],
-      "subquery_type": "relationship"
-    }},
-    {{
-      "question": "Are object1_a_0 and object2_a_1 touching each other?",
-      "referenced_objects": ["object1_a_0", "object2_a_1"],
-      "subquery_type": "relationship"
-    }},
-    {{
-      "question": "Are there more than X [class_name] objects in IMAGE_A?",
-      "referenced_objects": ["class1_a_0", "class1_a_1", "class1_a_2"],
-      "subquery_type": "count"
-    }},
-    {{
-      "question": "Does IMAGE_A have more [class] objects than IMAGE_B?",
-      "referenced_objects": ["class1_a_0", "class1_a_1", "class1_b_0"],
-      "subquery_type": "count"
-    }},
-    {{
-      "question": "Do both images show outdoor settings?",
-      "referenced_objects": [],
-      "subquery_type": "scene_attribute"
-    }},
-    {{
-      "question": "Is IMAGE_A taken during daytime?",
-      "referenced_objects": [],
-      "subquery_type": "scene_attribute"
-    }}
-  ]
-}}
-
-Generate subqueries that systematically cover the information needed to answer: "{ultimate_question}"."""
+RULES:
+- Each subquestion must be answerable with Yes/No
+- Only reference objects from the Objects list using their exact IDs
+- List all relevant object IDs in "referenced_objects"
+- Generate subquestions across all 4 categories
+"""
 
         return prompt
     

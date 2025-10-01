@@ -10,10 +10,10 @@ sys.path.insert(0, os.path.dirname(__file__))
 
 from src.pipeline.detector import Detector
 from src.pipeline.subquery_generator import SubqueryGenerator
-from src.pipeline.attribute_planner import AttributePlanner
-from src.pipeline.attribute_extractor import AttributeExtractor
+from src.pipeline.attribute_processor import AttributeProcessor
 from src.pipeline.relationship_extractor import RelationshipExtractor
-from src.pipeline.context_processor import ContextProcessor
+from src.pipeline.count_processor import CountProcessor
+from src.pipeline.scene_attribute_processor import SceneAttributeProcessor
 from src.pipeline.problog_builder import ProbLogBuilder
 from src.pipeline.problog_executor import ProbLogExecutor
 from src.pipeline.answer_generator import AnswerGenerator
@@ -29,10 +29,10 @@ def main():
         # Test all component imports
         detector = Detector()
         subquery_generator = SubqueryGenerator()
-        attribute_planner = AttributePlanner()
-        attribute_extractor = AttributeExtractor()
+        attribute_processor = AttributeProcessor()
         relationship_extractor = RelationshipExtractor()
-        context_processor = ContextProcessor()
+        count_processor = CountProcessor()
+        scene_attribute_processor = SceneAttributeProcessor()
         problog_builder = ProbLogBuilder()
         problog_executor = ProbLogExecutor()
         answer_generator = AnswerGenerator()
@@ -88,11 +88,10 @@ def main():
         print("Step 2: Image Context Generation")
         print("-" * 40)
         
-        # Generate detailed captions
+        # Generate detailed captions (processing aids only - not stored in KB)
         image_contexts = detector.generate_detailed_captions(image_paths)
-        
+
         for image_id, context in image_contexts.items():
-            kb.add_image_context(image_id, context)
             print(f"{image_id}: {context}")
         
         print()
@@ -145,83 +144,43 @@ def main():
             print(f"  Scene Attribute: {len(scene_attribute_subqueries)} subqueries")
             print(f"  Count: {len(count_subqueries)} subqueries")
 
-            # Skip count processing for now
-            if count_subqueries:
-                print(f"  → Skipping {len(count_subqueries)} count subqueries (not implemented)")
+            # Count processing will be handled in dedicated step
 
         print()
 
         # ========================================
-        # STEP 5: Attribute Planning (Attribute Subqueries Only)
+        # STEP 5: Attribute Processing (Per-Subquery Planning + Extraction)
         # ========================================
-        print("Step 5: Attribute Planning")
+        print("Step 5: Attribute Processing")
         print("-" * 40)
 
         if not attribute_subqueries:
             print("No attribute subqueries to process")
-            requirements = []
         else:
             print(f"Processing {len(attribute_subqueries)} attribute subqueries:")
-            print("  (Note: Enhanced to handle compound subqueries requiring cross-object comparisons)")
+            print("  (Note: Per-subquery architecture - planning + extraction per subquery)")
             for i, sq in enumerate(attribute_subqueries[:3], 1):  # Show first 3
                 print(f"  {i}. {sq.question}")
             if len(attribute_subqueries) > 3:
                 print(f"     ... and {len(attribute_subqueries) - 3} more")
 
-            attribute_planner = AttributePlanner()
+            attribute_processor = AttributeProcessor()
 
-            # Create objects dict from ImageData
-            all_objects = {image_id: image_data.objects for image_id, image_data in kb.images.items()}
-
-            # Determine required attributes from ONLY attribute subqueries
-            requirements = attribute_planner.determine_required_attributes(
-                attribute_subqueries, all_objects
+            # Process attribute subqueries individually - returns attributes per image
+            attributes_per_image = attribute_processor.process_attribute_subqueries(
+                attribute_subqueries, image_paths, kb.images
             )
 
-            print(f"Determined attribute requirements for {len(requirements)} objects:")
-            for req in requirements:
-                print(f"  {req.image_id} Object {req.object_id}: {req.attribute_classes}")
-                print(f"    Required for: {len(req.required_for_subqueries)} subqueries")
-
-        print()
-        
-        # ========================================
-        # STEP 6: Attribute Value Extraction
-        # ========================================
-        print("Step 6: Attribute Extraction")
-        print("-" * 40)
-
-        if not requirements:
-            print("No attribute requirements to process")
-        else:
-            attribute_extractor = AttributeExtractor()
-
-            # Extract attributes using clean ImageData interface
-            attributes = attribute_extractor.extract_attributes(
-                image_paths, kb.images, requirements
-            )
-
-            # Store attributes using new clean structure
-            # Match attributes back to their requirements to get image_id and object_id
-            total_attributes = 0
-            for i, attr_data in enumerate(attributes):
-                if i < len(requirements):
-                    requirement = requirements[i]
-                    image_id = requirement.image_id
-                    object_id = requirement.object_id
-
-                    # Store using per-object method
-                    kb.add_attributes_for_object(image_id, object_id, attr_data)
-                    total_attributes += 1
-
-            print(f"Extracted attributes for {total_attributes} objects")
+            print(f"Attribute processing completed:")
+            for image_id, count in attributes_per_image.items():
+                print(f"  {image_id}: {count} attributes extracted")
 
         print()
 
         # ========================================
-        # STEP 7: Relationship Extraction (Relationship Subqueries Only)
+        # STEP 6: Relationship Extraction (Relationship Subqueries Only)
         # ========================================
-        print("Step 7: Relationship Extraction")
+        print("Step 6: Relationship Extraction")
         print("-" * 40)
 
         if not relationship_subqueries:
@@ -270,7 +229,36 @@ def main():
         print()
 
         # ========================================
-        # STEP 8: Scene Attribute Processing (Placeholder)
+        # STEP 7: Count Processing (Count Subqueries Only)
+        # ========================================
+        print("Step 7: Count Processing")
+        print("-" * 40)
+
+        if not count_subqueries:
+            print("No count subqueries to process")
+        else:
+            print(f"Processing {len(count_subqueries)} count subqueries:")
+            print("  (Note: Poisson-Binomial probabilistic counting using detection confidences)")
+            for i, sq in enumerate(count_subqueries[:3], 1):  # Show first 3
+                print(f"  {i}. {sq.question}")
+            if len(count_subqueries) > 3:
+                print(f"     ... and {len(count_subqueries) - 3} more")
+
+            count_processor = CountProcessor()
+
+            # Process count subqueries using Poisson-Binomial counting
+            counts_per_image = count_processor.process_count_subqueries(
+                count_subqueries, kb.images
+            )
+
+            print(f"Count processing completed:")
+            for image_id, count in counts_per_image.items():
+                print(f"  {image_id}: {count} object classes counted")
+
+        print()
+
+        # ========================================
+        # STEP 8: Scene Attribute Processing
         # ========================================
         print("Step 8: Scene Attribute Processing")
         print("-" * 40)
@@ -286,40 +274,37 @@ def main():
 
             # Process scene attributes using new ContextProcessor
             try:
-                print("  Initializing ContextProcessor...")
-                context_processor = ContextProcessor()
+                print("  Initializing SceneAttributeProcessor...")
+                scene_attribute_processor = SceneAttributeProcessor()
 
                 print(f"  Processing scene attributes with {len(image_paths)} images...")
-                scene_context = context_processor.process_scene_attribute_subqueries(
-                    scene_attribute_subqueries, image_paths, kb.images
+                scene_attributes_counts = scene_attribute_processor.process_scene_attribute_subqueries(
+                    scene_attribute_subqueries, image_paths, kb.images, image_contexts
                 )
 
-                print(f"  Scene context processor returned data for {len(scene_context)} images")
+                print(f"  Scene context processor returned data for {len(scene_attributes_counts)} images")
 
-                # Store scene attributes in knowledge base
+                # Count scene attributes now stored directly in ImageData
                 total_attributes = 0
                 images_with_attributes = 0
 
-                for image_id, context_data in scene_context.items():
-                    scene_attributes = context_data.get("scene_attributes", [])
+                for image_id, count in scene_attributes_counts.items():
+                    scene_attributes = kb.images[image_id].scene_attributes
                     print(f"  {image_id}: Found {len(scene_attributes)} scene attributes")
 
                     if scene_attributes:
                         images_with_attributes += 1
                         print(f"    Scene attributes for {image_id}:")
-                        for attr in scene_attributes:
-                            print(f"      {attr['attribute_class']}: {attr['value']} (confidence: {attr['confidence']:.3f})")
-                            total_attributes += 1
-
-                        # Store in knowledge base using proper method
-                        print(f"    Storing {len(scene_attributes)} scene attributes in knowledge base...")
-                        kb.add_scene_attributes(image_id, scene_attributes)
+                        for attr_class, attr_values in scene_attributes.items():
+                            for attr_value in attr_values:
+                                print(f"      {attr_class}: {attr_value['value']} (confidence: {attr_value['confidence']:.3f})")
+                                total_attributes += 1
                     else:
                         print(f"    No scene attributes extracted for {image_id}")
 
                 print(f"✓ Scene attribute processing completed:")
                 print(f"  - Total scene attributes extracted: {total_attributes}")
-                print(f"  - Images with scene attributes: {images_with_attributes}/{len(scene_context)}")
+                print(f"  - Images with scene attributes: {images_with_attributes}/{len(scene_attributes_counts)}")
 
             except Exception as e:
                 print(f"❌ Scene attribute processing failed: {e}")
@@ -329,33 +314,67 @@ def main():
         print()
 
         # ========================================
+        # STEP 9: ProbLog Knowledge Base Generation
+        # ========================================
+        print("Step 9: ProbLog Knowledge Base Generation")
+        print("-" * 40)
+
+        try:
+            problog_builder = ProbLogBuilder()
+
+            # Build ProbLog facts from clean ImageData structure
+            problog_facts = problog_builder.build_knowledge_base(kb.images)
+
+            # Add facts to knowledge base
+            kb.add_problog_facts(problog_facts)
+
+            # Get building summary
+            summary = problog_builder.get_building_summary(problog_facts)
+
+            print(f"Built ProbLog knowledge base:")
+            print(f"  Total facts: {summary['total_facts']}")
+            print(f"  Average confidence: {summary['avg_confidence']:.3f}")
+            print(f"  Specification compliance: {summary['specification_compliance']}")
+
+            # Show fact breakdown by predicate
+            print(f"  Fact breakdown:")
+            for predicate, count in summary['predicates'].items():
+                print(f"    {predicate}: {count} facts")
+
+            # Generate executable ProbLog program
+            prolog_program = problog_builder.facts_to_prolog_string(problog_facts)
+
+            # Save ProbLog program to file
+            with open("knowledge_base.pl", "w") as f:
+                f.write(prolog_program)
+            print(f"  ✓ ProbLog program saved to knowledge_base.pl ({len(prolog_program)} characters)")
+
+            # Show sample facts for verification
+            facts_by_predicate = {}
+            for fact in problog_facts:
+                if fact.predicate not in facts_by_predicate:
+                    facts_by_predicate[fact.predicate] = []
+                facts_by_predicate[fact.predicate].append(fact)
+
+            # Show 2 sample facts per predicate type
+            print(f"  Sample facts:")
+            predicate_order = ["entity", "attribute", "relation", "scene_attr", "count"]
+            for predicate in predicate_order:
+                if predicate in facts_by_predicate:
+                    sample_facts = facts_by_predicate[predicate][:2]
+                    for fact in sample_facts:
+                        print(f"    {fact.to_prolog_string()}")
+
+        except Exception as e:
+            print(f"❌ ProbLog generation failed: {e}")
+            import traceback
+            traceback.print_exc()
+
+        print()
+
+        # ========================================
         # KNOWLEDGE BASE CONSTRUCTION COMPLETE
         # ========================================
-        # The following steps are commented out to focus on knowledge base construction:
-        # - ProbLog fact construction
-        # - ProbLog query execution
-        # - Final answer generation
-
-        # problog_builder = ProbLogBuilder()
-        #
-        # # Build ProbLog facts from clean ImageData structure
-        # problog_facts = problog_builder.build_knowledge_base(kb.images)
-        #
-        # kb.add_problog_facts(problog_facts)
-        #
-        # print(f"Built knowledge base with {len(problog_facts)} ProbLog facts:")
-        #
-        # # Show sample facts by predicate
-        # facts_by_predicate = {}
-        # for fact in problog_facts:
-        #     if fact.predicate not in facts_by_predicate:
-        #         facts_by_predicate[fact.predicate] = []
-        #     facts_by_predicate[fact.predicate].append(fact)
-        #
-        # for predicate, facts in facts_by_predicate.items():
-        #     print(f"  {predicate}: {len(facts)} facts")
-        #     for fact in facts[:2]:  # Show first 2 facts
-        #         print(f"    {fact.to_prolog_string()}")
         #
         # print()
         
@@ -429,32 +448,63 @@ def main():
         total_objects = sum(len(img.objects) for img in kb.images.values())
         total_attributes = sum(len(img.attributes) for img in kb.images.values())
         total_relationships = sum(len(img.relationships) for img in kb.images.values())
-        total_scene_attributes = sum(len(img.scene_context.get("scene_attributes", [])) for img in kb.images.values())
+        total_scene_attributes = sum(len(img.scene_attributes) for img in kb.images.values())
+        total_counts = sum(len(img.counts) for img in kb.images.values())
 
         print(f"  Images processed: {len(kb.images)}")
         print(f"  Total objects detected: {total_objects}")
         print(f"  Total attributes extracted: {total_attributes}")
         print(f"  Total relationships extracted: {total_relationships}")
         print(f"  Total scene attributes extracted: {total_scene_attributes}")
+        print(f"  Total object classes counted: {total_counts}")
         print(f"  Subqueries generated: {len(kb.subqueries)}")
 
         # Show breakdown by image
         print(f"\nBreakdown by image:")
         for image_id, image_data in kb.images.items():
-            scene_attrs_count = len(image_data.scene_context.get("scene_attributes", []))
+            scene_attrs_count = len(image_data.scene_attributes)
+            counts_count = len(image_data.counts)
             print(f"  {image_id}:")
             print(f"    Objects: {len(image_data.objects)}")
             print(f"    Attributes: {len(image_data.attributes)}")
             print(f"    Relationships: {len(image_data.relationships)}")
             print(f"    Scene Attributes: {scene_attrs_count}")
+            print(f"    Counts: {counts_count}")
 
             # Show scene attributes if they exist
             if scene_attrs_count > 0:
-                scene_attrs = image_data.scene_context.get("scene_attributes", [])
-                for attr in scene_attrs[:3]:  # Show first 3
-                    print(f"      - {attr.get('attribute_class', 'unknown')}: {attr.get('value', 'unknown')} (conf: {attr.get('confidence', 0):.3f})")
-                if scene_attrs_count > 3:
-                    print(f"      ... and {scene_attrs_count - 3} more")
+                scene_attrs = image_data.scene_attributes
+                shown_count = 0
+                for attr_class, attr_values in list(scene_attrs.items())[:3]:  # Show first 3 classes
+                    for attr_value in attr_values[:1]:  # Show first value of each class
+                        print(f"      - {attr_class}: {attr_value['value']} (conf: {attr_value['confidence']:.3f})")
+                        shown_count += 1
+                if scene_attrs_count > shown_count:
+                    print(f"      ... and {scene_attrs_count - shown_count} more")
+
+            # Show counts if they exist
+            if counts_count > 0:
+                counts = image_data.counts
+                for class_name, count_data in list(counts.items())[:3]:  # Show first 3 classes
+                    distribution = count_data['distribution']
+                    # Find most likely count and its probability
+                    most_likely_count = max(distribution.keys(), key=lambda k: distribution[k])
+                    most_likely_prob = distribution[most_likely_count]
+
+                    # Show distribution summary
+                    print(f"      - {class_name} distribution: P({most_likely_count})={most_likely_prob:.3f} (most likely)")
+
+                    # Show top 2-3 probabilities for context
+                    sorted_counts = sorted(distribution.items(), key=lambda x: x[1], reverse=True)
+                    top_probs = []
+                    for count_val, prob in sorted_counts[:3]:
+                        if prob > 0.01:  # Only show probabilities > 1%
+                            top_probs.append(f"P({count_val})={prob:.3f}")
+                    if len(top_probs) > 1:
+                        print(f"        Distribution: {', '.join(top_probs)}")
+
+                if counts_count > 3:
+                    print(f"      ... and {counts_count - 3} more count classes")
 
         # Show subquery breakdown by type
         print(f"\nSubquery breakdown:")
@@ -464,44 +514,32 @@ def main():
         for sq_type, count in subquery_types.items():
             print(f"  {sq_type}: {count}")
 
-        # Validate scene context before JSON save
+        # Validate scene attributes before JSON save
         print(f"\n" + "=" * 40)
-        print("SCENE CONTEXT VALIDATION")
+        print("SCENE ATTRIBUTES VALIDATION")
         print("=" * 40)
 
         scene_attrs_found = False
         for image_id, image_data in kb.images.items():
-            scene_context = image_data.scene_context
-            scene_attrs = scene_context.get("scene_attributes", [])
+            scene_attrs = image_data.scene_attributes
 
-            print(f"{image_id} scene_context keys: {list(scene_context.keys())}")
+            print(f"{image_id} scene_attributes: {len(scene_attrs)} items")
             if scene_attrs:
                 scene_attrs_found = True
-                print(f"  ✓ {len(scene_attrs)} scene attributes found")
-                for i, attr in enumerate(scene_attrs[:2], 1):  # Show first 2
-                    print(f"    {i}. {attr}")
+                print(f"  ✓ {len(scene_attrs)} scene attribute classes found")
+                for i, (attr_class, attr_values) in enumerate(list(scene_attrs.items())[:2], 1):  # Show first 2
+                    for j, attr_value in enumerate(attr_values[:1]):  # Show first value of each class
+                        print(f"    {i}.{j+1}. {attr_class}: {attr_value['value']} (confidence: {attr_value['confidence']:.3f})")
             else:
-                print(f"  ⚠ No scene attributes found in scene_context")
+                print(f"  ⚠ No scene attributes found")
 
         if scene_attrs_found:
             print("✓ Scene attributes successfully stored in knowledge base")
         else:
             print("❌ WARNING: No scene attributes found in any image!")
 
-        # Clean up captions from knowledge base (they should not be in final KB for ProbLog)
-        print(f"\n" + "=" * 40)
-        print("KNOWLEDGE BASE CLEANUP")
-        print("=" * 40)
-        print("Removing captions from knowledge base (captions are for processing only, not ProbLog)")
-
-        captions_removed = 0
-        for image_id, image_data in kb.images.items():
-            if "caption" in image_data.scene_context:
-                del image_data.scene_context["caption"]
-                captions_removed += 1
-
-        print(f"✓ Removed captions from {captions_removed} images")
         print("✓ Knowledge base ready for ProbLog mapping (Steps 8-11)")
+        print("  (Note: Captions were used as processing aids only, not stored in KB)")
 
         # Export to JSON
         print(f"\n" + "=" * 40)

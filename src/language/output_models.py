@@ -121,7 +121,7 @@ class AttributePlanningResponse(BaseModel):
 class CandidateResponse(BaseModel):
     """Pydantic model for attribute candidate generation output."""
     candidates: List[str] = Field(..., description="List of candidate attribute values")
-    
+
     @field_validator('candidates')
     @classmethod
     def validate_candidates(cls, v):
@@ -139,5 +139,71 @@ class CandidateResponse(BaseModel):
         return v
 
 
+class CountRequirementItem(BaseModel):
+    """Single count requirement item."""
+    image_id: str = Field(..., description="Image identifier (e.g., 'image_a')")
+    object_class: str = Field(..., description="Object class to count (e.g., 'cattle', 'bird')")
+
+    @field_validator('image_id')
+    @classmethod
+    def validate_image_id(cls, v):
+        if not v.strip():
+            raise ValueError("Image ID cannot be empty")
+        return v.strip()
+
+    @field_validator('object_class')
+    @classmethod
+    def validate_object_class(cls, v):
+        if not v.strip():
+            raise ValueError("Object class cannot be empty")
+        return v.strip()
+
+
+class CountRequirementResponse(BaseModel):
+    """Pydantic model for count requirement analysis output."""
+    count_requirements: List[CountRequirementItem] = Field(..., description="List of count requirements extracted from subquery")
+
+    @field_validator('count_requirements')
+    @classmethod
+    def validate_count_requirements(cls, v):
+        if not isinstance(v, list):
+            raise ValueError("Count requirements must be a list")
+        if len(v) > 10:  # Reasonable upper limit
+            raise ValueError("Too many count requirements extracted")
+        return v
+
+
+class SceneAttributeCandidateItem(BaseModel):
+    """Single scene attribute candidate."""
+    image_id: str = Field(..., description="Image identifier")
+    attribute_class: str = Field(..., description="Scene attribute category")
+    candidate_value: str = Field(..., description="Specific value to verify")
+    binary_question: str = Field(..., description="Binary Yes/No question")
+
+    @field_validator('image_id', 'attribute_class', 'candidate_value', 'binary_question')
+    @classmethod
+    def validate_non_empty(cls, v):
+        if not v.strip():
+            raise ValueError("Field cannot be empty")
+        return v.strip()
+
+
+class SceneAttributeResponse(BaseModel):
+    """Pydantic model for scene attribute planning output."""
+    scene_attribute_candidates: List[SceneAttributeCandidateItem] = Field(
+        ...,
+        description="List of scene attribute candidates for verification"
+    )
+
+    @field_validator('scene_attribute_candidates')
+    @classmethod
+    def validate_candidates(cls, v):
+        if not isinstance(v, list):
+            raise ValueError("Scene attribute candidates must be a list")
+        if len(v) > 20:  # Reasonable upper limit
+            raise ValueError("Too many scene attribute candidates")
+        return v
+
+
 # Union type for all possible responses
-OutputModel = SubqueryResponse | AttributeResponse | VerificationResponse | RelationshipResponse | ContextResponse | AttributePlanningResponse | CandidateResponse
+OutputModel = SubqueryResponse | AttributeResponse | VerificationResponse | RelationshipResponse | ContextResponse | AttributePlanningResponse | CandidateResponse | CountRequirementResponse | SceneAttributeResponse

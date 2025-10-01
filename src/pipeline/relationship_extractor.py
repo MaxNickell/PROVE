@@ -4,10 +4,11 @@ Extracts spatial and interaction relationships using subquery-driven binary VLM 
 """
 
 from typing import List, Dict, Any, Tuple
-from PIL import Image
+from PIL import Image, ImageDraw
 
 from src.core.model_manager import ModelManager
 from src.core.types import BinarySubquery, ObjectDetection, RelationshipCandidate, IntraRelation, ImageData
+from src.core.probability import get_verifier_probability
 
 
 class RelationshipExtractorError(RuntimeError):
@@ -413,7 +414,36 @@ Examples:
                 existing.required_for_subqueries = list(set(existing.required_for_subqueries))
         
         return list(consolidated.values())
-    
+
+    def _draw_colored_boxes(
+        self,
+        image: Image.Image,
+        subject_bbox: List[float],
+        object_bbox: List[float]
+    ) -> Image.Image:
+        """
+        Draw colored bounding boxes on image.
+
+        Args:
+            image: PIL Image
+            subject_bbox: [x1, y1, x2, y2] for subject (will be red)
+            object_bbox: [x1, y1, x2, y2] for object (will be blue)
+
+        Returns:
+            PIL Image with colored boxes drawn
+        """
+        # Create a copy to avoid modifying original
+        annotated_image = image.copy()
+        draw = ImageDraw.Draw(annotated_image)
+
+        # Draw red box for subject (thick lines)
+        draw.rectangle(subject_bbox, outline="red", width=4)
+
+        # Draw blue box for object (thick lines)
+        draw.rectangle(object_bbox, outline="blue", width=4)
+
+        return annotated_image
+
     def _verify_relationship(
         self,
         qwen_client,
@@ -449,26 +479,28 @@ Examples:
                 return None
 
             image = loaded_images[image_id]
-            
-            # Create binary verification question with bounding boxes and stronger Yes/No compliance
+
+            # Draw colored bounding boxes on image
             subject_bbox = subject_info.bbox
             object_bbox = object_info.bbox
+            annotated_image = self._draw_colored_boxes(image, subject_bbox, object_bbox)
 
-            question = f"""Look at these objects:
-Subject: <box>({int(subject_bbox[0])},{int(subject_bbox[1])}),({int(subject_bbox[2])},{int(subject_bbox[3])})</box>{subject_info.label}
-Object: <box>({int(object_bbox[0])},{int(object_bbox[1])}),({int(object_bbox[2])},{int(object_bbox[3])})</box>{object_info.label}
+            # Create binary verification question with color references
+            question = f"""Look at this image. The {subject_info.label} is marked in red and the {object_info.label} is marked in blue.
 
-Question: Is the {subject_info.label} {candidate.relation} the {object_info.label}?
-
-IMPORTANT: You must respond with exactly "Yes" or "No" only. Do not include any explanation or additional text.
+Question: Is the {subject_info.label} (red) {candidate.relation} the {object_info.label} (blue)? Answer Yes or No.
 
 Answer:"""
-            
-            # Get VLM response with logits
-            response, logits = qwen_client.run_inference_with_logits(image, question)
 
-            # Use proper softmax probability calculation for P(statement is true)
-            prob_statement_true = qwen_client.extract_yes_no_probability_with_proper_softmax(logits, response)
+            # Get VLM response with logits
+            response, logits = qwen_client.run_inference_with_logits(annotated_image, question)
+
+            # Use unified verifier probability extraction
+            prob_statement_true = get_verifier_probability(
+                logits,
+                response,
+                qwen_client.processor.tokenizer
+            )
 
             # Validate response format
             is_valid_response = qwen_client.validate_yes_no_response(response)

@@ -62,154 +62,106 @@
       "attributes": {
         "0": {
           "attributes": {
-            "color": [
+            "shape": [
               {
-                "value": "white",
-                "confidence": 0.7215936952988239
+                "value": "pointed",
+                "confidence": 0.95003003572103
               },
               {
-                "value": "yellowish-orange",
-                "confidence": 0.5148765035158114
+                "value": "rounded",
+                "confidence": 0.9727950613327562
               },
               {
-                "value": "brown",
-                "confidence": 0.3902101913252146
+                "value": "irregular",
+                "confidence": 0.5103949530722968
               }
             ],
             "orientation": [
               {
-                "value": "head turned left",
-                "confidence": 0.5738603258832955
+                "value": "facing_right",
+                "confidence": 0.9296076237500793
               },
               {
-                "value": "slightly rotated",
-                "confidence": 0.5592442085786642
+                "value": "facing_slightly_left",
+                "confidence": 0.8046394468123945
               },
               {
-                "value": "facing right",
-                "confidence": 0.5148766226195711
-              },
-              {
-                "value": "profile view",
-                "confidence": 0.4261396741167045
-              }
-            ],
-            "position": [
-              {
-                "value": "standing",
-                "confidence": 0.6580827177457568
-              },
-              {
-                "value": "facing slightly left",
-                "confidence": 0.6308149686989736
-              },
-              {
-                "value": "facing right",
-                "confidence": 0.5
-              },
-              {
-                "value": "on rock",
-                "confidence": 0.45547532825114795
+                "value": "profile",
+                "confidence": 0.9334031739256955
               }
             ]
           }
         },
         "1": {
           "attributes": {
+            "shape": [
+              {
+                "value": "curved",
+                "confidence": 0.9327896498419032
+              },
+              {
+                "value": "pointed",
+                "confidence": 0.7146104849382701
+              },
+              {
+                "value": "oval",
+                "confidence": 0.5526677193026593
+              }
+            ],
+            "size": [
+              {
+                "value": "large",
+                "confidence": 0.9265141193931442
+              },
+              {
+                "value": "medium",
+                "confidence": 0.684132195534571
+              },
+              {
+                "value": "small",
+                "confidence": 0.7035021910914062
+              }
+            ],
             "color": [
+              {
+                "value": "black",
+                "confidence": 0.93816325107104
+              },
+              {
+                "value": "brown",
+                "confidence": 0.6900627741426635
+              },
               {
                 "value": "dark",
-                "confidence": 0.7614624553057346
-              },
-              {
-                "value": "black",
-                "confidence": 0.73339273984071
-              },
-              {
-                "value": "brown",
-                "confidence": 0.44810419342340724
+                "confidence": 0.9134039237746202
               }
             ],
-            "orientation": [
+            "texture": [
               {
-                "value": "frontal",
-                "confidence": 0.6907379837425702
+                "value": "coarse",
+                "confidence": 0.914200835708351
               },
               {
-                "value": "direct",
-                "confidence": 0.6097898086747854
+                "value": "smooth",
+                "confidence": 0.7637609907728693
+              },
+              {
+                "value": "rough",
+                "confidence": 0.9339707016593403
               }
             ],
-            "position": [
+            "pattern": [
               {
-                "value": "facing camera",
-                "confidence": 0.7824093064712228
+                "value": "solid",
+                "confidence": 0.7055198039093818
               },
               {
-                "value": "standing",
-                "confidence": 0.6778803291879592
+                "value": "mottled",
+                "confidence": 0.3460535157487628
               },
               {
-                "value": "in field",
-                "confidence": 0.6513548646660542
-              }
-            ]
-          }
-        },
-        "2": {
-          "attributes": {
-            "color": [
-              {
-                "value": "black",
-                "confidence": 0.6907378818810739
-              },
-              {
-                "value": "brown",
-                "confidence": 0.544524671748852
-              },
-              {
-                "value": "dark brown",
-                "confidence": 0.5445245534848641
-              }
-            ]
-          }
-        },
-        "3": {
-          "attributes": {
-            "color": [
-              {
-                "value": "black",
-                "confidence": 0.6445660201222121
-              },
-              {
-                "value": "gray",
-                "confidence": 0.49256010135091455
-              },
-              {
-                "value": "brown",
-                "confidence": 0.4851233773804289
-              },
-              {
-                "value": "white",
-                "confidence": 0.29669305814918967
-              }
-            ]
-          }
-        },
-        "4": {
-          "attributes": {
-            "color": [
-              {
-                "value": "black",
-                "confidence": 0.7033069418508103
-              },
-              {
-                "value": "brown",
-                "confidence": 0.5518958065765928
-              },
-              {
-                "value": "white",
-                "confidence": 0.3691850313010263
+                "value": "spotted",
+                "confidence": 0.40523805265637974
               }
             ]
           }
@@ -217,31 +169,20 @@
       },
       "relationships": [
         {
-          "subject_id": "bird_a_0",
-          "object_id": "cattle_a_1",
-          "relation": "on",
-          "probability": 0.7721054670289347
+          "subject_id": "cattle_a_1",
+          "object_id": "bird_a_0",
+          "relation": "near",
+          "probability": 0.9349268095742377
         },
         {
-          "subject_id": "bird_a_0",
-          "object_id": "cattle_a_2",
-          "relation": "on",
-          "probability": 0.7094794204239494
-        },
-        {
-          "subject_id": "bird_a_0",
-          "object_id": "cattle_a_3",
-          "relation": "on",
-          "probability": 0.7094794204239494
-        },
-        {
-          "subject_id": "bird_a_0",
-          "object_id": "cattle_a_4",
-          "relation": "on",
-          "probability": 0.7614624553057345
+          "subject_id": "cattle_a_2",
+          "object_id": "bird_a_0",
+          "relation": "near",
+          "probability": 0.9443661954890298
         }
       ],
-      "scene_context": {}
+      "scene_attributes": {},
+      "counts": {}
     },
     "image_b": {
       "objects": [
@@ -282,74 +223,36 @@
       "attributes": {
         "1": {
           "attributes": {
-            "color": [
+            "shape": [
               {
-                "value": "white",
-                "confidence": 0.7275332125553451
-              }
-            ],
-            "orientation": [
-              {
-                "value": "profile view",
-                "confidence": 0.5445246717488521
+                "value": "long",
+                "confidence": 0.9598660580367058
               },
               {
-                "value": "right-oriented",
-                "confidence": 0.4407557914213357
+                "value": "slender",
+                "confidence": 0.49871069356880343
               },
               {
-                "value": "facing right",
-                "confidence": 0.42613967411670445
-              }
-            ],
-            "position": [
-              {
-                "value": "in a grassy field",
-                "confidence": 0.6168478173601446
-              },
-              {
-                "value": "facing right",
-                "confidence": 0.397314585900587
-              },
-              {
-                "value": "elevated",
-                "confidence": 0.3156556261095164
+                "value": "curved",
+                "confidence": 0.9470640537748818
               }
             ]
           }
         },
         "2": {
           "attributes": {
-            "color": [
+            "shape": [
               {
-                "value": "black",
-                "confidence": 0.6026852999180292
+                "value": "pointed",
+                "confidence": 0.7524104872624603
               },
               {
-                "value": "gray",
-                "confidence": 0.5592442085786642
+                "value": "rounded",
+                "confidence": 0.9769312264464902
               },
               {
-                "value": "brown",
-                "confidence": 0.5445246717488521
-              }
-            ]
-          }
-        },
-        "0": {
-          "attributes": {
-            "orientation": [
-              {
-                "value": "facing right",
-                "confidence": 0.5592442085786643
-              },
-              {
-                "value": "profile view",
-                "confidence": 0.5297266917326008
-              },
-              {
-                "value": "right-facing",
-                "confidence": 0.4407557914213357
+                "value": "hooked",
+                "confidence": 0.9593948301747462
               }
             ]
           }
@@ -358,134 +261,467 @@
       "relationships": [
         {
           "subject_id": "bird_b_1",
-          "object_id": "animal_b_0",
-          "relation": "above",
-          "probability": 0.5
-        },
-        {
-          "subject_id": "bird_b_1",
-          "object_id": "animal_b_0",
-          "relation": "touching",
-          "probability": 0.4407557914213357
-        },
-        {
-          "subject_id": "bird_b_1",
-          "object_id": "animal_b_0",
-          "relation": "on",
-          "probability": 0.5811220303079576
-        },
-        {
-          "subject_id": "bird_b_2",
-          "object_id": "animal_b_0",
-          "relation": "on",
-          "probability": 0.7504831155211436
+          "object_id": "bird_b_2",
+          "relation": "same_image",
+          "probability": 0.4447272068542485
         }
       ],
-      "scene_context": {}
+      "scene_attributes": {
+        "animal_presence": [
+          {
+            "value": "animals",
+            "confidence": 0.9691981049950249
+          }
+        ]
+      },
+      "counts": {}
     }
   },
   "subqueries": [
     {
-      "question": "Is bird_a_0 black?",
+      "question": "Is bird_a_0 in IMAGE_A a bird?",
       "referenced_objects": [
         "bird_a_0"
       ],
       "subquery_type": "attribute"
     },
     {
-      "question": "Is cattle_a_1 brown?",
+      "question": "Is cattle_a_1 in IMAGE_A a cattle?",
       "referenced_objects": [
         "cattle_a_1"
       ],
       "subquery_type": "attribute"
     },
     {
-      "question": "Is bird_b_1 black and brown?",
-      "referenced_objects": [
-        "bird_b_1"
-      ],
-      "subquery_type": "attribute"
-    },
-    {
-      "question": "Is there a bird on cattle_a_1's head?",
-      "referenced_objects": [
-        "cattle_a_1",
-        "bird_a_0"
-      ],
-      "subquery_type": "relationship"
-    },
-    {
-      "question": "Is bird_b_1 on animal_b_0's head?",
-      "referenced_objects": [
-        "animal_b_0",
-        "bird_b_1"
-      ],
-      "subquery_type": "relationship"
-    },
-    {
-      "question": "Are there more than one bird in IMAGE_A?",
-      "referenced_objects": [
-        "bird_a_0"
-      ],
-      "subquery_type": "count"
-    },
-    {
-      "question": "Are there more than one bird in IMAGE_B?",
+      "question": "Are bird_b_1 and bird_b_2 in IMAGE_B birds?",
       "referenced_objects": [
         "bird_b_1",
         "bird_b_2"
       ],
+      "subquery_type": "attribute"
+    },
+    {
+      "question": "Is there more than one cattle in IMAGE_A?",
+      "referenced_objects": [
+        "cattle_a_1",
+        "cattle_a_2",
+        "cattle_a_3",
+        "cattle_a_4"
+      ],
       "subquery_type": "count"
     },
     {
-      "question": "Do both images show a grassy field?",
-      "referenced_objects": [],
-      "subquery_type": "scene_attribute"
-    },
-    {
-      "question": "Is the sky blue in both images?",
-      "referenced_objects": [],
-      "subquery_type": "scene_attribute"
-    },
-    {
-      "question": "Is cattle_a_1 facing the camera?",
-      "referenced_objects": [
-        "cattle_a_1"
-      ],
-      "subquery_type": "attribute"
-    },
-    {
-      "question": "Is animal_b_0 facing the right side of the image?",
+      "question": "Are there any animals in IMAGE_B?",
       "referenced_objects": [
         "animal_b_0"
       ],
-      "subquery_type": "attribute"
-    },
-    {
-      "question": "Are bird_a_0 and bird_b_1 looking at the camera?",
-      "referenced_objects": [
-        "bird_a_0",
-        "bird_b_1"
-      ],
-      "subquery_type": "attribute"
-    },
-    {
-      "question": "Is the grass tall and green in both images?",
-      "referenced_objects": [],
       "subquery_type": "scene_attribute"
     },
     {
-      "question": "Do both images have buffalo or cows with birds on their heads?",
+      "question": "Is cattle_a_1 closer to bird_a_0 than cattle_a_2 in IMAGE_A?",
       "referenced_objects": [
         "cattle_a_1",
         "bird_a_0",
-        "animal_b_0",
-        "bird_b_1"
+        "cattle_a_2"
+      ],
+      "subquery_type": "relationship"
+    },
+    {
+      "question": "Do bird_b_1 and bird_b_2 appear in the same image?",
+      "referenced_objects": [
+        "bird_b_1",
+        "bird_b_2"
       ],
       "subquery_type": "relationship"
     }
   ],
-  "problog_facts": [],
+  "problog_facts": [
+    {
+      "probability": 0.565,
+      "predicate": "entity",
+      "arguments": [
+        "image_a",
+        "bird_a_0",
+        "bird",
+        "196",
+        "96",
+        "270",
+        "202"
+      ]
+    },
+    {
+      "probability": 0.348,
+      "predicate": "entity",
+      "arguments": [
+        "image_a",
+        "cattle_a_1",
+        "cattle",
+        "94",
+        "185",
+        "400",
+        "595"
+      ]
+    },
+    {
+      "probability": 0.15,
+      "predicate": "entity",
+      "arguments": [
+        "image_a",
+        "cattle_a_2",
+        "cattle",
+        "0",
+        "134",
+        "214",
+        "400"
+      ]
+    },
+    {
+      "probability": 0.169,
+      "predicate": "entity",
+      "arguments": [
+        "image_a",
+        "cattle_a_3",
+        "cattle",
+        "139",
+        "29",
+        "408",
+        "202"
+      ]
+    },
+    {
+      "probability": 0.251,
+      "predicate": "entity",
+      "arguments": [
+        "image_a",
+        "cattle_a_4",
+        "cattle",
+        "0",
+        "83",
+        "242",
+        "210"
+      ]
+    },
+    {
+      "probability": 0.269,
+      "predicate": "entity",
+      "arguments": [
+        "image_b",
+        "animal_b_0",
+        "animal",
+        "28",
+        "80",
+        "560",
+        "362"
+      ]
+    },
+    {
+      "probability": 0.394,
+      "predicate": "entity",
+      "arguments": [
+        "image_b",
+        "bird_b_1",
+        "bird",
+        "210",
+        "226",
+        "287",
+        "328"
+      ]
+    },
+    {
+      "probability": 0.232,
+      "predicate": "entity",
+      "arguments": [
+        "image_b",
+        "bird_b_2",
+        "bird",
+        "293",
+        "35",
+        "340",
+        "99"
+      ]
+    },
+    {
+      "probability": 0.95003003572103,
+      "predicate": "attribute",
+      "arguments": [
+        "image_a",
+        "bird_a_0",
+        "pointed"
+      ]
+    },
+    {
+      "probability": 0.9727950613327562,
+      "predicate": "attribute",
+      "arguments": [
+        "image_a",
+        "bird_a_0",
+        "rounded"
+      ]
+    },
+    {
+      "probability": 0.5103949530722968,
+      "predicate": "attribute",
+      "arguments": [
+        "image_a",
+        "bird_a_0",
+        "irregular"
+      ]
+    },
+    {
+      "probability": 0.9296076237500793,
+      "predicate": "attribute",
+      "arguments": [
+        "image_a",
+        "bird_a_0",
+        "facing_right"
+      ]
+    },
+    {
+      "probability": 0.8046394468123945,
+      "predicate": "attribute",
+      "arguments": [
+        "image_a",
+        "bird_a_0",
+        "facing_slightly_left"
+      ]
+    },
+    {
+      "probability": 0.9334031739256955,
+      "predicate": "attribute",
+      "arguments": [
+        "image_a",
+        "bird_a_0",
+        "profile"
+      ]
+    },
+    {
+      "probability": 0.9327896498419032,
+      "predicate": "attribute",
+      "arguments": [
+        "image_a",
+        "cattle_a_1",
+        "curved"
+      ]
+    },
+    {
+      "probability": 0.7146104849382701,
+      "predicate": "attribute",
+      "arguments": [
+        "image_a",
+        "cattle_a_1",
+        "pointed"
+      ]
+    },
+    {
+      "probability": 0.5526677193026593,
+      "predicate": "attribute",
+      "arguments": [
+        "image_a",
+        "cattle_a_1",
+        "oval"
+      ]
+    },
+    {
+      "probability": 0.9265141193931442,
+      "predicate": "attribute",
+      "arguments": [
+        "image_a",
+        "cattle_a_1",
+        "large"
+      ]
+    },
+    {
+      "probability": 0.684132195534571,
+      "predicate": "attribute",
+      "arguments": [
+        "image_a",
+        "cattle_a_1",
+        "medium"
+      ]
+    },
+    {
+      "probability": 0.7035021910914062,
+      "predicate": "attribute",
+      "arguments": [
+        "image_a",
+        "cattle_a_1",
+        "small"
+      ]
+    },
+    {
+      "probability": 0.93816325107104,
+      "predicate": "attribute",
+      "arguments": [
+        "image_a",
+        "cattle_a_1",
+        "black"
+      ]
+    },
+    {
+      "probability": 0.6900627741426635,
+      "predicate": "attribute",
+      "arguments": [
+        "image_a",
+        "cattle_a_1",
+        "brown"
+      ]
+    },
+    {
+      "probability": 0.9134039237746202,
+      "predicate": "attribute",
+      "arguments": [
+        "image_a",
+        "cattle_a_1",
+        "dark"
+      ]
+    },
+    {
+      "probability": 0.914200835708351,
+      "predicate": "attribute",
+      "arguments": [
+        "image_a",
+        "cattle_a_1",
+        "coarse"
+      ]
+    },
+    {
+      "probability": 0.7637609907728693,
+      "predicate": "attribute",
+      "arguments": [
+        "image_a",
+        "cattle_a_1",
+        "smooth"
+      ]
+    },
+    {
+      "probability": 0.9339707016593403,
+      "predicate": "attribute",
+      "arguments": [
+        "image_a",
+        "cattle_a_1",
+        "rough"
+      ]
+    },
+    {
+      "probability": 0.7055198039093818,
+      "predicate": "attribute",
+      "arguments": [
+        "image_a",
+        "cattle_a_1",
+        "solid"
+      ]
+    },
+    {
+      "probability": 0.3460535157487628,
+      "predicate": "attribute",
+      "arguments": [
+        "image_a",
+        "cattle_a_1",
+        "mottled"
+      ]
+    },
+    {
+      "probability": 0.40523805265637974,
+      "predicate": "attribute",
+      "arguments": [
+        "image_a",
+        "cattle_a_1",
+        "spotted"
+      ]
+    },
+    {
+      "probability": 0.9598660580367058,
+      "predicate": "attribute",
+      "arguments": [
+        "image_b",
+        "bird_b_1",
+        "long"
+      ]
+    },
+    {
+      "probability": 0.49871069356880343,
+      "predicate": "attribute",
+      "arguments": [
+        "image_b",
+        "bird_b_1",
+        "slender"
+      ]
+    },
+    {
+      "probability": 0.9470640537748818,
+      "predicate": "attribute",
+      "arguments": [
+        "image_b",
+        "bird_b_1",
+        "curved"
+      ]
+    },
+    {
+      "probability": 0.7524104872624603,
+      "predicate": "attribute",
+      "arguments": [
+        "image_b",
+        "bird_b_2",
+        "pointed"
+      ]
+    },
+    {
+      "probability": 0.9769312264464902,
+      "predicate": "attribute",
+      "arguments": [
+        "image_b",
+        "bird_b_2",
+        "rounded"
+      ]
+    },
+    {
+      "probability": 0.9593948301747462,
+      "predicate": "attribute",
+      "arguments": [
+        "image_b",
+        "bird_b_2",
+        "hooked"
+      ]
+    },
+    {
+      "probability": 0.9349268095742377,
+      "predicate": "relation",
+      "arguments": [
+        "image_a",
+        "cattle_a_1",
+        "bird_a_0",
+        "near"
+      ]
+    },
+    {
+      "probability": 0.9443661954890298,
+      "predicate": "relation",
+      "arguments": [
+        "image_a",
+        "cattle_a_2",
+        "bird_a_0",
+        "near"
+      ]
+    },
+    {
+      "probability": 0.4447272068542485,
+      "predicate": "relation",
+      "arguments": [
+        "image_b",
+        "bird_b_1",
+        "bird_b_2",
+        "same_image"
+      ]
+    },
+    {
+      "probability": 0.9691981049950249,
+      "predicate": "scene_attr",
+      "arguments": [
+        "image_b",
+        "animals"
+      ]
+    }
+  ],
   "subquery_results": [],
   "answer": null
 }

@@ -5,15 +5,15 @@ Follows the established subquery analysis pattern used by attribute and relation
 """
 
 from typing import List, Dict, Any, Tuple
-import json
 from PIL import Image
 
 from src.core.model_manager import ModelManager
 from src.core.types import ObjectDetection, BinarySubquery, ImageData
+from src.core.probability import get_verifier_probability
 from src.vision.qwen_vl import QwenVL
 
 
-class ContextProcessorError(RuntimeError):
+class SceneAttributeProcessorError(RuntimeError):
     """Custom exception for scene attribute processing failures."""
     def __init__(self, message: str):
         super().__init__(message)
@@ -62,7 +62,7 @@ class SceneAttributeResult:
         }
 
 
-class ContextProcessor:
+class SceneAttributeProcessor:
     """
     Process scene_attribute subqueries using LLM decomposition + Qwen binary verification.
     Follows the established pattern: Subquery → LLM Analysis → Atomic Binary Questions → Qwen Verification → Results
@@ -75,35 +75,35 @@ class ContextProcessor:
     def process_scene_attribute_subqueries(
         self,
         scene_subqueries: List[BinarySubquery],
-        image_paths: List[str],
-        images: Dict[str, ImageData]
-    ) -> Dict[str, Dict[str, Any]]:
+        image_paths: Dict[str, str],
+        images: Dict[str, ImageData],
+        image_contexts: Dict[str, str] = None
+    ) -> Dict[str, int]:
         """
         Process scene_attribute subqueries using proper subquery decomposition.
 
         Args:
             scene_subqueries: List of scene_attribute binary subqueries
-            image_paths: List of image file paths
-            images: ImageData structure containing objects and captions per image
+            image_paths: Dict mapping image_id to file path (e.g., {'image_a': './test_images/img0.png'})
+            images: ImageData structure containing objects per image
+            image_contexts: Optional dict mapping image_id to caption text for processing
 
         Returns:
-            Dict[str, Dict[str, Any]]: Scene context per image with attribute facts
-            Format: {"image_a": {"caption": str, "scene_attributes": [SceneAttributeResult.to_dict()]}}
+            Dict[str, int]: Count of scene attributes extracted per image
+            Scene attributes are stored directly in ImageData.scene_attributes field
 
         Raises:
             ContextProcessorError: If processing fails
         """
         try:
-            # Initialize scene context
-            scene_context = {}
+            # Initialize scene_attributes for all images
             for image_id, image_data in images.items():
-                scene_context[image_id] = {
-                    "caption": image_data.scene_context.get("caption", ""),
-                    "scene_attributes": []
-                }
+                if not hasattr(image_data, 'scene_attributes') or image_data.scene_attributes is None:
+                    image_data.scene_attributes = {}
 
             if not scene_subqueries:
-                return scene_context
+                # Return count of scene attributes per image
+                return {image_id: len(image_data.scene_attributes) for image_id, image_data in images.items()}
 
             # Load models
             llm_client = self.model_manager.get_llm_client()
@@ -111,7 +111,7 @@ class ContextProcessor:
 
             # Step 1: Analyze all scene subqueries to determine scene attribute candidates
             all_candidates = self._analyze_scene_subqueries_for_candidates(
-                llm_client, scene_subqueries, images
+                llm_client, scene_subqueries, images, image_contexts
             )
 
             print(f"Generated {len(all_candidates)} scene attribute candidates from {len(scene_subqueries)} subqueries")
@@ -127,21 +127,30 @@ class ContextProcessor:
 
             print(f"Verified {len(verified_results)} scene attributes")
 
-            # Step 3: Group results by image and store
+            # Step 3: Store results directly in ImageData scene_attributes (matching object attribute structure)
             for result in verified_results:
-                if result.image_id in scene_context:
-                    scene_context[result.image_id]["scene_attributes"].append(result.to_dict())
+                if result.image_id in images:
+                    # Store using same structure as object attributes: attribute_class -> [AttributeValue, ...]
+                    attribute_class = result.attribute_class
+                    attribute_value = {"value": result.value, "confidence": result.confidence}
 
-            return scene_context
+                    if attribute_class not in images[result.image_id].scene_attributes:
+                        images[result.image_id].scene_attributes[attribute_class] = []
+
+                    images[result.image_id].scene_attributes[attribute_class].append(attribute_value)
+
+            # Return count of scene attributes per image for logging
+            return {image_id: len(image_data.scene_attributes) for image_id, image_data in images.items()}
 
         except Exception as e:
-            raise ContextProcessorError(f"Failed to process scene_attribute subqueries: {str(e)}")
+            raise SceneAttributeProcessorError(f"Failed to process scene_attribute subqueries: {str(e)}")
 
     def _analyze_scene_subqueries_for_candidates(
         self,
         llm_client,
         scene_subqueries: List[BinarySubquery],
-        images: Dict[str, ImageData]
+        images: Dict[str, ImageData],
+        image_contexts: Dict[str, str] = None
     ) -> List[SceneAttributeCandidate]:
         """
         Analyze all scene subqueries to determine what scene attributes need verification.
@@ -150,7 +159,8 @@ class ContextProcessor:
         Args:
             llm_client: LLM client for analysis
             scene_subqueries: List of scene_attribute subqueries
-            images: ImageData structure with captions
+            images: ImageData structure containing objects per image
+            image_contexts: Optional dict mapping image_id to caption text for processing
 
         Returns:
             List[SceneAttributeCandidate]: All scene attribute candidates that need verification
@@ -163,7 +173,7 @@ class ContextProcessor:
 
             # Analyze this subquery to determine required scene attributes
             candidates = self._analyze_single_subquery_for_scene_attributes(
-                llm_client, subquery, images
+                llm_client, subquery, images, image_contexts
             )
 
             # Add subquery reference to candidates
@@ -178,7 +188,8 @@ class ContextProcessor:
         self,
         llm_client,
         subquery: BinarySubquery,
-        images: Dict[str, ImageData]
+        images: Dict[str, ImageData],
+        image_contexts: Dict[str, str] = None
     ) -> List[SceneAttributeCandidate]:
         """
         Analyze a single scene subquery to determine required scene attribute verifications.
@@ -187,22 +198,24 @@ class ContextProcessor:
             llm_client: LLM client
             subquery: Scene attribute subquery to analyze
             images: ImageData structure
+            image_contexts: Optional dict mapping image_id to caption text for processing
 
         Returns:
             List[SceneAttributeCandidate]: Required scene attribute verifications for this subquery
         """
         try:
             # Build context about available images and their captions
-            image_context = {}
-            for image_id, image_data in images.items():
-                image_context[image_id] = image_data.scene_context.get("caption", "")
+            image_context = image_contexts or {}
+
+            # Format image context without json.dumps
+            context_str = "\n".join([f"{img_id}: {desc}" for img_id, desc in image_context.items()])
 
             prompt = f"""Analyze this scene attribute subquery to determine what atomic scene attributes need verification.
 
 Subquery: "{subquery.question}"
 
 Available Images and Descriptions:
-{json.dumps(image_context, indent=2)}
+{context_str}
 
 Task: Break this subquery into atomic scene attribute verifications that can be answered with binary Yes/No questions.
 
@@ -231,29 +244,23 @@ Examples:
 
 Answer:"""
 
-            response = llm_client.generate_response(prompt, temperature=0.2)
+            messages = [{"role": "user", "content": prompt}]
 
-            # Parse JSON response
-            try:
-                result = json.loads(response)
-                candidates_data = result.get("scene_attribute_candidates", [])
+            # Use Pydantic validation for guaranteed structure
+            response = llm_client.analyze_scene_attributes(messages, temperature=0.2)
 
-                candidates = []
-                for data in candidates_data:
-                    candidate = SceneAttributeCandidate(
-                        image_id=data.get("image_id", ""),
-                        attribute_class=data.get("attribute_class", ""),
-                        candidate_value=data.get("candidate_value", ""),
-                        binary_question=data.get("binary_question", "")
-                    )
-                    candidates.append(candidate)
+            # Convert Pydantic response to SceneAttributeCandidate objects
+            candidates = []
+            for item in response.scene_attribute_candidates:
+                candidate = SceneAttributeCandidate(
+                    image_id=item.image_id,
+                    attribute_class=item.attribute_class,
+                    candidate_value=item.candidate_value,
+                    binary_question=item.binary_question
+                )
+                candidates.append(candidate)
 
-                return candidates
-
-            except json.JSONDecodeError as e:
-                print(f"Warning: Failed to parse LLM response for scene analysis: {e}")
-                print(f"Response was: {response}")
-                return []
+            return candidates
 
         except Exception as e:
             print(f"Warning: Failed to analyze scene subquery '{subquery.question}': {e}")
@@ -263,7 +270,7 @@ Answer:"""
         self,
         qwen_client: QwenVL,
         candidate: SceneAttributeCandidate,
-        image_paths: List[str]
+        image_paths: Dict[str, str]
     ) -> SceneAttributeResult:
         """
         Verify a scene attribute candidate using Qwen binary verification.
@@ -271,22 +278,18 @@ Answer:"""
         Args:
             qwen_client: Qwen VLM client
             candidate: Scene attribute candidate to verify
-            image_paths: List of image file paths
+            image_paths: Dict mapping image_id to file path
 
         Returns:
             SceneAttributeResult: Verification result with confidence score
         """
         try:
-            # Find the image file path
-            image_path = None
-            for path in image_paths:
-                if candidate.image_id in path:
-                    image_path = path
-                    break
-
-            if not image_path:
+            # Get image path directly from mapping
+            if candidate.image_id not in image_paths:
                 print(f"Warning: Could not find image path for {candidate.image_id}")
                 return None
+
+            image_path = image_paths[candidate.image_id]
 
             # Load image
             image = Image.open(image_path)
@@ -301,8 +304,12 @@ Answer:"""
             # Get VLM response with logits
             response, logits = qwen_client.run_inference_with_logits(image, verification_question)
 
-            # Use proper softmax probability calculation for P(statement is true)
-            prob_statement_true = qwen_client.extract_yes_no_probability_with_proper_softmax(logits, response)
+            # Use unified verifier probability extraction
+            prob_statement_true = get_verifier_probability(
+                logits,
+                response,
+                qwen_client.processor.tokenizer
+            )
 
             # Validate response format
             is_valid_response = qwen_client.validate_yes_no_response(response)
