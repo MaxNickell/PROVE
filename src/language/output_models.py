@@ -38,34 +38,6 @@ class SubqueryResponse(BaseModel):
         return v
 
 
-class AttributeResponse(BaseModel):
-    """Pydantic model for attribute extraction output."""
-    attributes: Dict[str, str] = Field(..., description="Extracted attributes as key-value pairs")
-    
-    @field_validator('attributes')
-    @classmethod
-    def validate_attributes(cls, v):
-        if not isinstance(v, dict):
-            raise ValueError("Attributes must be a dictionary")
-        # Ensure all values are strings
-        for key, value in v.items():
-            if not isinstance(value, str):
-                v[key] = str(value)
-        return v
-
-
-class VerificationResponse(BaseModel):
-    """Pydantic model for binary verification output."""
-    answer: str = Field(..., description="Binary answer: yes/no")
-    confidence: float = Field(..., ge=0.0, le=1.0, description="Confidence score between 0 and 1")
-    
-    @field_validator('answer')
-    @classmethod
-    def validate_answer(cls, v):
-        v = v.lower().strip()
-        if v not in ['yes', 'no']:
-            raise ValueError("Answer must be 'yes' or 'no'")
-        return v
 
 
 class RelationshipItem(BaseModel):
@@ -87,17 +59,6 @@ class RelationshipResponse(BaseModel):
         return v
 
 
-class ContextResponse(BaseModel):
-    """Pydantic model for scene context processing output."""
-    context: str = Field(..., description="Scene context description")
-    key_elements: List[str] = Field(default_factory=list, description="Key contextual elements")
-    
-    @field_validator('context')
-    @classmethod
-    def validate_context(cls, v):
-        if len(v.strip()) < 10:
-            raise ValueError("Context description too short")
-        return v.strip()
 
 
 class AttributePlanningResponse(BaseModel):
@@ -205,5 +166,26 @@ class SceneAttributeResponse(BaseModel):
         return v
 
 
+class EntityExtractionResponse(BaseModel):
+    """Pydantic model for entity extraction from image captions."""
+    entities: List[str] = Field(
+        ...,
+        description="List of singular noun object classes extracted from caption"
+    )
+
+    @field_validator('entities')
+    @classmethod
+    def validate_entities(cls, v):
+        if not isinstance(v, list):
+            raise ValueError("Entities must be a list")
+        # Remove empty strings and strip whitespace
+        v = [e.strip() for e in v if e.strip()]
+        if not v:
+            raise ValueError("Entities list cannot be empty after filtering")
+        # Lowercase and deduplicate
+        v = list(set(e.lower() for e in v))
+        return v
+
+
 # Union type for all possible responses
-OutputModel = SubqueryResponse | AttributeResponse | VerificationResponse | RelationshipResponse | ContextResponse | AttributePlanningResponse | CandidateResponse | CountRequirementResponse | SceneAttributeResponse
+OutputModel = SubqueryResponse | RelationshipResponse | AttributePlanningResponse | CandidateResponse | CountRequirementResponse | SceneAttributeResponse | EntityExtractionResponse

@@ -7,7 +7,7 @@ from src.core.probability import calibrate_detector_confidence
 class Florence2:
     """Simplified Florence-2 implementation based on HuggingFace best practices."""
 
-    def __init__(self, model_name: str = "microsoft/Florence-2-large-ft", device: str = "auto") -> None:
+    def __init__(self, model_name: str = "microsoft/Florence-2-large", device: str = "auto") -> None:
         # Device allocation
         self.has_cuda = torch.cuda.is_available()
         if device == "auto":
@@ -27,6 +27,73 @@ class Florence2:
             low_cpu_mem_usage=False,
         )
         self.model.to(self.device).eval()
+
+    def detect_open_vocabulary(self, image: Image.Image, text_prompt: str) -> dict:
+        """
+        Detect objects using open vocabulary detection with text prompt.
+
+        Args:
+            image: PIL Image
+            text_prompt: Text description of object to detect (e.g., "cat")
+
+        Returns:
+            dict: Detection result with bboxes, labels, scores
+        """
+        # Ensure RGB
+        if image.mode != "RGB":
+            image = image.convert("RGB")
+
+        # Open vocabulary detection task with text prompt
+        task = "<OPEN_VOCABULARY_DETECTION>"
+        prompt = f"{task}{text_prompt}"
+
+        inputs = self.processor(text=prompt, images=image, return_tensors="pt")
+        input_ids = inputs["input_ids"].to(self.device)
+        pixel_values = inputs["pixel_values"].to(self.device, dtype=self.dtype)
+
+        with torch.no_grad():
+            generated = self.model.generate(
+                input_ids=input_ids,
+                pixel_values=pixel_values,
+                max_new_tokens=1024,
+                num_beams=3,
+                return_dict_in_generate=True,
+                output_scores=True,
+            )
+
+        # Decode generated tokens to text (required by post_process_generation)
+        generated_text = self.processor.batch_decode(generated.sequences, skip_special_tokens=False)[0]
+
+        # Parse results from decoded text
+        parsed = self.processor.post_process_generation(
+            generated_text,
+            task=task,
+            image_size=(image.width, image.height),
+        )
+
+        # Compute sequence-level confidence using geometric mean
+        result = parsed.get(task, {})
+        raw_confidence = None
+
+        if hasattr(generated, "scores") and hasattr(generated, "beam_indices"):
+            transition = self.model.compute_transition_scores(
+                sequences=generated.sequences,
+                scores=generated.scores,
+                beam_indices=generated.beam_indices,
+                normalize_logits=True,
+            )
+            # Geometric mean: exp(mean of log-probs) = length-normalized likelihood
+            # This is P(sequence)^(1/L), the standard measure in language modeling
+            log_probs = transition[0]
+            raw_confidence = torch.exp(log_probs.mean()).item()
+
+        # Inject confidence scores into result
+        if raw_confidence is not None:
+            num_detections = len(result.get("bboxes", []))
+            # All detections share same sequence-level confidence
+            result["scores"] = [raw_confidence] * num_detections
+
+        return result
 
     def detect(self, image: Image.Image, return_scores: bool = True):
         """
@@ -50,29 +117,21 @@ class Florence2:
         pixel_values = inputs["pixel_values"].to(self.device, dtype=self.dtype)
 
         with torch.no_grad():
-            generated = self.model.generate(
+            generated_ids = self.model.generate(
                 input_ids=input_ids,
                 pixel_values=pixel_values,
                 max_new_tokens=1024,
+                early_stopping=False,
+                do_sample=False,
                 num_beams=3,
-                return_dict_in_generate=True,
-                output_scores=return_scores,
             )
 
-            transition_beam_score = None
-            if return_scores and hasattr(generated, "scores"):
-                # Compute beam transition scores for confidence calculation
-                transition = self.model.compute_transition_scores(
-                    sequences=generated.sequences,
-                    scores=generated.scores,
-                    beam_indices=generated.beam_indices,
-                )
-                transition_beam_score = transition[0]
+        # Decode generated tokens to text (required by post_process_generation)
+        generated_text = self.processor.batch_decode(generated_ids, skip_special_tokens=False)[0]
 
-        # Florence-2 commit (Nov 2024) added support for returning `scores`
+        # Parse results from decoded text
         parsed = self.processor.post_process_generation(
-            sequence=generated.sequences[0],
-            transition_beam_score=transition_beam_score,
+            generated_text,
             task=task,
             image_size=(image.width, image.height),
         )
@@ -97,14 +156,6 @@ class Florence2:
             })
         return detections
 
-    def detect_and_visualize(self, image: Image.Image, output_path: str):
-        """
-        Detect objects and save annotated image.
-        """
-        detections = self.detect(image)
-        annotated_image = self.visualize_detections(image, detections)
-        annotated_image.save(output_path)
-        return detections
 
     def visualize_detections(self, image: Image.Image, detections: list) -> Image.Image:
         """
@@ -176,9 +227,3 @@ class Florence2:
 
         description = parsed.get(task, "No description available")
         return description
-
-
-# Example usage
-if __name__ == "__main__":
-    florence = Florence2()
-    print("✓ Florence-2 wrapper ready with confidence extraction")

@@ -9,6 +9,8 @@ import os
 
 from src.core.model_manager import ModelManager
 from src.core.types import ObjectDetection
+from src.core.probability import calibrate_detector_confidence
+from src.core.image_utils import load_rgb_image
 
 
 class DetectorError(RuntimeError):
@@ -34,44 +36,135 @@ class Detector:
         
     def detect(self, image_path: str, visualize: bool = False) -> List[ObjectDetection]:
         """
-        Detect objects in image using Florence-2.
-        
+        Detect objects using caption-based open vocabulary detection.
+        Generates caption internally.
+
         Args:
             image_path: Path to input image
             visualize: Whether to save annotated image
-            
+
         Returns:
             List[ObjectDetection]: Detected objects with exact schema compliance
-            
+
         Raises:
             DetectorError: If detection fails
         """
         try:
-            # Validate input
-            if not os.path.exists(image_path):
-                raise DetectorError(f"Image file not found: {image_path}")
-                
-            # Load image
-            image = Image.open(image_path).convert("RGB")
-            
-            # Get Florence-2 model from singleton ModelManager
+            # Load image and generate caption
+            image = load_rgb_image(image_path)
             florence2 = self.model_manager.get_florence2()
-            
-            # Perform detection with confidence scores
-            if visualize:
-                output_path = image_path.rsplit(".", 1)[0] + "_annotated." + image_path.rsplit(".", 1)[1]
-                raw_detections = florence2.detect_and_visualize(image, output_path)
-            else:
-                # Use standard detection for better confidence scores
-                raw_detections = florence2.detect(image, return_scores=True)
-            
-            # Convert to ObjectDetection instances with exact schema compliance
-            objects = self._convert_to_object_detections(raw_detections)
-            
-            return objects
-            
+
+            print("  Generating detailed image caption...")
+            caption = florence2.describe_region(image, task="<MORE_DETAILED_CAPTION>")
+
+            # Delegate to caption-based detection
+            return self.detect_from_caption(image_path, caption, visualize)
+
         except Exception as err:
-            raise DetectorError(f"Florence-2 detection failed: {err}")
+            raise DetectorError(f"Object detection failed: {err}")
+
+    def detect_from_caption(self, image_path: str, caption: str, visualize: bool = False) -> List[ObjectDetection]:
+        """
+        Detect objects using a pre-generated caption.
+
+        Pipeline:
+        1. Extract entity nouns from caption using LLM
+        2. Run open vocabulary detection for each entity class
+
+        Args:
+            image_path: Path to input image
+            caption: Pre-generated detailed caption
+            visualize: Whether to save annotated image
+
+        Returns:
+            List[ObjectDetection]: Detected objects with exact schema compliance
+
+        Raises:
+            DetectorError: If detection fails
+        """
+        try:
+            # Load image (validates existence and converts to RGB)
+            image = load_rgb_image(image_path)
+
+            # Get models from singleton ModelManager
+            florence2 = self.model_manager.get_florence2()
+            llm_client = self.model_manager.get_llm_client()
+
+            # Display caption and extract entities
+            print(f"  Caption: {caption}")
+            print("  Extracting entities from caption...")
+            messages = [
+                {
+                    "role": "system",
+                    "content": "You are an expert at extracting object entities from image descriptions. Extract ALL singular noun object classes mentioned in the caption. Return only base nouns without attributes. Return strict JSON only."
+                },
+                {
+                    "role": "user",
+                    "content": f"""Extract all object entities from this image caption.
+
+Caption: "{caption}"
+
+Rules:
+1. Extract ALL objects/entities mentioned in the caption
+2. Use singular noun forms only (e.g., "person" not "people", "bird" not "birds")
+3. Remove all attributes - return base nouns only (e.g., "cat" not "black cat")
+4. Do NOT include scene descriptors, locations, or abstract concepts
+5. Focus on concrete, tangible objects that can be detected visually
+
+Respond in exact JSON format:
+{{
+  "entities": ["object1", "object2", "object3"]
+}}"""
+                }
+            ]
+
+            entity_response = llm_client.extract_entities(messages, temperature=0.1)
+            entities = entity_response.entities  # Already lowercase and deduplicated by Pydantic
+            print(f"  Extracted entities: {entities}")
+
+            if not entities:
+                print("  Warning: No entities extracted from caption")
+                return []
+
+            # Step 3: Run open vocabulary detection for each entity
+            print("  Step 3: Running open vocabulary detection for each entity...")
+            all_detections = []
+
+            for entity_class in entities:
+                print(f"    Detecting: {entity_class}")
+                ovd_result = florence2.detect_open_vocabulary(image, entity_class)
+
+                bboxes = ovd_result.get("bboxes", [])
+                labels = ovd_result.get("bboxes_labels", [])  # OVD task returns "bboxes_labels"
+                scores = ovd_result.get("scores", [])
+
+                # Process detections for this entity class
+                for i, (bbox, label) in enumerate(zip(bboxes, labels)):
+                    raw_conf = scores[i] if scores and i < len(scores) else None
+                    calibrated_conf = calibrate_detector_confidence(raw_conf) if raw_conf is not None else None
+
+                    all_detections.append({
+                        "bbox": bbox,
+                        "label": label,
+                        "confidence": calibrated_conf
+                    })
+
+            print(f"  Total detections: {len(all_detections)}")
+
+            # Convert to ObjectDetection instances
+            objects = self._convert_to_object_detections(all_detections)
+
+            # Optionally visualize
+            if visualize and objects:
+                output_path = image_path.rsplit(".", 1)[0] + "_annotated." + image_path.rsplit(".", 1)[1]
+                annotated_image = florence2.visualize_detections(image, all_detections)
+                annotated_image.save(output_path)
+                print(f"  Saved annotated image: {output_path}")
+
+            return objects
+
+        except Exception as err:
+            raise DetectorError(f"Caption-based detection failed: {err}")
     
     def detect_with_crops(self, image_path: str, save_crops: bool = False, 
                          crop_dir: str = "crops") -> List[ObjectDetection]:
@@ -87,7 +180,7 @@ class Detector:
             List[ObjectDetection]: Detected objects with crop paths if saved
         """
         try:
-            image = Image.open(image_path).convert("RGB")
+            image = load_rgb_image(image_path)
             florence2 = self.model_manager.get_florence2()
             
             # Use detect_and_describe method for crops
@@ -204,12 +297,9 @@ class Detector:
             captions = {}
             
             for image_id, image_path in image_paths.items():
-                if not os.path.exists(image_path):
-                    raise DetectorError(f"Image file not found: {image_path}")
-                
-                # Load image
-                image = Image.open(image_path).convert("RGB")
-                
+                # Load image (validates existence and converts to RGB)
+                image = load_rgb_image(image_path)
+
                 # Generate detailed caption
                 caption = florence2.describe_region(image, task="<MORE_DETAILED_CAPTION>")
                 captions[image_id] = caption
@@ -243,26 +333,3 @@ class Detector:
             "min_confidence": min(confidences),
             "max_confidence": max(confidences)
         }
-
-
-# Example usage and testing
-if __name__ == "__main__":
-    # Test detector with ModelManager
-    detector = Detector()
-    
-    # Test with sample image (would need actual image file)
-    # objects = detector.detect("sample_image.jpg")
-    # print(f"Detected {len(objects)} objects")
-    
-    # Test validation
-    sample_objects = [
-        ObjectDetection(0, "person", [10.0, 20.0, 100.0, 200.0], 0.95),
-        ObjectDetection(1, "car", [150.0, 50.0, 300.0, 250.0], 0.88)
-    ]
-    
-    is_valid = detector.validate_detections(sample_objects)
-    summary = detector.get_detection_summary(sample_objects)
-    
-    print(f"✓ Validation passed: {is_valid}")
-    print(f"✓ Detection summary: {summary}")
-    print("✓ Detector refactor completed successfully!")

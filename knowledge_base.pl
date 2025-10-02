@@ -9,48 +9,66 @@
 
 
 % entity facts
-0.565::entity(image_a, bird_a_0, bird, 196, 96, 270, 202).
-0.348::entity(image_a, cattle_a_1, cattle, 94, 185, 400, 595).
-0.15::entity(image_a, cattle_a_2, cattle, 0, 134, 214, 400).
-0.169::entity(image_a, cattle_a_3, cattle, 139, 29, 408, 202).
-0.251::entity(image_a, cattle_a_4, cattle, 0, 83, 242, 210).
-0.269::entity(image_b, animal_b_0, animal, 28, 80, 560, 362).
-0.394::entity(image_b, bird_b_1, bird, 210, 226, 287, 328).
-0.232::entity(image_b, bird_b_2, bird, 293, 35, 340, 99).
+0.938::entity(image_a, bird_a_0, bird, 196, 96, 270, 202).
+0.883::entity(image_a, grass_a_1, grass, 2, 4, 443, 637).
+0.858::entity(image_a, head_a_2, head, 97, 181, 354, 370).
+0.867::entity(image_a, sky_a_3, sky, 1, 1, 443, 117).
+0.857::entity(image_a, camera_a_4, camera, 92, 182, 402, 597).
+0.906::entity(image_a, field_a_5, field, 2, 4, 443, 637).
+0.874::entity(image_a, buffalo_a_6, buffalo, 93, 182, 402, 597).
+0.846::entity(image_a, shoulder_a_7, shoulder, 93, 182, 402, 597).
+0.871::entity(image_b, bird_b_0, bird, 210, 226, 286, 327).
+0.871::entity(image_b, bird_b_1, bird, 293, 35, 340, 98).
+0.908::entity(image_b, grass_b_2, grass, 2, 3, 587, 398).
+0.887::entity(image_b, head_b_3, head, 351, 151, 559, 288).
+0.907::entity(image_b, shrubs_b_4, shrubs, 2, 3, 586, 397).
+0.881::entity(image_b, camera_b_5, camera, 297, 34, 336, 103).
+0.864::entity(image_b, cow_b_6, cow, 27, 79, 559, 358).
+0.788::entity(image_b, shoulder_b_7, shoulder, 92, 80, 402, 150).
+0.912::entity(image_b, field_b_8, field, 2, 3, 587, 398).
+0.895::entity(image_b, horns_b_9, horns, 386, 151, 519, 189).
+0.895::entity(image_b, horns_b_10, horns, 387, 156, 425, 189).
+0.895::entity(image_b, horns_b_11, horns, 484, 151, 518, 186).
+0.867::entity(image_b, image_b_12, image, 3, 5, 584, 396).
+0.895::entity(image_b, egrets_b_13, egrets, 210, 225, 286, 331).
+0.895::entity(image_b, egrets_b_14, egrets, 296, 34, 337, 105).
+0.834::entity(image_b, legs_b_15, legs, 97, 246, 167, 360).
 
 % relation facts
-0.9349268095742377::relation(image_a, cattle_a_1, bird_a_0, near).
-0.9443661954890298::relation(image_a, cattle_a_2, bird_a_0, near).
-0.4447272068542485::relation(image_b, bird_b_1, bird_b_2, same_image).
+0.4109205049685359::relation(image_a, camera_a_4, bird_a_0, near).
 
 % attribute facts
-0.95003003572103::attribute(image_a, bird_a_0, pointed).
-0.9727950613327562::attribute(image_a, bird_a_0, rounded).
-0.5103949530722968::attribute(image_a, bird_a_0, irregular).
 0.9296076237500793::attribute(image_a, bird_a_0, facing_right).
 0.8046394468123945::attribute(image_a, bird_a_0, facing_slightly_left).
 0.9334031739256955::attribute(image_a, bird_a_0, profile).
-0.9327896498419032::attribute(image_a, cattle_a_1, curved).
-0.7146104849382701::attribute(image_a, cattle_a_1, pointed).
-0.5526677193026593::attribute(image_a, cattle_a_1, oval).
-0.9265141193931442::attribute(image_a, cattle_a_1, large).
-0.684132195534571::attribute(image_a, cattle_a_1, medium).
-0.7035021910914062::attribute(image_a, cattle_a_1, small).
-0.93816325107104::attribute(image_a, cattle_a_1, black).
-0.6900627741426635::attribute(image_a, cattle_a_1, brown).
-0.9134039237746202::attribute(image_a, cattle_a_1, dark).
-0.914200835708351::attribute(image_a, cattle_a_1, coarse).
-0.7637609907728693::attribute(image_a, cattle_a_1, smooth).
-0.9339707016593403::attribute(image_a, cattle_a_1, rough).
-0.7055198039093818::attribute(image_a, cattle_a_1, solid).
-0.3460535157487628::attribute(image_a, cattle_a_1, mottled).
-0.40523805265637974::attribute(image_a, cattle_a_1, spotted).
-0.9598660580367058::attribute(image_b, bird_b_1, long).
-0.49871069356880343::attribute(image_b, bird_b_1, slender).
-0.9470640537748818::attribute(image_b, bird_b_1, curved).
-0.7524104872624603::attribute(image_b, bird_b_2, pointed).
-0.9769312264464902::attribute(image_b, bird_b_2, rounded).
-0.9593948301747462::attribute(image_b, bird_b_2, hooked).
+0.883092448827513::attribute(image_a, head_a_2, facing_camera).
+0.7840098697217348::attribute(image_a, head_a_2, facing_slightly_left).
+0.6596617205635571::attribute(image_a, head_a_2, profile).
+0.9227478399463634::attribute(image_a, grass_a_1, green).
+0.9295663421426746::attribute(image_a, grass_a_1, similar green).
+0.7353917931467832::attribute(image_a, grass_a_1, same green).
+0.9420508659695352::attribute(image_a, grass_a_1, coarse).
+0.8230528673590459::attribute(image_a, grass_a_1, smooth).
+0.8332960057632293::attribute(image_a, grass_a_1, dense).
+0.8719515501568575::attribute(image_b, head_b_3, facing_camera).
+0.6705099483513486::attribute(image_b, head_b_3, profile).
+0.8581424461539788::attribute(image_b, head_b_3, slightly_turned_away).
+0.9380389636838466::attribute(image_b, grass_b_2, green).
+0.5766632817527407::attribute(image_b, grass_b_2, brown).
+0.5833275347137609::attribute(image_b, grass_b_2, yellow).
+0.690956555861926::attribute(image_b, grass_b_2, smooth).
+0.8945922131575793::attribute(image_b, grass_b_2, coarse).
+0.6679780915096143::attribute(image_b, grass_b_2, dense).
 
 % scene_attr facts
-0.9691981049950249::scene_attr(image_b, animals).
+0.9519086852316345::scene_attr(image_a, blue).
+0.96521526212605::scene_attr(image_a, field).
+0.9387277804147227::scene_attr(image_b, blue).
+0.9501788748833543::scene_attr(image_b, field).
+
+% count facts
+0.062000000000000055::count(image_a, bird, 0).
+0.938::count(image_a, bird, 1).
+0.016641::count(image_b, bird, 0).
+0.224718::count(image_b, bird, 1).
+0.758641::count(image_b, bird, 2).

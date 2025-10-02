@@ -59,41 +59,42 @@ def main():
     
     try:
         # ========================================
-        # STEP 1: Object Detection
+        # STEP 1: Image Context Generation
         # ========================================
-        print("Step 1: Object Extraction")
+        print("Step 1: Image Context Generation")
         print("-" * 40)
-        
+
         detector = Detector()
-        
-        for image_id, image_path in image_paths.items():
-            print(f"Processing {image_id}: {image_path}")
-            
-            if not os.path.exists(image_path):
-                print(f"Warning: Image not found: {image_path}")
-                continue
-            
-            # Detect objects
-            objects = detector.detect(image_path, visualize=True)
-            kb.add_objects(image_id, objects)
-            
-            print(f"  ✓ Detected {len(objects)} objects: {[obj.label for obj in objects]}")
-        
-        print(f"Total objects detected: {sum(len(image_data.objects) for image_data in kb.images.values())}")
-        print()
-        
-        # ========================================
-        # STEP 2: Detailed Image Context Generation
-        # ========================================
-        print("Step 2: Image Context Generation")
-        print("-" * 40)
-        
-        # Generate detailed captions (processing aids only - not stored in KB)
+
+        # Generate detailed captions upfront (processing aids only - not stored in KB)
         image_contexts = detector.generate_detailed_captions(image_paths)
 
         for image_id, context in image_contexts.items():
             print(f"{image_id}: {context}")
-        
+
+        print()
+
+        # ========================================
+        # STEP 2: Object Extraction
+        # ========================================
+        print("Step 2: Object Extraction")
+        print("-" * 40)
+
+        for image_id, image_path in image_paths.items():
+            print(f"Processing {image_id}: {image_path}")
+
+            if not os.path.exists(image_path):
+                print(f"Warning: Image not found: {image_path}")
+                continue
+
+            # Detect objects using pre-generated caption
+            caption = image_contexts[image_id]
+            objects = detector.detect_from_caption(image_path, caption, visualize=True)
+            kb.add_objects(image_id, objects)
+
+            print(f"  ✓ Detected {len(objects)} objects: {[obj.label for obj in objects]}")
+
+        print(f"Total objects detected: {sum(len(image_data.objects) for image_data in kb.images.values())}")
         print()
         
         # ========================================

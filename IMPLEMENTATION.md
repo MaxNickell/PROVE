@@ -28,8 +28,8 @@
 ## Models & Quantization
 
 ### Primary Models:
-- **Florence-2-large**: Object detection, image captions, region descriptions
-- **Llama-3.3-70B-Instruct**: Subquery generation, candidate generation, count analysis (8-bit quantization via BitsAndBytes)
+- **Florence-2-large-ft**: Caption-based open vocabulary detection, image captions, region descriptions
+- **Llama-3.3-70B-Instruct**: Subquery generation, entity extraction, candidate generation, count analysis (8-bit quantization via BitsAndBytes)
 - **Qwen-2.5-VL-7B-Instruct**: Binary verification for attributes, relationships, and scene attributes
 
 ### Model Loading:
@@ -41,31 +41,69 @@
 
 ## Phase-by-Phase Breakdown
 
-### Step 1: Object Extraction
-**Goal**: Identify all visual entities with spatial grounding and confidence scores
-
-**Implementation**:
-- **Model**: Florence-2-large object detection
-- **Method**: `detector.detect(image_path)` → `List[ObjectDetection]`
-- **Data Flow**: Image → Bounding boxes + labels + object IDs
-
-**Probability Calculation**:
-- **Source**: Florence-2 `compute_transition_scores()` from model logits
-- **Range**: 0.0-1.0 object existence confidence
-- **Storage**: `ObjectDetection.confidence` field
-- **Usage**: Propagated to ProbLog facts as object existence probabilities
-
-**Output**: `ObjectDetection(object_id, label, bbox, confidence)`
-
----
-
-### Step 2: Image Context Generation
-**Goal**: Capture rich scene-level information for contextual reasoning
+### Step 1: Image Context Generation
+**Goal**: Capture rich scene-level information upfront for efficient reuse in object detection and reasoning
 
 **Implementation**:
 - **Model**: Florence-2-large detailed captioning
+- **Task**: `<MORE_DETAILED_CAPTION>`
 - **Method**: `detector.generate_detailed_captions()` → `Dict[str, str]`
 - **Data Flow**: Image → Comprehensive scene description
+- **Example**: "The image shows a white egret perched on a black buffalo in a grassy field"
+
+**Usage**:
+- Used for entity extraction in Step 2 (object detection)
+- Used for contextual reasoning in subquery generation
+- Processing aid only - NOT stored in final knowledge base
+
+**Output**: `Dict[image_id, caption_string]`
+
+---
+
+### Step 2: Object Extraction (Caption-Based Open Vocabulary Detection)
+**Goal**: Identify all visual entities with spatial grounding and confidence scores using pre-generated captions
+
+**2-Step Pipeline** (using caption from Step 1):
+
+**Step 2a: Extract Entity Classes**
+- **Model**: Llama-3.3-70B-Instruct with Pydantic validation
+- **Method**: `llm_client.extract_entities(messages)` → `EntityExtractionResponse`
+- **Input**: Pre-generated caption from Step 1
+- **Data Flow**: Caption → Singular noun entities (no attributes)
+- **Pydantic Processing**:
+  - Automatically lowercases all entities
+  - Deduplicates using `set()`
+  - Validates non-empty list
+- **Example**: `["egret", "buffalo", "field"]`
+
+**Step 2b: Open Vocabulary Detection Per Entity**
+- **Model**: Florence-2-large
+- **Task**: `<OPEN_VOCABULARY_DETECTION>` + text prompt
+- **Method**: `detector.detect_from_caption(image_path, caption)` → `florence2.detect_open_vocabulary(image, entity_class)` per entity
+- **Data Flow**: For each entity → Bounding boxes + labels + raw scores
+- **Example**: Run detection for "egret", "buffalo", "field" separately
+
+**Probability Calculation**:
+- **Source**: Florence-2 sequence-level confidence using geometric mean
+- **Method**: `exp(mean(log_probs))` - length-normalized likelihood
+- **Raw Extraction**: `compute_transition_scores()` with `normalize_logits=True`
+- **Calibration**: Anchored sigmoid mapping transforms raw scores to operational probabilities
+- **Formula**: `p' = 1 / (1 + ((1-p)/p)^a * e^(-c))`
+- **Anchor Points**: `0.1 → 0.7`, `0.5 → 0.9` (hardcoded)
+- **Parameters**: `a ≈ 0.6144`, `c ≈ 2.1972` (pre-computed)
+- **Function**: `calibrate_detector_confidence(raw_score)` in `src/core/probability.py`
+- **Range**: Transforms poorly calibrated raw scores → realistic 0.7-0.95 operational probabilities
+- **Storage**: `ObjectDetection.confidence` field
+- **Usage**: Propagated to ProbLog facts as object existence probabilities
+
+**Benefits**:
+- **Efficient**: Reuses caption from Step 1 (no redundant generation)
+- **Comprehensive**: LLM finds ALL entities mentioned in caption
+- **Open Vocabulary**: Can detect any object in caption (not limited to pre-defined classes)
+- **Attribute-Free**: Extracts base nouns only ("cat" not "blue cat")
+- **Deduplicated**: Automatic deduplication prevents redundant detections
+
+**Output**: `ObjectDetection(object_id, label, bbox, confidence)` with calibrated confidence
 
 **Processing Note**:
 - **Purpose**: Captions are processing aids only, never stored in knowledge base
@@ -399,20 +437,113 @@ This section contains all prompts used throughout the PROVE pipeline for LLMs (L
 
 ## Table of Contents
 
-1. [Image Context Generation (Florence-2)](#1-image-context-generation-florence-2)
-2. [Subquery Generation (LLM)](#2-subquery-generation-llm)
-3. [Attribute Processing](#3-attribute-processing)
-4. [Relationship Extraction](#4-relationship-extraction)
-5. [Count Processing](#5-count-processing)
-6. [Scene Attribute Processing](#6-scene-attribute-processing)
+1. [Object Detection Pipeline](#1-object-detection-pipeline)
+2. [Image Context Generation (Florence-2)](#2-image-context-generation-florence-2)
+3. [Subquery Generation (LLM)](#3-subquery-generation-llm)
+4. [Attribute Processing](#4-attribute-processing)
+5. [Relationship Extraction](#5-relationship-extraction)
+6. [Count Processing](#6-count-processing)
+7. [Scene Attribute Processing](#7-scene-attribute-processing)
+8. [Probability Calibration](#8-probability-calibration)
 
 ---
 
-## 1. Image Context Generation (Florence-2)
+## 1. Object Detection Pipeline
 
-### 1.1 Detailed Image Captioning
+### 1.1 Entity Extraction from Caption (LLM)
 
-**Model**: Florence-2 (microsoft/Florence-2-large)
+**Model**: Llama-3.3-70B-Instruct
+
+**Purpose**: Extract singular noun entity classes from image caption for open vocabulary detection
+
+**Input Variables**:
+- `caption`: Detailed image caption from Florence-2
+
+**Output Format**: JSON (Pydantic validated)
+
+**Output Parsing**: Pydantic model `EntityExtractionResponse` with automatic:
+- Lowercase conversion
+- Deduplication via `set()`
+- Whitespace stripping
+- Empty string filtering
+
+**System Message**:
+```
+You are an expert at extracting object entities from image descriptions. Extract ALL singular noun object classes mentioned in the caption. Return only base nouns without attributes (e.g., 'cat' not 'blue cat', 'dog' not 'large dog'). Return strict JSON only.
+```
+
+**Prompt Template**:
+```
+Extract all object entities from this image caption.
+
+Caption: "{caption}"
+
+Rules:
+1. Extract ALL objects/entities mentioned in the caption
+2. Use singular noun forms only (e.g., "person" not "people", "bird" not "birds")
+3. Remove all attributes - return base nouns only (e.g., "cat" not "black cat")
+4. Do NOT include scene descriptors, locations, or abstract concepts
+5. Focus on concrete, tangible objects that can be detected visually
+
+Respond in exact JSON format:
+{
+  "entities": ["object1", "object2", "object3"]
+}
+```
+
+**Example Input**:
+```
+Caption: "The image shows a white egret perched on a black buffalo in a grassy field"
+```
+
+**Example Output**:
+```json
+{
+  "entities": ["egret", "buffalo", "field", "grass"]
+}
+```
+
+**Pydantic Processing**: Output becomes `["egret", "buffalo", "field", "grass"]` (lowercased, deduplicated)
+
+**File Location**: `src/pipeline/detector.py:73-101`
+
+---
+
+### 1.2 Open Vocabulary Detection (Florence-2)
+
+**Model**: Florence-2-large-ft
+
+**Purpose**: Detect specific objects using open vocabulary detection with text prompts
+
+**Input Variables**:
+- `image`: PIL Image object
+- `text_prompt`: Entity class to detect (e.g., "egret", "buffalo")
+
+**Task Token**: `<OPEN_VOCABULARY_DETECTION>` + text_prompt
+
+**Output Format**: Dict with bboxes, labels, scores
+
+**Output Parsing**: Florence-2's post_process_generation
+
+**Prompt Template**:
+```
+Task: <OPEN_VOCABULARY_DETECTION>{text_prompt}
+(Image + text prompt processed together by Florence-2)
+```
+
+**Example**:
+- For `text_prompt="egret"`: Detects all egrets in image with bounding boxes
+- For `text_prompt="buffalo"`: Detects all buffalo in image with bounding boxes
+
+**File Location**: `src/vision/florence2.py:31-82`
+
+---
+
+## 2. Image Context Generation (Florence-2)
+
+### 2.1 Detailed Image Captioning
+
+**Model**: Florence-2-large-ft
 
 **Purpose**: Generate detailed natural language descriptions of entire images for contextual understanding
 
@@ -1104,54 +1235,214 @@ prob_yes = exp(logit_yes) / (exp(logit_yes) + exp(logit_no))
 
 ---
 
+## 8. Probability Calibration
+
+### 8.1 Detector Confidence Calibration (Anchored Sigmoid Mapping)
+
+**Purpose**: Transform poorly calibrated raw detector scores into realistic operational probabilities
+
+**Function**: `calibrate_detector_confidence(raw_score)` in `src/core/probability.py`
+
+**Mathematical Background**:
+
+Transforms detector scores `p ∈ (0,1)` using anchored sigmoid mapping:
+```
+p' = 1 / (1 + ((1-p)/p)^a * e^(-c))
+```
+
+Where parameters `a` and `c` are determined by two anchor points that enforce fixed mappings:
+```
+Anchor 1: 0.1 → 0.7  (low raw score → moderate operational probability)
+Anchor 2: 0.5 → 0.9  (medium raw score → high operational probability)
+```
+
+**Parameter Calculation**:
+Solving the system:
+```
+logit(0.7) = a * logit(0.1) + c
+logit(0.9) = a * logit(0.5) + c
+```
+
+Yields:
+```
+a ≈ 0.6144
+c ≈ 2.1972
+```
+
+**Implementation**:
+
+```python
+# Hardcoded anchor points (module-level constants)
+DETECTOR_ANCHOR_P_LO = 0.1   # Low raw score anchor
+DETECTOR_ANCHOR_Q_LO = 0.7   # Maps to 70% operational probability
+DETECTOR_ANCHOR_P_HI = 0.5   # High raw score anchor
+DETECTOR_ANCHOR_Q_HI = 0.9   # Maps to 90% operational probability
+
+# Pre-computed parameters (at module load)
+_ANCHOR_A, _ANCHOR_C = _compute_anchor_parameters(
+    DETECTOR_ANCHOR_P_LO, DETECTOR_ANCHOR_Q_LO,
+    DETECTOR_ANCHOR_P_HI, DETECTOR_ANCHOR_Q_HI
+)
+
+def calibrate_detector_confidence(raw_score: float) -> float:
+    """
+    Calibrate raw detector confidence using anchored sigmoid mapping.
+
+    Args:
+        raw_score: Raw detector confidence in (0, 1)
+
+    Returns:
+        float: Calibrated probability in (0, 1)
+    """
+    # Clamp to valid range with epsilon
+    epsilon = 1e-7
+    raw_score = max(epsilon, min(1.0 - epsilon, raw_score))
+
+    # Probability-space form (numerically stable)
+    odds_ratio = (1.0 - raw_score) / raw_score
+    calibrated = 1.0 / (1.0 + math.pow(odds_ratio, _ANCHOR_A) * math.exp(-_ANCHOR_C))
+
+    return float(calibrated)
+```
+
+**Example Calibrations**:
+```
+Raw Score → Calibrated Probability
+0.10 → 0.700  (anchor point)
+0.15 → 0.740
+0.25 → 0.800
+0.35 → 0.850
+0.50 → 0.900  (anchor point)
+0.75 → 0.950
+```
+
+**Why This Is Necessary**:
+
+Florence-2's raw confidence scores are poorly calibrated:
+- **Problem**: Token-level log probabilities conflated with detection confidence
+- **Symptom**: All scores fall in 0.1-0.6 range (unrealistically low)
+- **Solution**: Anchored sigmoid mapping transforms to realistic 0.7-0.95 range
+- **Result**: Operational probabilities suitable for probabilistic inference
+
+**File Location**: `src/core/probability.py:212-253`
+
+---
+
+### 8.2 Binary Verification Probability (Unified Verbalizer Method)
+
+**Purpose**: Extract P(statement is true) from VLM binary verification using proper softmax
+
+**Function**: `get_verifier_probability(logits_sequence, response, tokenizer)` in `src/core/probability.py`
+
+**Algorithm**:
+
+1. **Sum logits for all "Yes" verbalizers**: ["Yes", "yes", "YES"]
+2. **Sum logits for all "No" verbalizers**: ["No", "no", "NO"]
+3. **Apply 2-token softmax**: `P(yes) = e^(sum_yes) / (e^(sum_yes) + e^(sum_no))`
+
+**Implementation**:
+
+```python
+def get_verifier_probability(
+    logits_sequence: List[torch.Tensor],
+    response: str,
+    tokenizer
+) -> float:
+    """
+    Extract P(statement is true) using verbalizer summing + 2-token softmax.
+
+    Returns:
+        float: P(statement is true) between 0.0 and 1.0
+    """
+    # Get final generation step logits
+    final_logits = logits_sequence[-1][0]
+
+    # Sum logits for all Yes variants
+    yes_verbalizers = ["Yes", "yes", "YES"]
+    sum_yes_logits = ... # logsumexp over all yes tokens
+
+    # Sum logits for all No variants
+    no_verbalizers = ["No", "no", "NO"]
+    sum_no_logits = ... # logsumexp over all no tokens
+
+    # Apply 2-token softmax
+    exp_yes = math.exp(sum_yes_logits)
+    exp_no = math.exp(sum_no_logits)
+    prob_yes = exp_yes / (exp_yes + exp_no)
+
+    return float(prob_yes)
+```
+
+**Key Features**:
+
+- **Verbalizer Robustness**: Handles multiple tokenization variants
+- **Numerical Stability**: Uses logsumexp for combining logits
+- **Avoids Inflation**: 2-token softmax prevents full-vocabulary renormalization
+- **Error Handling**: Returns 0.5 (neutral) on extraction failure
+
+**Why This Works**:
+
+- **Avoids Overconfidence**: Full vocabulary softmax artificially inflates probabilities
+- **Proper Normalization**: Only normalizes over yes/no tokens (correct semantic space)
+- **Realistic Confidence**: Produces calibrated probabilities for binary decisions
+
+**Used For**:
+- Attribute binary verification (Qwen-2.5-VL)
+- Relationship binary verification (Qwen-2.5-VL)
+- Scene attribute binary verification (Qwen-2.5-VL)
+
+**File Location**: `src/core/probability.py:11-117`
+
+---
+
 ## Model Summary
 
 ### Models Used in Pipeline
 
 | Model | Type | Usage |
 |-------|------|-------|
-| **Llama-3.3-70B-Instruct** | LLM | Subquery generation, attribute planning, candidate generation, relationship analysis, count analysis, scene planning |
-| **Florence-2-large** | Vision | Object detection, image captioning, region descriptions |
+| **Llama-3.3-70B-Instruct** | LLM | Subquery generation, entity extraction, attribute planning, candidate generation, relationship analysis, count analysis, scene planning |
+| **Florence-2-large-ft** | Vision | Caption-based open vocabulary detection, image captioning, region descriptions |
 | **Qwen-2.5-VL-7B** | VLM | Binary verification for attributes, relationships, scene attributes (with logit extraction for probabilities) |
 
 ### Output Parsing Methods
 
 | Component | Parsing Method | Benefits |
 |-----------|---------------|----------|
+| Entity Extraction | **Pydantic** ✅ | Automatic lowercase, deduplication, validation |
 | Subquery Generation | **Pydantic** ✅ | Automatic validation, retries, guaranteed structure |
 | Attribute Planning | **Pydantic** ✅ | Automatic validation, retries, guaranteed structure |
 | Attribute Candidates | **Pydantic** ✅ | Automatic validation, retries, guaranteed structure |
 | Relationship Analysis | **Pydantic** ✅ | Automatic validation, retries, guaranteed structure |
 | Count Analysis | **Pydantic** ✅ | Automatic validation, retries, guaranteed structure |
 | Scene Planning | **Pydantic** ✅ | Automatic validation, retries, guaranteed structure |
-| All Binary Verification | **Logits + Softmax** ✅ | Proper probabilistic confidence (not just text parsing) |
+| All Binary Verification | **Unified Verbalizer Method** ✅ | Proper probabilistic confidence via verbalizer summing + softmax |
+| Detector Confidence | **Anchored Sigmoid Calibration** ✅ | Transforms poorly calibrated scores to operational probabilities |
 
 **All LLM JSON outputs now use Pydantic validation** for maximum robustness and consistency!
 
-### Probability Calculation Method
+### Probability Calculation Methods
 
-All binary verification (attributes, relationships, scene attributes) uses the same probability extraction:
-
+**1. Binary Verification** (attributes, relationships, scene attributes):
 ```python
-def extract_yes_no_probability_with_proper_softmax(logits, response):
+def get_verifier_probability(logits_sequence, response, tokenizer):
     """
-    Extract P(statement is true) using proper 2-token softmax.
+    Extract P(statement is true) using unified verbalizer method.
 
-    Args:
-        logits: Raw logits from VLM output
-        response: Text response (should be "Yes" or "No")
-
-    Returns:
-        float: P(Yes) = e^(z_yes) / (e^(z_yes) + e^(z_no))
+    Sums logits for ["Yes", "yes", "YES"] and ["No", "no", "NO"]
+    then applies 2-token softmax: P(yes) = e^(sum_yes) / (e^(sum_yes) + e^(sum_no))
     """
-    # Extract logits for "Yes" and "No" tokens from verbalizer
-    z_yes = logits[yes_token_id]
-    z_no = logits[no_token_id]
+```
 
-    # Apply proper 2-token softmax
-    prob_yes = exp(z_yes) / (exp(z_yes) + exp(z_no))
+**2. Detector Confidence** (object detection):
+```python
+def calibrate_detector_confidence(raw_score):
+    """
+    Calibrate raw detector scores using anchored sigmoid mapping.
 
-    return prob_yes
+    Transforms p' = 1 / (1 + ((1-p)/p)^a * e^(-c))
+    with anchor points: 0.1 → 0.7, 0.5 → 0.9
+    """
 ```
 
 This ensures consistent probabilistic reasoning across the entire pipeline.
@@ -1197,6 +1488,7 @@ This ensures consistent probabilistic reasoning across the entire pipeline.
    - ✅ Attribute planning → `AttributePlanningResponse` (migrated)
    - ✅ Attribute candidates → `CandidateResponse` (migrated)
    - ✅ Scene planning → `SceneAttributeResponse` (created & migrated)
+   - ✅ Entity extraction → `EntityExtractionResponse` (created & migrated)
    - **Result**: All LLM JSON outputs now use Pydantic with automatic retries!
 
 2. **~~Simplify subquery generation prompt~~** ✅ **DONE!**
@@ -1205,6 +1497,19 @@ This ensures consistent probabilistic reasoning across the entire pipeline.
    - ✅ Removed example object IDs from rules
    - ✅ Added 3-step reasoning PROCESS (understand → consider → break down)
    - **Result**: Reduced from 77 lines to 22 lines (71% shorter), trust LLM reasoning!
+
+3. **~~Implement caption-based open vocabulary detection~~** ✅ **DONE!**
+   - ✅ Added entity extraction from captions using LLM
+   - ✅ Switched to Florence-2-large-ft (fine-tuned model)
+   - ✅ Implemented open vocabulary detection per entity class
+   - ✅ Automatic deduplication and lowercase normalization
+   - **Result**: Comprehensive detection of ALL entities in caption, not limited to pre-defined classes!
+
+4. **~~Implement probability calibration~~** ✅ **DONE!**
+   - ✅ Anchored sigmoid mapping for detector confidences
+   - ✅ Unified verbalizer method for binary verification
+   - ✅ Transforms 0.1-0.6 raw scores → 0.7-0.95 operational probabilities
+   - **Result**: Realistic, well-calibrated probabilities throughout pipeline!
 
 ### Recommended Upgrades
 1. **Improve visual grounding**
@@ -1219,7 +1524,14 @@ This ensures consistent probabilistic reasoning across the entire pipeline.
 
 ---
 
-**Last Updated**: 2025-09-30 (Pydantic migration + subquery prompt simplification completed)
-**Pipeline Version**: Current (pipelining branch - all LLM outputs use Pydantic, simplified prompts trust LLM reasoning)
+**Last Updated**: 2025-10-01 (Caption-based open vocabulary detection + probability calibration implemented)
+**Pipeline Version**: Current (pipelining branch)
 
-This pipeline transforms questions like "What is uniquely similar about these images?" into structured probabilistic reasoning with complete evidence provenance, sophisticated count modeling, and executable ProbLog programs ready for inference.
+**Key Features**:
+- ✅ All LLM outputs use Pydantic validation
+- ✅ Caption-based open vocabulary detection
+- ✅ Anchored sigmoid probability calibration
+- ✅ Unified verbalizer method for binary verification
+- ✅ Simplified prompts trust LLM reasoning
+
+This pipeline transforms questions like "What is uniquely similar about these images?" into structured probabilistic reasoning with complete evidence provenance, sophisticated count modeling, well-calibrated probabilities, and executable ProbLog programs ready for inference.

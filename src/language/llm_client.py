@@ -10,14 +10,12 @@ from pydantic import BaseModel, ValidationError
 from .output_models import (
     SubqueryResponse,
     SubqueryItem,
-    AttributeResponse,
-    VerificationResponse,
     RelationshipResponse,
-    ContextResponse,
     AttributePlanningResponse,
     CandidateResponse,
     CountRequirementResponse,
-    SceneAttributeResponse
+    SceneAttributeResponse,
+    EntityExtractionResponse
 )
 
 T = TypeVar('T', bound=BaseModel)
@@ -215,22 +213,10 @@ class LLMClient:
     def generate_subqueries(self, messages: List[Dict[str, str]], **kwargs) -> SubqueryResponse:
         """Generate subqueries with validation."""
         return self.chat_with_validation(messages, SubqueryResponse, **kwargs)
-    
-    def extract_attributes(self, messages: List[Dict[str, str]], **kwargs) -> AttributeResponse:
-        """Extract attributes with validation."""
-        return self.chat_with_validation(messages, AttributeResponse, **kwargs)
-    
-    def verify_binary(self, messages: List[Dict[str, str]], **kwargs) -> VerificationResponse:
-        """Perform binary verification with validation."""
-        return self.chat_with_validation(messages, VerificationResponse, **kwargs)
-    
+
     def extract_relationships(self, messages: List[Dict[str, str]], **kwargs) -> RelationshipResponse:
         """Extract relationships with validation."""
         return self.chat_with_validation(messages, RelationshipResponse, **kwargs)
-    
-    def process_context(self, messages: List[Dict[str, str]], **kwargs) -> ContextResponse:
-        """Process scene context with validation."""
-        return self.chat_with_validation(messages, ContextResponse, **kwargs)
     
     def plan_attributes(self, messages: List[Dict[str, str]], **kwargs) -> AttributePlanningResponse:
         """Plan attribute extraction requirements with validation."""
@@ -247,3 +233,7 @@ class LLMClient:
     def analyze_scene_attributes(self, messages: List[Dict[str, str]], **kwargs) -> SceneAttributeResponse:
         """Analyze scene attributes with validation."""
         return self.chat_with_validation(messages, SceneAttributeResponse, **kwargs)
+
+    def extract_entities(self, messages: List[Dict[str, str]], **kwargs) -> EntityExtractionResponse:
+        """Extract entities from image captions with validation."""
+        return self.chat_with_validation(messages, EntityExtractionResponse, **kwargs)
