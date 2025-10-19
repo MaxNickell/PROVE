@@ -129,39 +129,18 @@ class AttributeProcessor:
 
             objects_str = ", ".join(referenced_context)
 
-            prompt = f"""Analyze this single attribute subquery to determine what attribute classes are needed for the referenced objects.
+            prompt = f"""Analyze this question to determine what attribute classes are needed for the referenced objects.
 
-Subquery: "{subquery.question}"
-Type: {subquery.subquery_type}
+Question: "{subquery.question}"
 Referenced Objects: {objects_str}
 
 Task: Determine which visual attribute classes need to be extracted from which referenced objects to answer this specific question.
-
-Consider these attribute classes:
-- **Physical Attributes**: size, shape, color, texture, pattern, material
-- **State Attributes**: condition, state, position, orientation
-- **Functional Attributes**: function, style, usage
-- **Comparative Attributes**: muscle_mass, muscle_definition, body_size, weight, height, strength
-
-Respond in this exact JSON format:
-{{
-  "attribute_requirements": {{
-    "bird_a_0": ["color", "orientation"],
-    "bird_b_1": ["shape"]
-  }}
-}}
 
 Rules:
 - Only include objects explicitly referenced in the subquery
 - Only include attribute classes directly needed to answer this specific question
 - Use specific attribute class names (not generic descriptions)
 - If no attributes needed, return empty dict: {{}}
-
-Examples:
-- "Is bird_a_0 black?" → {{"attribute_requirements": {{"bird_a_0": ["color"]}}}}
-- "Do bird_a_0 and animal_b_0 have the same color?" → {{"attribute_requirements": {{"bird_a_0": ["color"], "animal_b_0": ["color"]}}}}
-
-
 Answer:"""
 
             messages = [{"role": "user", "content": prompt}]
@@ -296,26 +275,21 @@ Answer:"""
     ) -> List[str]:
         """Generate candidate values for an attribute class."""
         try:
-            prompt = f"""Generate candidate values for a specific attribute class based on the region description and subquery context.
+            prompt = f"""Generate candidate values for a specific attribute class based on the region description and question context.
 
-Subquery: "{subquery_question}"
+Question: "{subquery_question}"
 Object Label: {object_label}
 Attribute Class: {attribute_class}
 Region Description: "{region_description}"
 
-Task: Generate 2-4 most likely candidate values for the '{attribute_class}' attribute of this {object_label}.
+Task: Generate most likely candidate values for the '{attribute_class}' attribute of this {object_label}.
 
-Consider the subquery context - the candidates should help answer the specific question being asked.
+Consider the question context - the candidates should help answer the specific question being asked.
 
 Respond in this exact JSON format:
 {{
-  "candidates": ["value1", "value2", "value3"]
+  "candidates": ["value1", "value2", ..."]
 }}
-
-Examples:
-- color attribute → {{"candidates": ["black", "white", "brown"]}}
-- size attribute → {{"candidates": ["large", "small", "medium"]}}
-- orientation attribute → {{"candidates": ["facing_camera", "facing_left", "facing_right"]}}
 
 Answer:"""
 

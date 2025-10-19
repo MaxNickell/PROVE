@@ -138,7 +138,7 @@ Objects: {objects_str}""")
 
 Ultimate Question: "{ultimate_question}"
 
-Visual Context:
+Visual Context
 {context}
 
 PROCESS:
