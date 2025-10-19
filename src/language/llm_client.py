@@ -2,6 +2,8 @@ from __future__ import annotations
 import os
 import json
 from typing import Any, List, Dict, Type, TypeVar
+import json
+from typing import Any, List, Dict, Type, TypeVar
 from dotenv import load_dotenv
 import transformers
 import torch
@@ -26,7 +28,72 @@ class LLMClient:
     
     def __init__(self, model: str | None = None, device_map: dict | None = None) -> None:
         """Initialize the Llama model pipeline."""
+    """Local Llama-3.3-70B-Instruct client using Transformers pipeline."""
+    
+    def __init__(self, model: str | None = None, device_map: dict | None = None) -> None:
+        """Initialize the Llama model pipeline."""
         load_dotenv()
+        
+        # Model configuration from environment or defaults
+        self.model_id = model or os.getenv("MODEL_ID", "meta-llama/Llama-3.3-70B-Instruct")
+        self.cache_dir = os.getenv("MODEL_CACHE_DIR", "./models")
+        self.max_tokens = int(os.getenv("MAX_NEW_TOKENS", "2048"))
+        self.device_map = device_map or "auto"
+        
+        # Initialize the pipeline
+        self._initialize_pipeline()
+    
+    def _initialize_pipeline(self) -> None:
+        """Initialize the Transformers pipeline with optimized settings."""
+        print(f"Loading Llama model: {self.model_id}")
+
+        # Check if 8-bit quantization is enabled
+        use_8bit = os.getenv("USE_8BIT_QUANTIZATION", "false").lower() == "true"
+
+        # Prepare model kwargs
+        model_kwargs = {
+            "torch_dtype": torch.bfloat16,
+            "cache_dir": self.cache_dir
+        }
+
+        # Add quantization config if enabled
+        if use_8bit:
+            from transformers import BitsAndBytesConfig
+            quantization_config = BitsAndBytesConfig(load_in_8bit=True)
+            model_kwargs["quantization_config"] = quantization_config
+            print("✓ Using 8-bit quantization for memory efficiency")
+
+        try:
+            self.pipeline = transformers.pipeline(
+                "text-generation",
+                model=self.model_id,
+                model_kwargs=model_kwargs,
+                device_map=self.device_map,
+                token=True  # Use HuggingFace authentication (updated parameter)
+            )
+
+            quantization_status = "with 8-bit quantization" if use_8bit else "with 16-bit precision"
+            print(f"✓ Llama model loaded successfully {quantization_status}")
+
+        except Exception as e:
+            print(f"❌ Failed to load Llama model: {e}")
+            print("Falling back to CPU inference...")
+
+            # Fallback to CPU if GPU fails
+            fallback_kwargs = {
+                "torch_dtype": torch.float32,
+                "cache_dir": self.cache_dir
+            }
+
+            self.pipeline = transformers.pipeline(
+                "text-generation",
+                model=self.model_id,
+                model_kwargs=fallback_kwargs,
+                device_map="cpu",
+                token=True
+            )
+            print("✓ Llama model loaded on CPU")
+    
         
         # Model configuration from environment or defaults
         self.model_id = model or os.getenv("MODEL_ID", "meta-llama/Llama-3.3-70B-Instruct")

@@ -3,6 +3,11 @@ Object detector using Florence-2 with ModelManager singleton.
 Refactored for memory efficiency and exact JSON schema compliance.
 """
 
+"""
+Object detector using Florence-2 with ModelManager singleton.
+Refactored for memory efficiency and exact JSON schema compliance.
+"""
+
 from typing import List, Dict, Any
 from PIL import Image
 import os
@@ -15,6 +20,7 @@ from src.core.image_utils import load_rgb_image
 
 class DetectorError(RuntimeError):
     """Custom exception for detector failures."""
+    """Custom exception for detector failures."""
     def __init__(self, message: str):
         super().__init__(message)
         self.message = message
@@ -23,7 +29,13 @@ class DetectorError(RuntimeError):
         return self.message
 
 
+
 class Detector:
+    """
+    Object detector using Florence-2 model with ModelManager singleton.
+    Produces ObjectDetection instances with exact schema compliance.
+    """
+    
     """
     Object detector using Florence-2 model with ModelManager singleton.
     Produces ObjectDetection instances with exact schema compliance.
