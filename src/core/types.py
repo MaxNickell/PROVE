@@ -57,7 +57,9 @@ class ImageData:
     objects: List[ObjectDetection]
     attributes: Dict[int, AttributeData]  # {object_id: AttributeData}
     relationships: List[IntraRelation]
-    scene_context: Dict[str, Any]
+    scene_context: Dict[str, Any]  # Processing aids like captions
+    scene_attributes: Dict[str, Any]  # Extracted scene-level attributes
+    counts: Dict[str, Any]  # Probabilistic object counts {"class": {"count": int, "confidence": float}}
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)

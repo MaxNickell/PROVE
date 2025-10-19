@@ -2,20 +2,22 @@ from __future__ import annotations
 import os
 import json
 from typing import Any, List, Dict, Type, TypeVar
+import json
+from typing import Any, List, Dict, Type, TypeVar
 from dotenv import load_dotenv
 import transformers
 import torch
 from pydantic import BaseModel, ValidationError
 
 from .output_models import (
-    SubqueryResponse, 
+    SubqueryResponse,
     SubqueryItem,
-    AttributeResponse, 
-    VerificationResponse, 
-    RelationshipResponse, 
-    ContextResponse,
+    RelationshipResponse,
     AttributePlanningResponse,
-    CandidateResponse
+    CandidateResponse,
+    CountRequirementResponse,
+    SceneAttributeResponse,
+    EntityExtractionResponse
 )
 
 T = TypeVar('T', bound=BaseModel)
@@ -26,7 +28,72 @@ class LLMClient:
     
     def __init__(self, model: str | None = None, device_map: dict | None = None) -> None:
         """Initialize the Llama model pipeline."""
+    """Local Llama-3.3-70B-Instruct client using Transformers pipeline."""
+    
+    def __init__(self, model: str | None = None, device_map: dict | None = None) -> None:
+        """Initialize the Llama model pipeline."""
         load_dotenv()
+        
+        # Model configuration from environment or defaults
+        self.model_id = model or os.getenv("MODEL_ID", "meta-llama/Llama-3.3-70B-Instruct")
+        self.cache_dir = os.getenv("MODEL_CACHE_DIR", "./models")
+        self.max_tokens = int(os.getenv("MAX_NEW_TOKENS", "2048"))
+        self.device_map = device_map or "auto"
+        
+        # Initialize the pipeline
+        self._initialize_pipeline()
+    
+    def _initialize_pipeline(self) -> None:
+        """Initialize the Transformers pipeline with optimized settings."""
+        print(f"Loading Llama model: {self.model_id}")
+
+        # Check if 8-bit quantization is enabled
+        use_8bit = os.getenv("USE_8BIT_QUANTIZATION", "false").lower() == "true"
+
+        # Prepare model kwargs
+        model_kwargs = {
+            "torch_dtype": torch.bfloat16,
+            "cache_dir": self.cache_dir
+        }
+
+        # Add quantization config if enabled
+        if use_8bit:
+            from transformers import BitsAndBytesConfig
+            quantization_config = BitsAndBytesConfig(load_in_8bit=True)
+            model_kwargs["quantization_config"] = quantization_config
+            print("✓ Using 8-bit quantization for memory efficiency")
+
+        try:
+            self.pipeline = transformers.pipeline(
+                "text-generation",
+                model=self.model_id,
+                model_kwargs=model_kwargs,
+                device_map=self.device_map,
+                token=True  # Use HuggingFace authentication (updated parameter)
+            )
+
+            quantization_status = "with 8-bit quantization" if use_8bit else "with 16-bit precision"
+            print(f"✓ Llama model loaded successfully {quantization_status}")
+
+        except Exception as e:
+            print(f"❌ Failed to load Llama model: {e}")
+            print("Falling back to CPU inference...")
+
+            # Fallback to CPU if GPU fails
+            fallback_kwargs = {
+                "torch_dtype": torch.float32,
+                "cache_dir": self.cache_dir
+            }
+
+            self.pipeline = transformers.pipeline(
+                "text-generation",
+                model=self.model_id,
+                model_kwargs=fallback_kwargs,
+                device_map="cpu",
+                token=True
+            )
+            print("✓ Llama model loaded on CPU")
+    
         
         # Model configuration from environment or defaults
         self.model_id = model or os.getenv("MODEL_ID", "meta-llama/Llama-3.3-70B-Instruct")
@@ -213,22 +280,10 @@ class LLMClient:
     def generate_subqueries(self, messages: List[Dict[str, str]], **kwargs) -> SubqueryResponse:
         """Generate subqueries with validation."""
         return self.chat_with_validation(messages, SubqueryResponse, **kwargs)
-    
-    def extract_attributes(self, messages: List[Dict[str, str]], **kwargs) -> AttributeResponse:
-        """Extract attributes with validation."""
-        return self.chat_with_validation(messages, AttributeResponse, **kwargs)
-    
-    def verify_binary(self, messages: List[Dict[str, str]], **kwargs) -> VerificationResponse:
-        """Perform binary verification with validation."""
-        return self.chat_with_validation(messages, VerificationResponse, **kwargs)
-    
+
     def extract_relationships(self, messages: List[Dict[str, str]], **kwargs) -> RelationshipResponse:
         """Extract relationships with validation."""
         return self.chat_with_validation(messages, RelationshipResponse, **kwargs)
-    
-    def process_context(self, messages: List[Dict[str, str]], **kwargs) -> ContextResponse:
-        """Process scene context with validation."""
-        return self.chat_with_validation(messages, ContextResponse, **kwargs)
     
     def plan_attributes(self, messages: List[Dict[str, str]], **kwargs) -> AttributePlanningResponse:
         """Plan attribute extraction requirements with validation."""
@@ -237,3 +292,15 @@ class LLMClient:
     def generate_candidates(self, messages: List[Dict[str, str]], **kwargs) -> CandidateResponse:
         """Generate attribute value candidates with validation."""
         return self.chat_with_validation(messages, CandidateResponse, **kwargs)
+
+    def analyze_count_requirements(self, messages: List[Dict[str, str]], **kwargs) -> CountRequirementResponse:
+        """Analyze count requirements with validation."""
+        return self.chat_with_validation(messages, CountRequirementResponse, **kwargs)
+
+    def analyze_scene_attributes(self, messages: List[Dict[str, str]], **kwargs) -> SceneAttributeResponse:
+        """Analyze scene attributes with validation."""
+        return self.chat_with_validation(messages, SceneAttributeResponse, **kwargs)
+
+    def extract_entities(self, messages: List[Dict[str, str]], **kwargs) -> EntityExtractionResponse:
+        """Extract entities from image captions with validation."""
+        return self.chat_with_validation(messages, EntityExtractionResponse, **kwargs)

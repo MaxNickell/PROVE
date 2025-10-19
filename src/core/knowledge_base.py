@@ -50,7 +50,9 @@ class KnowledgeBase:
                 objects=[],
                 attributes={},
                 relationships=[],
-                scene_context={}
+                scene_context={},
+                scene_attributes={},
+                counts={}
             )
 
     def add_objects(self, image_id: str, objects: List[ObjectDetection]) -> None:
@@ -63,17 +65,6 @@ class KnowledgeBase:
         """
         self.ensure_image_exists(image_id)
         self.images[image_id].objects = objects
-
-    def add_image_context(self, image_id: str, context: str) -> None:
-        """
-        Add detailed image context/caption.
-
-        Args:
-            image_id: Image identifier
-            context: Detailed image caption
-        """
-        self.ensure_image_exists(image_id)
-        self.images[image_id].scene_context["caption"] = context
 
     def add_attributes_for_object(self, image_id: str, object_id: int, attributes: AttributeData) -> None:
         """
@@ -97,19 +88,6 @@ class KnowledgeBase:
         """
         self.ensure_image_exists(image_id)
         self.images[image_id].relationships = relationships
-
-    def add_scene_attributes(self, image_id: str, scene_attributes: List[Dict[str, Any]]) -> None:
-        """
-        Add scene-level attributes for an image.
-
-        Args:
-            image_id: Image identifier
-            scene_attributes: List of scene attribute dictionaries with attribute_class, value, confidence
-        """
-        self.ensure_image_exists(image_id)
-        if "scene_attributes" not in self.images[image_id].scene_context:
-            self.images[image_id].scene_context["scene_attributes"] = []
-        self.images[image_id].scene_context["scene_attributes"].extend(scene_attributes)
 
     def add_subqueries(self, subqueries: List[BinarySubquery]) -> None:
         """Store generated binary subqueries."""
@@ -135,9 +113,18 @@ class KnowledgeBase:
         Returns:
             Dict representation of the knowledge base
         """
+        # Create clean image data without scene_context (processing aids only)
+        clean_images = {}
+        for image_id, image_data in self.images.items():
+            image_dict = image_data.to_dict()
+            # Remove scene_context as it's only for processing, not final knowledge base
+            if "scene_context" in image_dict:
+                del image_dict["scene_context"]
+            clean_images[image_id] = image_dict
+
         return {
             "ultimate_question": self.ultimate_question,
-            "images": {image_id: image_data.to_dict() for image_id, image_data in self.images.items()},
+            "images": clean_images,
             "subqueries": [sq.to_dict() for sq in self.subqueries],
             "problog_facts": [fact.to_dict() for fact in self.problog_facts],
             "subquery_results": [result.to_dict() for result in self.subquery_results],

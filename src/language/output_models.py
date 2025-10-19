@@ -38,34 +38,6 @@ class SubqueryResponse(BaseModel):
         return v
 
 
-class AttributeResponse(BaseModel):
-    """Pydantic model for attribute extraction output."""
-    attributes: Dict[str, str] = Field(..., description="Extracted attributes as key-value pairs")
-    
-    @field_validator('attributes')
-    @classmethod
-    def validate_attributes(cls, v):
-        if not isinstance(v, dict):
-            raise ValueError("Attributes must be a dictionary")
-        # Ensure all values are strings
-        for key, value in v.items():
-            if not isinstance(value, str):
-                v[key] = str(value)
-        return v
-
-
-class VerificationResponse(BaseModel):
-    """Pydantic model for binary verification output."""
-    answer: str = Field(..., description="Binary answer: yes/no")
-    confidence: float = Field(..., ge=0.0, le=1.0, description="Confidence score between 0 and 1")
-    
-    @field_validator('answer')
-    @classmethod
-    def validate_answer(cls, v):
-        v = v.lower().strip()
-        if v not in ['yes', 'no']:
-            raise ValueError("Answer must be 'yes' or 'no'")
-        return v
 
 
 class RelationshipItem(BaseModel):
@@ -87,17 +59,6 @@ class RelationshipResponse(BaseModel):
         return v
 
 
-class ContextResponse(BaseModel):
-    """Pydantic model for scene context processing output."""
-    context: str = Field(..., description="Scene context description")
-    key_elements: List[str] = Field(default_factory=list, description="Key contextual elements")
-    
-    @field_validator('context')
-    @classmethod
-    def validate_context(cls, v):
-        if len(v.strip()) < 10:
-            raise ValueError("Context description too short")
-        return v.strip()
 
 
 class AttributePlanningResponse(BaseModel):
@@ -121,7 +82,7 @@ class AttributePlanningResponse(BaseModel):
 class CandidateResponse(BaseModel):
     """Pydantic model for attribute candidate generation output."""
     candidates: List[str] = Field(..., description="List of candidate attribute values")
-    
+
     @field_validator('candidates')
     @classmethod
     def validate_candidates(cls, v):
@@ -139,5 +100,92 @@ class CandidateResponse(BaseModel):
         return v
 
 
+class CountRequirementItem(BaseModel):
+    """Single count requirement item."""
+    image_id: str = Field(..., description="Image identifier (e.g., 'image_a')")
+    object_class: str = Field(..., description="Object class to count (e.g., 'cattle', 'bird')")
+
+    @field_validator('image_id')
+    @classmethod
+    def validate_image_id(cls, v):
+        if not v.strip():
+            raise ValueError("Image ID cannot be empty")
+        return v.strip()
+
+    @field_validator('object_class')
+    @classmethod
+    def validate_object_class(cls, v):
+        if not v.strip():
+            raise ValueError("Object class cannot be empty")
+        return v.strip()
+
+
+class CountRequirementResponse(BaseModel):
+    """Pydantic model for count requirement analysis output."""
+    count_requirements: List[CountRequirementItem] = Field(..., description="List of count requirements extracted from subquery")
+
+    @field_validator('count_requirements')
+    @classmethod
+    def validate_count_requirements(cls, v):
+        if not isinstance(v, list):
+            raise ValueError("Count requirements must be a list")
+        if len(v) > 10:  # Reasonable upper limit
+            raise ValueError("Too many count requirements extracted")
+        return v
+
+
+class SceneAttributeCandidateItem(BaseModel):
+    """Single scene attribute candidate."""
+    image_id: str = Field(..., description="Image identifier")
+    attribute_class: str = Field(..., description="Scene attribute category")
+    candidate_value: str = Field(..., description="Specific value to verify")
+    binary_question: str = Field(..., description="Binary Yes/No question")
+
+    @field_validator('image_id', 'attribute_class', 'candidate_value', 'binary_question')
+    @classmethod
+    def validate_non_empty(cls, v):
+        if not v.strip():
+            raise ValueError("Field cannot be empty")
+        return v.strip()
+
+
+class SceneAttributeResponse(BaseModel):
+    """Pydantic model for scene attribute planning output."""
+    scene_attribute_candidates: List[SceneAttributeCandidateItem] = Field(
+        ...,
+        description="List of scene attribute candidates for verification"
+    )
+
+    @field_validator('scene_attribute_candidates')
+    @classmethod
+    def validate_candidates(cls, v):
+        if not isinstance(v, list):
+            raise ValueError("Scene attribute candidates must be a list")
+        if len(v) > 20:  # Reasonable upper limit
+            raise ValueError("Too many scene attribute candidates")
+        return v
+
+
+class EntityExtractionResponse(BaseModel):
+    """Pydantic model for entity extraction from image captions."""
+    entities: List[str] = Field(
+        ...,
+        description="List of singular noun object classes extracted from caption"
+    )
+
+    @field_validator('entities')
+    @classmethod
+    def validate_entities(cls, v):
+        if not isinstance(v, list):
+            raise ValueError("Entities must be a list")
+        # Remove empty strings and strip whitespace
+        v = [e.strip() for e in v if e.strip()]
+        if not v:
+            raise ValueError("Entities list cannot be empty after filtering")
+        # Lowercase and deduplicate
+        v = list(set(e.lower() for e in v))
+        return v
+
+
 # Union type for all possible responses
-OutputModel = SubqueryResponse | AttributeResponse | VerificationResponse | RelationshipResponse | ContextResponse | AttributePlanningResponse | CandidateResponse
+OutputModel = SubqueryResponse | RelationshipResponse | AttributePlanningResponse | CandidateResponse | CountRequirementResponse | SceneAttributeResponse | EntityExtractionResponse
