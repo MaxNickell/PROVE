@@ -7,7 +7,7 @@ from typing import List, Dict, Any, Tuple
 from PIL import Image, ImageDraw
 
 from src.core.model_manager import ModelManager
-from src.core.types import BinarySubquery, ObjectDetection, RelationshipCandidate, IntraRelation, ImageData
+from src.core.types import BinarySubquestion, ObjectDetection, RelationshipCandidate, IntraRelation, ImageData
 from src.core.probability import get_verifier_probability
 
 
@@ -33,7 +33,7 @@ class RelationshipExtractor:
     
     def extract_relationships(
         self,
-        relationship_subqueries: List[BinarySubquery],
+        relationship_subquestions: List[BinarySubquestion],
         image_paths: Dict[str, str],  # {"image_a": "/path/to/image", ...}
         images: Dict[str, ImageData]  # Clean ImageData structure
     ) -> List[IntraRelation]:
@@ -41,7 +41,7 @@ class RelationshipExtractor:
         Extract relationships needed to answer ONLY relationship subqueries.
 
         Args:
-            relationship_subqueries: Binary subqueries with subquery_type == "relationship"
+            relationship_subquestions: Binary subquestions with subquery_type == "relationship"
             image_paths: Paths to images
             images: ImageData structure containing objects and context per image
 
@@ -52,16 +52,16 @@ class RelationshipExtractor:
             RelationshipExtractorError: If extraction fails or non-relationship subqueries provided
         """
         try:
-            if not relationship_subqueries:
+            if not relationship_subquestions:
                 return []
 
             # Validate that all subqueries are relationship type (research-grade validation)
-            non_relationship_subqueries = [sq for sq in relationship_subqueries if sq.subquery_type != "relationship"]
-            if non_relationship_subqueries:
-                invalid_types = [sq.subquery_type for sq in non_relationship_subqueries]
+            non_relationship_subquestions = [sq for sq in relationship_subquestions if sq.subquery_type != "relationship"]
+            if non_relationship_subquestions:
+                invalid_types = [sq.subquery_type for sq in non_relationship_subquestions]
                 raise RelationshipExtractorError(
                     f"RelationshipExtractor only accepts relationship subqueries. "
-                    f"Received {len(non_relationship_subqueries)} non-relationship subqueries: {set(invalid_types)}. "
+                    f"Received {len(non_relationship_subquestions)} non-relationship subquestions: {set(invalid_types)}. "
                     f"Route attribute/scene_attribute subqueries to appropriate processors. Count subqueries not implemented yet."
                 )
             
@@ -76,7 +76,7 @@ class RelationshipExtractor:
 
             # Determine required relationships from relationship subqueries
             relationship_candidates = self._determine_required_relationships(
-                llm_client, relationship_subqueries, images
+                llm_client, relationship_subquestions, images
             )
             
             # Verify relationships using binary VLM
@@ -98,7 +98,7 @@ class RelationshipExtractor:
     
     def extract_relationships_for_image(
         self,
-        subqueries: List[BinarySubquery],
+        subquestions: List[BinarySubquestion],
         image_path: str,
         objects: List[ObjectDetection]
     ) -> List[IntraRelation]:
@@ -106,7 +106,7 @@ class RelationshipExtractor:
         Extract relationships for objects in a single image.
         
         Args:
-            subqueries: Relationship-type subqueries
+            subquestions: Relationship-type subqueries
             image_path: Path to the image
             objects: Detected objects in this image
             
@@ -114,7 +114,7 @@ class RelationshipExtractor:
             List[IntraRelation]: Extracted relationships for this image
         """
         try:
-            if not subqueries or not objects:
+            if not subquestions or not objects:
                 return []
             
             # For now, return empty list - this needs full implementation
@@ -128,7 +128,7 @@ class RelationshipExtractor:
     def _determine_required_relationships(
         self,
         llm_client,
-        subqueries: List[BinarySubquery],
+        subquestions: List[BinarySubquestion],
         images: Dict[str, ImageData]
     ) -> List[RelationshipCandidate]:
         """
@@ -136,7 +136,7 @@ class RelationshipExtractor:
 
         Args:
             llm_client: LLM client
-            subqueries: Binary subqueries to analyze
+            subquestions: Binary subqueries to analyze
             images: ImageData structure containing objects and context per image
 
         Returns:
@@ -144,16 +144,16 @@ class RelationshipExtractor:
         """
         all_candidates = []
         
-        for i, subquery in enumerate(subqueries):
+        for i, subquestion in enumerate(subquestions):
             # Only analyze relationship-type subqueries
-            if subquery.subquery_type == "relationship":
+            if subquestion.subquery_type == "relationship":
                 candidates = self._analyze_subquery_for_relationships(
-                    llm_client, subquery, images
+                    llm_client, subquestion, images
                 )
                 
                 # Add subquery reference to candidates
                 for candidate in candidates:
-                    candidate.required_for_subqueries = [subquery.question]
+                    candidate.required_for_subqueries = [subquestion.question]
                 
                 all_candidates.extend(candidates)
         
@@ -165,7 +165,7 @@ class RelationshipExtractor:
     def _analyze_subquery_for_relationships(
         self,
         llm_client,
-        subquery: BinarySubquery,
+        subquestion: BinarySubquestion,
         images: Dict[str, ImageData]
     ) -> List[RelationshipCandidate]:
         """
@@ -173,22 +173,22 @@ class RelationshipExtractor:
 
         Args:
             llm_client: LLM client
-            subquery: Binary subquery to analyze
+            subquestion: Binary subquery to analyze
             images: ImageData structure containing objects and context per image
 
         Returns:
             List[RelationshipCandidate]: Required relationships for this subquery
         """
         # Build context for referenced objects (starting point)
-        referenced_object_context = self._build_object_context_from_images(subquery.referenced_objects, images)
+        referenced_object_context = self._build_object_context_from_images(subquestion.referenced_objects, images)
 
         # Build context for ALL available objects (for compound subquery analysis)
         all_objects_context = self._build_all_objects_context_from_images(images)
 
         prompt = f"""Analyze this binary subquery to determine what spatial or interaction relationships need to be verified:
 
-Subquery: "{subquery.question}"
-Type: {subquery.subquery_type}
+Subquery: "{subquestion.question}"
+Type: {subquestion.subquery_type}
 Referenced Objects: {referenced_object_context}
 
 All Available Objects: {all_objects_context}
@@ -681,15 +681,15 @@ if __name__ == "__main__":
     extractor = RelationshipExtractor()
     
     # Sample data
-    from src.core.types import BinarySubquery, ObjectDetection
+    from src.core.types import BinarySubquestion, ObjectDetection
     
     subqueries = [
-        BinarySubquery(
+        BinarySubquestion(
             question="Is person_a_0 lifting weight_a_1?",
             referenced_objects=["person_a_0", "weight_a_1"],
             subquery_type="relationship"
         ),
-        BinarySubquery(
+        BinarySubquestion(
             question="Is carnivore_a_0 near zebra_a_1?",
             referenced_objects=["carnivore_a_0", "zebra_a_1"],
             subquery_type="relationship"

@@ -9,7 +9,7 @@ from dataclasses import asdict
 
 from src.core.types import (
     ObjectDetection, AttributeData, IntraRelation, ImageData,
-    BinarySubquery, ProbLogFact, SubqueryResult, AnswerResult
+    BinarySubquestion, ProbLogFact, SubquestionResult, AnswerResult
 )
 
 
@@ -32,10 +32,10 @@ class KnowledgeBase:
         self.images: Dict[str, ImageData] = {}  # {"image_a": ImageData, "image_b": ImageData}
 
         # Pipeline processing results
-        self.subqueries: List[BinarySubquery] = []
+        self.subquestions: List[BinarySubquestion] = []
         self.attribute_requirements: List[Dict[str, Any]] = []
         self.problog_facts: List[ProbLogFact] = []
-        self.subquery_results: List[SubqueryResult] = []
+        self.subquestion_results: List[SubquestionResult] = []
         self.answer: Optional[AnswerResult] = None
 
     def ensure_image_exists(self, image_id: str) -> None:
@@ -89,17 +89,29 @@ class KnowledgeBase:
         self.ensure_image_exists(image_id)
         self.images[image_id].relationships = relationships
 
-    def add_subqueries(self, subqueries: List[BinarySubquery]) -> None:
-        """Store generated binary subqueries."""
-        self.subqueries = subqueries
+    def add_scene_context(self, image_id: str, context: Dict[str, Any]) -> None:
+        """
+        Add scene context (processing aids like captions) for an image.
+        Note: scene_context is stripped from JSON output via to_dict() for ProbLog.
+
+        Args:
+            image_id: Image identifier
+            context: Context dictionary (e.g., {"caption": "..."})
+        """
+        self.ensure_image_exists(image_id)
+        self.images[image_id].scene_context.update(context)
+
+    def add_subquestions(self, subquestions: List[BinarySubquestion]) -> None:
+        """Store generated binary subquestions."""
+        self.subquestions = subquestions
 
     def add_problog_facts(self, facts: List[ProbLogFact]) -> None:
         """Store ProbLog knowledge base facts."""
         self.problog_facts = facts
 
-    def add_subquery_results(self, results: List[SubqueryResult]) -> None:
-        """Store subquery execution results."""
-        self.subquery_results = results
+    def add_subquestion_results(self, results: List[SubquestionResult]) -> None:
+        """Store subquestion execution results."""
+        self.subquestion_results = results
 
     def set_answer(self, answer: AnswerResult) -> None:
         """Set the final answer."""

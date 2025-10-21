@@ -9,8 +9,8 @@ import os
 sys.path.insert(0, os.path.dirname(__file__))
 
 from src.pipeline.detector import Detector
-from src.pipeline.subquery_generator import SubqueryGenerator
-from src.pipeline.attribute_processor import AttributeProcessor
+from src.pipeline.subquestion_generator import SubquestionGenerator
+from src.pipeline.agentic_attribute_processor import AgenticAttributeProcessor
 from src.pipeline.relationship_extractor import RelationshipExtractor
 from src.pipeline.count_processor import CountProcessor
 from src.pipeline.scene_attribute_processor import SceneAttributeProcessor
@@ -28,8 +28,8 @@ def main():
     try:
         # Test all component imports
         detector = Detector()
-        subquery_generator = SubqueryGenerator()
-        attribute_processor = AttributeProcessor()
+        subquestion_generator = SubquestionGenerator()
+        attribute_processor = AgenticAttributeProcessor()
         relationship_extractor = RelationshipExtractor()
         count_processor = CountProcessor()
         scene_attribute_processor = SceneAttributeProcessor()
@@ -66,11 +66,12 @@ def main():
 
         detector = Detector()
 
-        # Generate detailed captions upfront (processing aids only - not stored in KB)
+        # Generate detailed captions upfront and store in KB
         image_contexts = detector.generate_detailed_captions(image_paths)
 
         for image_id, context in image_contexts.items():
             print(f"{image_id}: {context}")
+            kb.add_scene_context(image_id, {"caption": context})
 
         print()
 
@@ -103,20 +104,20 @@ def main():
         print("Step 3: Subquery Generation")
         print("-" * 40)
         
-        subquery_generator = SubqueryGenerator()
+        subquestion_generator = SubquestionGenerator()
         
-        # Generate binary subqueries using clean ImageData structure
-        subqueries = subquery_generator.generate_binary_subqueries(
+        # Generate binary subquestions using clean ImageData structure
+        subquestions = subquestion_generator.generate_binary_subquestions(
             ultimate_question, kb.images
         )
-        
-        kb.add_subqueries(subqueries)
-        
-        print(f"Generated {len(subqueries)} binary subqueries:")
-        for i, subquery in enumerate(subqueries, 1):
-            print(f"  {i}. {subquery.question}")
-            print(f"     Type: {subquery.subquery_type}")
-            print(f"     Objects: {subquery.referenced_objects}")
+
+        kb.add_subquestions(subquestions)
+
+        print(f"Generated {len(subquestions)} binary subquestions:")
+        for i, subquestion in enumerate(subquestions, 1):
+            print(f"  {i}. {subquestion.question}")
+            print(f"     Type: {subquestion.subquery_type}")
+            print(f"     Objects: {subquestion.referenced_objects}")
         
         print()
         
@@ -126,24 +127,24 @@ def main():
         print("Step 4: Subquery Type Routing")
         print("-" * 40)
 
-        if not kb.subqueries:
-            print("Warning: No subqueries generated, skipping processing")
-            attribute_subqueries = []
-            relationship_subqueries = []
-            scene_attribute_subqueries = []
-            count_subqueries = []
+        if not kb.subquestions:
+            print("Warning: No subquestions generated, skipping processing")
+            attribute_subquestions = []
+            relationship_subquestions = []
+            scene_attribute_subquestions = []
+            count_subquestions = []
         else:
-            # Filter subqueries by type for targeted processing
-            attribute_subqueries = [sq for sq in kb.subqueries if sq.subquery_type == "attribute"]
-            relationship_subqueries = [sq for sq in kb.subqueries if sq.subquery_type == "relationship"]
-            scene_attribute_subqueries = [sq for sq in kb.subqueries if sq.subquery_type == "scene_attribute"]
-            count_subqueries = [sq for sq in kb.subqueries if sq.subquery_type == "count"]
+            # Filter subquestions by type for targeted processing
+            attribute_subquestions = [sq for sq in kb.subquestions if sq.subquery_type == "attribute"]
+            relationship_subquestions = [sq for sq in kb.subquestions if sq.subquery_type == "relationship"]
+            scene_attribute_subquestions = [sq for sq in kb.subquestions if sq.subquery_type == "scene_attribute"]
+            count_subquestions = [sq for sq in kb.subquestions if sq.subquery_type == "count"]
 
-            print(f"Subquery routing:")
-            print(f"  Attribute: {len(attribute_subqueries)} subqueries")
-            print(f"  Relationship: {len(relationship_subqueries)} subqueries")
-            print(f"  Scene Attribute: {len(scene_attribute_subqueries)} subqueries")
-            print(f"  Count: {len(count_subqueries)} subqueries")
+            print(f"Subquestion routing:")
+            print(f"  Attribute: {len(attribute_subquestions)} subquestions")
+            print(f"  Relationship: {len(relationship_subquestions)} subquestions")
+            print(f"  Scene Attribute: {len(scene_attribute_subquestions)} subquestions")
+            print(f"  Count: {len(count_subquestions)} subquestions")
 
             # Count processing will be handled in dedicated step
 
@@ -155,21 +156,21 @@ def main():
         print("Step 5: Attribute Processing")
         print("-" * 40)
 
-        if not attribute_subqueries:
-            print("No attribute subqueries to process")
+        if not attribute_subquestions:
+            print("No attribute subquestions to process")
         else:
-            print(f"Processing {len(attribute_subqueries)} attribute subqueries:")
-            print("  (Note: Per-subquery architecture - planning + extraction per subquery)")
-            for i, sq in enumerate(attribute_subqueries[:3], 1):  # Show first 3
+            print(f"Processing {len(attribute_subquestions)} attribute subquestions:")
+            print("  (Note: Agentic approach - LLM orchestrates iterative information gathering)")
+            for i, sq in enumerate(attribute_subquestions[:3], 1):  # Show first 3
                 print(f"  {i}. {sq.question}")
-            if len(attribute_subqueries) > 3:
-                print(f"     ... and {len(attribute_subqueries) - 3} more")
+            if len(attribute_subquestions) > 3:
+                print(f"     ... and {len(attribute_subquestions) - 3} more")
 
-            attribute_processor = AttributeProcessor()
+            attribute_processor = AgenticAttributeProcessor()
 
-            # Process attribute subqueries individually - returns attributes per image
-            attributes_per_image = attribute_processor.process_attribute_subqueries(
-                attribute_subqueries, image_paths, kb.images
+            # Process attribute subquestions individually - returns attributes per image
+            attributes_per_image = attribute_processor.process_attribute_subquestions(
+                attribute_subquestions, image_paths, kb.images
             )
 
             print(f"Attribute processing completed:")
@@ -184,20 +185,20 @@ def main():
         print("Step 6: Relationship Extraction")
         print("-" * 40)
 
-        if not relationship_subqueries:
-            print("No relationship subqueries to process")
+        if not relationship_subquestions:
+            print("No relationship subquestions to process")
         else:
-            print(f"Processing {len(relationship_subqueries)} relationship subqueries:")
-            print("  (Note: Enhanced to handle compound subqueries requiring cross-image relationships)")
-            for i, sq in enumerate(relationship_subqueries[:3], 1):  # Show first 3
+            print(f"Processing {len(relationship_subquestions)} relationship subquestions:")
+            print("  (Note: Enhanced to handle compound subquestions requiring cross-image relationships)")
+            for i, sq in enumerate(relationship_subquestions[:3], 1):  # Show first 3
                 print(f"  {i}. {sq.question}")
-            if len(relationship_subqueries) > 3:
-                print(f"     ... and {len(relationship_subqueries) - 3} more")
+            if len(relationship_subquestions) > 3:
+                print(f"     ... and {len(relationship_subquestions) - 3} more")
             relationship_extractor = RelationshipExtractor()
 
-            # Process only relationship subqueries
+            # Process only relationship subquestions
             relationships = relationship_extractor.extract_relationships(
-                relationship_subqueries, image_paths, kb.images
+                relationship_subquestions, image_paths, kb.images
             )
 
             # Group relationships by image for batch storage
@@ -235,21 +236,21 @@ def main():
         print("Step 7: Count Processing")
         print("-" * 40)
 
-        if not count_subqueries:
-            print("No count subqueries to process")
+        if not count_subquestions:
+            print("No count subquestions to process")
         else:
-            print(f"Processing {len(count_subqueries)} count subqueries:")
+            print(f"Processing {len(count_subquestions)} count subquestions:")
             print("  (Note: Poisson-Binomial probabilistic counting using detection confidences)")
-            for i, sq in enumerate(count_subqueries[:3], 1):  # Show first 3
+            for i, sq in enumerate(count_subquestions[:3], 1):  # Show first 3
                 print(f"  {i}. {sq.question}")
-            if len(count_subqueries) > 3:
-                print(f"     ... and {len(count_subqueries) - 3} more")
+            if len(count_subquestions) > 3:
+                print(f"     ... and {len(count_subquestions) - 3} more")
 
             count_processor = CountProcessor()
 
-            # Process count subqueries using Poisson-Binomial counting
-            counts_per_image = count_processor.process_count_subqueries(
-                count_subqueries, kb.images
+            # Process count subquestions using Poisson-Binomial counting
+            counts_per_image = count_processor.process_count_subquestions(
+                count_subquestions, kb.images
             )
 
             print(f"Count processing completed:")
@@ -264,12 +265,12 @@ def main():
         print("Step 8: Scene Attribute Processing")
         print("-" * 40)
 
-        if not scene_attribute_subqueries:
-            print("No scene attribute subqueries to process")
+        if not scene_attribute_subquestions:
+            print("No scene attribute subquestions to process")
         else:
-            print(f"Processing {len(scene_attribute_subqueries)} scene attribute subqueries:")
-            print("  (Note: Each subquery may decompose into multiple atomic binary questions)")
-            for i, sq in enumerate(scene_attribute_subqueries, 1):
+            print(f"Processing {len(scene_attribute_subquestions)} scene attribute subquestions:")
+            print("  (Note: Each subquestion may decompose into multiple atomic binary questions)")
+            for i, sq in enumerate(scene_attribute_subquestions, 1):
                 print(f"  {i}. {sq.question}")
                 print(f"     Type: {sq.subquery_type}, Referenced Objects: {sq.referenced_objects}")
 
@@ -279,8 +280,8 @@ def main():
                 scene_attribute_processor = SceneAttributeProcessor()
 
                 print(f"  Processing scene attributes with {len(image_paths)} images...")
-                scene_attributes_counts = scene_attribute_processor.process_scene_attribute_subqueries(
-                    scene_attribute_subqueries, image_paths, kb.images, image_contexts
+                scene_attributes_counts = scene_attribute_processor.process_scene_attribute_subquestions(
+                    scene_attribute_subquestions, image_paths, kb.images, image_contexts
                 )
 
                 print(f"  Scene context processor returned data for {len(scene_attributes_counts)} images")
@@ -458,7 +459,7 @@ def main():
         print(f"  Total relationships extracted: {total_relationships}")
         print(f"  Total scene attributes extracted: {total_scene_attributes}")
         print(f"  Total object classes counted: {total_counts}")
-        print(f"  Subqueries generated: {len(kb.subqueries)}")
+        print(f"  Subquestions generated: {len(kb.subquestions)}")
 
         # Show breakdown by image
         print(f"\nBreakdown by image:")
@@ -507,12 +508,12 @@ def main():
                 if counts_count > 3:
                     print(f"      ... and {counts_count - 3} more count classes")
 
-        # Show subquery breakdown by type
-        print(f"\nSubquery breakdown:")
-        subquery_types = {}
-        for sq in kb.subqueries:
-            subquery_types[sq.subquery_type] = subquery_types.get(sq.subquery_type, 0) + 1
-        for sq_type, count in subquery_types.items():
+        # Show subquestion breakdown by type
+        print(f"\nSubquestion breakdown:")
+        subquestion_types = {}
+        for sq in kb.subquestions:
+            subquestion_types[sq.subquery_type] = subquestion_types.get(sq.subquery_type, 0) + 1
+        for sq_type, count in subquestion_types.items():
             print(f"  {sq_type}: {count}")
 
         # Validate scene attributes before JSON save

@@ -8,7 +8,7 @@ from typing import List, Dict, Any, Tuple
 from PIL import Image
 
 from src.core.model_manager import ModelManager
-from src.core.types import ObjectDetection, BinarySubquery, ImageData
+from src.core.types import ObjectDetection, BinarySubquestion, ImageData
 from src.core.probability import get_verifier_probability
 from src.vision.qwen_vl import QwenVL
 
@@ -44,7 +44,7 @@ class SceneAttributeCandidate:
 
 class SceneAttributeResult:
     """Scene attribute result with confidence score."""
-    def __init__(self, image_id: str, attribute_class: str, value: str, confidence: float, binary_question: str, subquery: str):
+    def __init__(self, image_id: str, attribute_class: str, value: str, confidence: float, binary_question: str, subquestion: str):
         self.image_id = image_id
         self.attribute_class = attribute_class
         self.value = value
@@ -74,7 +74,7 @@ class SceneAttributeProcessor:
 
     def process_scene_attribute_subqueries(
         self,
-        scene_subqueries: List[BinarySubquery],
+        scene_subquestions: List[BinarySubquestion],
         image_paths: Dict[str, str],
         images: Dict[str, ImageData],
         image_contexts: Dict[str, str] = None
@@ -83,7 +83,7 @@ class SceneAttributeProcessor:
         Process scene_attribute subqueries using proper subquery decomposition.
 
         Args:
-            scene_subqueries: List of scene_attribute binary subqueries
+            scene_subquestions: List of scene_attribute binary subqueries
             image_paths: Dict mapping image_id to file path (e.g., {'image_a': './test_images/img0.png'})
             images: ImageData structure containing objects per image
             image_contexts: Optional dict mapping image_id to caption text for processing
@@ -101,7 +101,7 @@ class SceneAttributeProcessor:
                 if not hasattr(image_data, 'scene_attributes') or image_data.scene_attributes is None:
                     image_data.scene_attributes = {}
 
-            if not scene_subqueries:
+            if not scene_subquestions:
                 # Return count of scene attributes per image
                 return {image_id: len(image_data.scene_attributes) for image_id, image_data in images.items()}
 
@@ -110,11 +110,11 @@ class SceneAttributeProcessor:
             qwen_client = self.model_manager.get_qwen_vl()
 
             # Step 1: Analyze all scene subqueries to determine scene attribute candidates
-            all_candidates = self._analyze_scene_subqueries_for_candidates(
-                llm_client, scene_subqueries, images, image_contexts
+            all_candidates = self._analyze_scene_subquestions_for_candidates(
+                llm_client, scene_subquestions, images, image_contexts
             )
 
-            print(f"Generated {len(all_candidates)} scene attribute candidates from {len(scene_subqueries)} subqueries")
+            print(f"Generated {len(all_candidates)} scene attribute candidates from {len(scene_subquestions)} subqueries")
 
             # Step 2: Verify each candidate with Qwen binary verification
             verified_results = []
@@ -143,12 +143,12 @@ class SceneAttributeProcessor:
             return {image_id: len(image_data.scene_attributes) for image_id, image_data in images.items()}
 
         except Exception as e:
-            raise SceneAttributeProcessorError(f"Failed to process scene_attribute subqueries: {str(e)}")
+            raise SceneAttributeProcessorError(f"Failed to process scene_attribute subquestions: {str(e)}")
 
-    def _analyze_scene_subqueries_for_candidates(
+    def _analyze_scene_subquestions_for_candidates(
         self,
         llm_client,
-        scene_subqueries: List[BinarySubquery],
+        scene_subquestions: List[BinarySubquestion],
         images: Dict[str, ImageData],
         image_contexts: Dict[str, str] = None
     ) -> List[SceneAttributeCandidate]:
@@ -158,7 +158,7 @@ class SceneAttributeProcessor:
 
         Args:
             llm_client: LLM client for analysis
-            scene_subqueries: List of scene_attribute subqueries
+            scene_subquestions: List of scene_attribute subqueries
             images: ImageData structure containing objects per image
             image_contexts: Optional dict mapping image_id to caption text for processing
 
@@ -167,8 +167,8 @@ class SceneAttributeProcessor:
         """
         all_candidates = []
 
-        for subquery in scene_subqueries:
-            if subquery.subquery_type != "scene_attribute":
+        for subquery in scene_subquestions:
+            if subquestion.subquery_type != "scene_attribute":
                 continue
 
             # Analyze this subquery to determine required scene attributes
@@ -178,7 +178,7 @@ class SceneAttributeProcessor:
 
             # Add subquery reference to candidates
             for candidate in candidates:
-                candidate.required_for_subqueries = [subquery.question]
+                candidate.required_for_subqueries = [subquestion.question]
 
             all_candidates.extend(candidates)
 
@@ -187,7 +187,7 @@ class SceneAttributeProcessor:
     def _analyze_single_subquery_for_scene_attributes(
         self,
         llm_client,
-        subquery: BinarySubquery,
+        subquestion: BinarySubquestion,
         images: Dict[str, ImageData],
         image_contexts: Dict[str, str] = None
     ) -> List[SceneAttributeCandidate]:
@@ -196,7 +196,7 @@ class SceneAttributeProcessor:
 
         Args:
             llm_client: LLM client
-            subquery: Scene attribute subquery to analyze
+            subquestion: Scene attribute subquery to analyze
             images: ImageData structure
             image_contexts: Optional dict mapping image_id to caption text for processing
 
@@ -212,7 +212,7 @@ class SceneAttributeProcessor:
 
             prompt = f"""Analyze this scene attribute subquery to determine what atomic scene attributes need verification.
 
-Subquery: "{subquery.question}"
+Subquery: "{subquestion.question}"
 
 Available Images and Descriptions:
 {context_str}
@@ -263,7 +263,7 @@ Answer:"""
             return candidates
 
         except Exception as e:
-            print(f"Warning: Failed to analyze scene subquery '{subquery.question}': {e}")
+            print(f"Warning: Failed to analyze scene subquery '{subquestion.question}': {e}")
             return []
 
     def _verify_scene_attribute_candidate(
@@ -339,15 +339,15 @@ if __name__ == "__main__":
     processor = ContextProcessor()
 
     # Sample data
-    from src.core.types import BinarySubquery, ObjectDetection, ImageData
+    from src.core.types import BinarySubquestion, ObjectDetection, ImageData
 
-    scene_subqueries = [
-        BinarySubquery(
+    scene_subquestions = [
+        BinarySubquestion(
             question="Do both images show outdoor settings?",
             referenced_objects=[],
             subquery_type="scene_attribute"
         ),
-        BinarySubquery(
+        BinarySubquestion(
             question="Is IMAGE_A taken during daytime with blue sky?",
             referenced_objects=[],
             subquery_type="scene_attribute"
@@ -373,7 +373,7 @@ if __name__ == "__main__":
 
     try:
         result = processor.process_scene_attribute_subqueries(
-            scene_subqueries, image_paths, images
+            scene_subquestions, image_paths, images
         )
         print(f"✓ Scene attribute processing result:")
         for image_id, data in result.items():

@@ -3,38 +3,38 @@ from typing import List, Dict
 from pydantic import BaseModel, Field, field_validator
 
 
-class SubqueryItem(BaseModel):
-    """Single subquery item with question, type, and referenced objects."""
+class SubquestionItem(BaseModel):
+    """Single subquestion item with question, type, and referenced objects."""
     question: str = Field(..., description="The binary question")
     referenced_objects: List[str] = Field(..., description="List of object IDs referenced in the question")
-    subquery_type: str = Field(..., description="Type of subquery: attribute, relationship, scene_attribute, or count")
-    
+    subquery_type: str = Field(..., description="Type of subquestion: attribute, relationship, scene_attribute, or count")
+
     @field_validator('question')
     @classmethod
     def validate_question(cls, v):
         if not v.strip():
             raise ValueError("Question cannot be empty")
         return v.strip()
-    
+
     @field_validator('subquery_type')
     @classmethod
     def validate_type(cls, v):
         if v not in ['attribute', 'relationship', 'scene_attribute', 'count']:
-            raise ValueError("Subquery type must be 'attribute', 'relationship', 'scene_attribute', or 'count'")
+            raise ValueError("Subquestion type must be 'attribute', 'relationship', 'scene_attribute', or 'count'")
         return v
 
 
-class SubqueryResponse(BaseModel):
-    """Pydantic model for subquery generation output."""
-    subqueries: List[SubqueryItem] = Field(..., description="List of binary subqueries with metadata")
-    
-    @field_validator('subqueries')
+class SubquestionResponse(BaseModel):
+    """Pydantic model for subquestion generation output."""
+    subquestions: List[SubquestionItem] = Field(..., description="List of binary subquestions with metadata")
+
+    @field_validator('subquestions')
     @classmethod
-    def validate_subqueries(cls, v):
+    def validate_subquestions(cls, v):
         if not v:
-            raise ValueError("Subqueries list cannot be empty")
+            raise ValueError("Subquestions list cannot be empty")
         if len(v) > 50:  # Reasonable upper limit
-            raise ValueError("Too many subqueries generated")
+            raise ValueError("Too many subquestions generated")
         return v
 
 
@@ -187,5 +187,80 @@ class EntityExtractionResponse(BaseModel):
         return v
 
 
+class QwenInformationRequest(BaseModel):
+    """Request for Qwen VL to gather visual information about an object."""
+    object_id: str = Field(..., description="Object ID to query (e.g., 'dog_a_1')")
+    question: str = Field(..., description="Open-ended question for Qwen (e.g., 'What color is this dog?')")
+    reasoning: str = Field(..., description="Why this information is needed")
+
+    @field_validator('question')
+    @classmethod
+    def validate_question(cls, v):
+        if not v.strip():
+            raise ValueError("Question cannot be empty")
+        if not v.endswith("?"):
+            raise ValueError("Question must end with '?'")
+        return v.strip()
+
+
+class BinaryAttributeQuestion(BaseModel):
+    """Binary question for probability extraction via verification."""
+    object_id: str = Field(..., description="Object ID being queried (e.g., 'dog_a_1') - used for bbox grounding")
+    attribute_class: str = Field(..., description="Attribute category (e.g., 'color', 'size', 'texture')")
+    attribute_value: str = Field(..., description="Specific value to verify (e.g., 'brown', 'large', 'rough')")
+    binary_question: str = Field(..., description="Binary Yes/No question using natural language (e.g., 'Is the dog brown?')")
+
+    @field_validator('binary_question')
+    @classmethod
+    def validate_binary(cls, v):
+        if not v.strip():
+            raise ValueError("Binary question cannot be empty")
+        if "?" not in v:
+            raise ValueError("Binary question must be a question (contain '?')")
+        v_lower = v.lower().strip()
+        if v_lower.startswith("what ") or v_lower.startswith("which ") or v_lower.startswith("how "):
+            raise ValueError("Binary question cannot be open-ended (What/Which/How)")
+        return v.strip()
+
+    @field_validator('attribute_class', 'attribute_value')
+    @classmethod
+    def validate_non_empty(cls, v):
+        if not v.strip():
+            raise ValueError("Field cannot be empty")
+        return v.strip()
+
+
+class AgentDecision(BaseModel):
+    """Agent's decision at each reasoning step in agentic attribute extraction."""
+    action: str = Field(..., description="Action to take: 'ask_qwen' or 'generate_binary_questions'")
+    reasoning: str = Field(..., description="Chain of thought reasoning for this decision")
+
+    qwen_request: QwenInformationRequest | None = Field(None, description="Qwen information request (if action is 'ask_qwen')")
+    binary_questions: List[BinaryAttributeQuestion] | None = Field(None, description="Binary questions (if action is 'generate_binary_questions')")
+
+    @field_validator('action')
+    @classmethod
+    def validate_action(cls, v):
+        if v not in ['ask_qwen', 'generate_binary_questions']:
+            raise ValueError("Action must be 'ask_qwen' or 'generate_binary_questions'")
+        return v
+
+    @field_validator('reasoning')
+    @classmethod
+    def validate_reasoning(cls, v):
+        if not v.strip() or len(v.strip()) < 10:
+            raise ValueError("Reasoning must be substantive (at least 10 characters)")
+        return v.strip()
+
+    def model_post_init(self, __context):
+        """Validate that action matches provided data."""
+        if self.action == "ask_qwen" and self.qwen_request is None:
+            raise ValueError("qwen_request required when action is 'ask_qwen'")
+        if self.action == "generate_binary_questions" and self.binary_questions is None:
+            raise ValueError("binary_questions required when action is 'generate_binary_questions'")
+        if self.action == "generate_binary_questions" and not self.binary_questions:
+            raise ValueError("binary_questions list cannot be empty when action is 'generate_binary_questions'")
+
+
 # Union type for all possible responses
-OutputModel = SubqueryResponse | RelationshipResponse | AttributePlanningResponse | CandidateResponse | CountRequirementResponse | SceneAttributeResponse | EntityExtractionResponse
+OutputModel = SubquestionResponse | RelationshipResponse | AttributePlanningResponse | CandidateResponse | CountRequirementResponse | SceneAttributeResponse | EntityExtractionResponse | AgentDecision

@@ -10,8 +10,8 @@ import torch
 from pydantic import BaseModel, ValidationError
 
 from .output_models import (
-    SubqueryResponse,
-    SubqueryItem,
+    SubquestionResponse,
+    SubquestionItem,
     RelationshipResponse,
     AttributePlanningResponse,
     CandidateResponse,
@@ -277,9 +277,9 @@ class LLMClient:
         return response
     
     # Convenience methods for specific pipeline components
-    def generate_subqueries(self, messages: List[Dict[str, str]], **kwargs) -> SubqueryResponse:
-        """Generate subqueries with validation."""
-        return self.chat_with_validation(messages, SubqueryResponse, **kwargs)
+    def generate_subquestions(self, messages: List[Dict[str, str]], **kwargs) -> SubquestionResponse:
+        """Generate subquestions with validation."""
+        return self.chat_with_validation(messages, SubquestionResponse, **kwargs)
 
     def extract_relationships(self, messages: List[Dict[str, str]], **kwargs) -> RelationshipResponse:
         """Extract relationships with validation."""

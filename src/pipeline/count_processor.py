@@ -8,7 +8,7 @@ from typing import List, Dict, Any, Tuple
 from dataclasses import dataclass
 
 from src.core.model_manager import ModelManager
-from src.core.types import BinarySubquery, ObjectDetection, ImageData
+from src.core.types import BinarySubquestion, ObjectDetection, ImageData
 from src.language.output_models import CountRequirementResponse
 
 
@@ -17,7 +17,7 @@ class CountRequirement:
     """Count requirement for a specific object class in an image."""
     image_id: str
     object_class: str
-    required_for_subqueries: List[str]  # Which subqueries need this count
+    required_for_subquestions: List[str]  # Which subqueries need this count
 
 
 @dataclass
@@ -48,23 +48,23 @@ class CountProcessorError(RuntimeError):
 class CountProcessor:
     """
     Process count subqueries using LLM class determination + Poisson-Binomial counting.
-    Each subquery: LLM determines required classes → Poisson-Binomial counting → Store probabilistic results
+    Each subquestion: LLM determines required classes → Poisson-Binomial counting → Store probabilistic results
     """
 
     def __init__(self):
         """Initialize processor with ModelManager singleton."""
         self.model_manager = ModelManager()
 
-    def process_count_subqueries(
+    def process_count_subquestions(
         self,
-        count_subqueries: List[BinarySubquery],
+        count_subquestions: List[BinarySubquestion],
         images: Dict[str, ImageData]
     ) -> Dict[str, int]:
         """
         Process count subqueries using probabilistic counting.
 
         Args:
-            count_subqueries: List of count binary subqueries
+            count_subquestions: List of count binary subqueries
             images: ImageData structure containing detected objects per image
 
         Returns:
@@ -74,7 +74,7 @@ class CountProcessor:
             CountProcessorError: If processing fails
         """
         try:
-            if not count_subqueries:
+            if not count_subquestions:
                 return {image_id: 0 for image_id in images.keys()}
 
             # Initialize counts structure for all images
@@ -87,10 +87,10 @@ class CountProcessor:
 
             # Step 1: Determine required count classes from all count subqueries
             count_requirements = self._determine_count_requirements(
-                llm_client, count_subqueries, images
+                llm_client, count_subquestions, images
             )
 
-            print(f"  Determined {len(count_requirements)} count requirements from {len(count_subqueries)} subqueries")
+            print(f"  Determined {len(count_requirements)} count requirements from {len(count_subquestions)} subqueries")
 
             # Step 2: Compute Poisson-Binomial counts for each requirement
             total_counts_computed = 0
@@ -113,12 +113,12 @@ class CountProcessor:
             return counts_per_image
 
         except Exception as e:
-            raise CountProcessorError(f"Failed to process count subqueries: {str(e)}")
+            raise CountProcessorError(f"Failed to process count subquestions: {str(e)}")
 
     def _determine_count_requirements(
         self,
         llm_client,
-        count_subqueries: List[BinarySubquery],
+        count_subquestions: List[BinarySubquestion],
         images: Dict[str, ImageData]
     ) -> List[CountRequirement]:
         """
@@ -126,7 +126,7 @@ class CountProcessor:
 
         Args:
             llm_client: LLM client for analysis
-            count_subqueries: List of count subqueries to analyze
+            count_subquestions: List of count subqueries to analyze
             images: ImageData structure
 
         Returns:
@@ -134,8 +134,8 @@ class CountProcessor:
         """
         all_requirements = []
 
-        for subquery in count_subqueries:
-            if subquery.subquery_type != "count":
+        for subquestion in count_subquestions:
+            if subquestion.subquery_type != "count":
                 continue
 
             # Analyze this subquery to determine count requirements
@@ -150,7 +150,7 @@ class CountProcessor:
     def _analyze_single_count_subquery(
         self,
         llm_client,
-        subquery: BinarySubquery,
+        subquestion: BinarySubquestion,
         images: Dict[str, ImageData]
     ) -> List[CountRequirement]:
         """
@@ -158,7 +158,7 @@ class CountProcessor:
 
         Args:
             llm_client: LLM client
-            subquery: Count subquery to analyze
+            subquestion: Count subquery to analyze
             images: ImageData structure
 
         Returns:
@@ -175,8 +175,8 @@ class CountProcessor:
 
             prompt = f"""Analyze this count subquery to determine what object classes need counting in which images.
 
-Subquery: "{subquery.question}"
-Type: {subquery.subquery_type}
+Subquery: "{subquestion.question}"
+Type: {subquestion.subquery_type}
 
 Available Images and Object Classes:
 {images_context}
@@ -202,7 +202,7 @@ Return JSON with this EXACT format:
   ]
 }}
 
-Generate count requirements for: "{subquery.question}"."""
+Generate count requirements for: "{subquestion.question}"."""
 
             messages = [
                 {
@@ -225,13 +225,13 @@ Generate count requirements for: "{subquery.question}"."""
                     requirements.append(CountRequirement(
                         image_id=req_item.image_id,
                         object_class=req_item.object_class,
-                        required_for_subqueries=[subquery.question]
+                        required_for_subqueries=[subquestion.question]
                     ))
 
             return requirements
 
         except Exception as e:
-            print(f"    Warning: Failed to analyze count subquery '{subquery.question}': {e}")
+            print(f"    Warning: Failed to analyze count subquery '{subquestion.question}': {e}")
             return []
 
     def _compute_poisson_binomial_count(

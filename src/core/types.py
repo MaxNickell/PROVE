@@ -66,12 +66,12 @@ class ImageData:
 
 
 @dataclass
-class BinarySubquery:
-    """Binary subquery with object references for contextual reasoning."""
+class BinarySubquestion:
+    """Binary subquestion with object references for contextual reasoning."""
     question: str  # Binary question answerable with Yes/No
     referenced_objects: List[str]  # Object IDs referenced in question
     subquery_type: str  # "attribute_comparison", "relationship", "state", etc.
-    
+
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
 
@@ -82,7 +82,7 @@ class AttributeRequirement:
     image_id: str             # "image_a", "image_b", etc.
     object_id: int            # Object index within the image (0, 1, 2...)
     attribute_classes: List[str]  # e.g., ["muscle_mass", "body_size"]
-    required_for_subqueries: List[str]  # Which subqueries need these attributes
+    required_for_subquestions: List[str]  # Which subquestions need these attributes
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -95,7 +95,7 @@ class RelationshipCandidate:
     subject_id: int           # Subject object index within the image
     object_id: int            # Target object index within the image
     relation: str             # e.g., "lifting"
-    required_for_subqueries: List[str]  # Which subqueries need this relationship
+    required_for_subquestions: List[str]  # Which subquestions need this relationship
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -118,13 +118,13 @@ class ProbLogFact:
 
 
 @dataclass
-class SubqueryResult:
-    """Result from ProbLog execution of a subquery."""
-    subquery: str  # Original binary subquery
+class SubquestionResult:
+    """Result from ProbLog execution of a subquestion."""
+    subquestion: str  # Original binary subquestion
     probability: float  # Computed probability
     supporting_facts: List[str]  # ProbLog facts that contributed
     evidence_trail: List[str]  # Human-readable evidence chain
-    
+
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
 
@@ -182,11 +182,11 @@ ATTRIBUTE_CATEGORIES = [
 
 # Type aliases for convenience
 Objects = List[ObjectDetection]
-Attributes = List[AttributeData] 
+Attributes = List[AttributeData]
 IntraRelations = List[IntraRelation]
-BinarySubqueries = List[BinarySubquery]
+BinarySubquestions = List[BinarySubquestion]
 AttributeRequirements = List[AttributeRequirement]
 RelationshipCandidates = List[RelationshipCandidate]
 ProbLogFacts = List[ProbLogFact]
-SubqueryResults = List[SubqueryResult]
+SubquestionResults = List[SubquestionResult]
 ProbLogResults = List[ProbLogResult]

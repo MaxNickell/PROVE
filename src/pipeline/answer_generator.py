@@ -7,7 +7,7 @@ from typing import List, Dict, Any
 import json
 
 from src.core.model_manager import ModelManager
-from src.core.types import SubqueryResult, AnswerResult
+from src.core.types import SubquestionResult, AnswerResult
 
 
 class AnswerGeneratorError(RuntimeError):
@@ -33,7 +33,7 @@ class AnswerGenerator:
     def generate_final_answer(
         self,
         ultimate_question: str,
-        subquery_results: List[SubqueryResult],
+        subquery_results: List[SubquestionResult],
         image_contexts: Dict[str, str] = None
     ) -> AnswerResult:
         """
@@ -75,7 +75,7 @@ class AnswerGenerator:
     
     def _organize_subquery_results(
         self,
-        subquery_results: List[SubqueryResult]
+        subquery_results: List[SubquestionResult]
     ) -> Dict[str, Any]:
         """
         Organize subquery results for LLM synthesis.
@@ -396,10 +396,10 @@ if __name__ == "__main__":
     generator = AnswerGenerator()
     
     # Sample data
-    from src.core.types import SubqueryResult
+    from src.core.types import SubquestionResult
     
     subquery_results = [
-        SubqueryResult(
+        SubquestionResult(
             subquery="Is person_a_0 more muscular than person_b_0?",
             probability=0.85,
             supporting_facts=["0.89::attribute(person_a_0, muscle_mass, high)"],
