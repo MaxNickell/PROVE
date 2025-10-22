@@ -63,16 +63,13 @@ class ModelManager:
         
     def get_llm_client(self) -> LLMClient:
         """
-        Get LLM client instance (lazy loaded with auto device allocation).
+        Get LLM client instance (GPT-4o via Forge API).
 
         Returns:
             LLMClient: The LLM client instance
         """
         if 'llm_client' not in self._models:
-            print("Initializing LLM client with auto device allocation...")
-            # Use auto device mapping for better memory distribution
-            self._models['llm_client'] = LLMClient(device_map="auto")
-            print("LLM client initialized successfully with auto device allocation.")
+            self._models['llm_client'] = LLMClient()
         return self._models['llm_client']
     
     # Preserved for easy reversion to custom GPU mapping
