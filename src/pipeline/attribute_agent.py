@@ -398,14 +398,50 @@ Respond in strict JSON format only."""
         # Load image
         image = Image.open(image_paths[image_id])
 
-        # Format question with bounding box grounding for focus
-        bbox_str = self._format_bbox_for_qwen(obj.bbox)
-        prompt = f"Looking at the object in region {bbox_str}, {request.question}"
+        # Crop to object with margin - focuses VLM attention (consistent with verification)
+        cropped_image = self._crop_with_margin(image, obj.bbox, margin=0.15)
+
+        # Direct question (no bbox coordinates needed!)
+        prompt = request.question
 
         # Run open-ended inference (no logits needed for information gathering)
-        response, _ = qwen_client.run_inference_with_logits(image, prompt)
+        response, _ = qwen_client.run_inference_with_logits(cropped_image, prompt)
 
         return response.strip()
+
+    def _crop_with_margin(
+        self,
+        image: Image.Image,
+        bbox: List[float],
+        margin: float = 0.15
+    ) -> Image.Image:
+        """
+        Crop image to bounding box with percentage margin on all sides.
+
+        Args:
+            image: PIL Image to crop
+            bbox: Bounding box [x1, y1, x2, y2]
+            margin: Percentage margin to add (0.15 = 15% of bbox size)
+
+        Returns:
+            Cropped PIL Image with margin
+        """
+        x1, y1, x2, y2 = bbox
+        width, height = image.size
+
+        # Calculate margin in pixels
+        bbox_width = x2 - x1
+        bbox_height = y2 - y1
+        margin_x = bbox_width * margin
+        margin_y = bbox_height * margin
+
+        # Apply margin with bounds checking
+        crop_x1 = max(0, x1 - margin_x)
+        crop_y1 = max(0, y1 - margin_y)
+        crop_x2 = min(width, x2 + margin_x)
+        crop_y2 = min(height, y2 + margin_y)
+
+        return image.crop((crop_x1, crop_y1, crop_x2, crop_y2))
 
     def _verify_binary_question(
         self,
@@ -435,12 +471,14 @@ Respond in strict JSON format only."""
         # Load image
         image = Image.open(image_paths[image_id])
 
-        # Format binary question with bounding box grounding
-        bbox_str = self._format_bbox_for_qwen(obj.bbox)
-        prompt = f"Looking at the object in region {bbox_str}, {bq.binary_question}"
+        # Crop to object with margin - removes distracting context
+        cropped_image = self._crop_with_margin(image, obj.bbox, margin=0.15)
+
+        # Simple, direct prompt (NO bbox coordinates in text!)
+        prompt = f"{bq.binary_question} Answer Yes or No.\n\nAnswer:"
 
         # Run verification with logits
-        response, logits = qwen_client.run_inference_with_logits(image, prompt)
+        response, logits = qwen_client.run_inference_with_logits(cropped_image, prompt)
 
         # Extract probability using verbalizer summing (Yes/No logits)
         probability = get_verifier_probability(
@@ -489,26 +527,3 @@ Respond in strict JSON format only."""
             return None, None
         except (ValueError, IndexError):
             return None, None
-
-    def _get_image_id_from_object_id(
-        self,
-        object_id: str,
-        images: Dict[str, ImageData]
-    ) -> Optional[str]:
-        """Get image_id that contains this object_id."""
-        _, image_id = self._find_object_by_id(object_id, images)
-        return image_id
-
-    def _format_bbox_for_qwen(self, bbox: List[float]) -> str:
-        """
-        Format bounding box for Qwen VL grounding.
-
-        Args:
-            bbox: Bounding box [x1, y1, x2, y2]
-
-        Returns:
-            str: Formatted bbox string for Qwen prompt
-        """
-        # Qwen uses <box> tags with coordinates
-        x1, y1, x2, y2 = bbox
-        return f"[{int(x1)}, {int(y1)}, {int(x2)}, {int(y2)}]"

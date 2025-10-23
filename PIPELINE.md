@@ -27,13 +27,13 @@
 ## Models & Quantization
 
 ### Primary Models:
-- **Florence-2-large**: Caption-based open vocabulary detection, image captions, region descriptions
-- **Llama-3.3-70B-Instruct**: Subquery generation, entity extraction, agentic orchestration, candidate generation (8-bit quantization via BitsAndBytes)
-- **Qwen-2.5-VL-7B-Instruct**: Binary verification for attributes, relationships, and scene attributes; open-ended visual Q&A for agentic information gathering
+- **Florence-2-large**: Caption-based open vocabulary detection, image captions
+- **GPT-4o** (via Forge API): Subquery generation, entity extraction, agentic orchestration (LLM Reasoner & Planner)
+- **Qwen-2.5-VL-7B-Instruct**: Binary verification (VLM Verifier) and open-ended visual Q&A (VLM Perceiver) for agentic loops
 
 ### Model Loading:
-- **Device Allocation**: Auto device mapping for optimal GPU distribution
-- **Memory Optimization**: 8-bit quantization for Llama-3.3-70B to fit memory constraints
+- **GPT-4o API**: OpenAI-compatible API via Forge (no local loading)
+- **Device Allocation**: Auto device mapping for optimal GPU distribution (Florence-2, Qwen VL)
 - **Lazy Loading**: Models loaded on-demand via ModelManager singleton
 
 ---
@@ -65,8 +65,8 @@
 **2-Step Pipeline**:
 
 **Step 2a: Extract Entity Classes**
-- **Model**: Llama-3.3-70B-Instruct with Pydantic validation
-- **Method**: `llm_client.extract_entities(messages)` → `EntityExtractionResponse`
+- **Model**: GPT-4o with Pydantic validation
+- **Method**: `llm_client.chat_with_validation(messages, EntityExtractionResponse)`
 - **Input**: Pre-generated caption from Step 1
 - **Pydantic Processing**:
   - Automatically lowercases all entities
@@ -107,8 +107,8 @@
 **Goal**: Break ambiguous questions into specific binary subquestions
 
 **Implementation**:
-- **Model**: Llama-3.3-70B-Instruct with Pydantic validation
-- **Method**: `subquery_generator.generate_binary_subqueries(question, images)`
+- **Model**: GPT-4o with Pydantic validation
+- **Method**: `subquery_generator.generate_binary_subquestions(question, images)`
 - **Categories**:
   - **attribute**: Object characteristics (color, size, position, shape)
   - **relationship**: Spatial/interaction relations between objects
@@ -116,12 +116,12 @@
   - **count**: Questions about quantity
 
 **LLM-Driven Approach**:
-- **Intelligence**: LLM handles object reference extraction and type classification
-- **Validation**: Pydantic `SubqueryResponse` with field validation
+- **Intelligence**: GPT-4o handles object reference extraction and type classification
+- **Validation**: Pydantic `SubquestionResponse` with field validation
 - **Trust LLM**: No manual pattern matching
 - **Structured Output**: System message enforces strict JSON format
 
-**Output**: `List[BinarySubquery(question, subquery_type, referenced_objects)]`
+**Output**: `List[BinarySubquestion(question, subquery_type, referenced_objects)]`
 
 ---
 
@@ -129,164 +129,128 @@
 **Goal**: Organize subqueries by type for specialized processing
 
 **Routing**:
-- `attribute` → AgenticAttributeProcessor
-- `relationship` → RelationshipExtractor
+- `attribute` → AttributeAgent (agentic LLM-VLM loop)
+- `relationship` → RelationshipAgent (agentic LLM-VLM loop)
 - `count` → CountProcessor
 - `scene_attribute` → SceneAttributeProcessor
 
 ---
 
-### Step 5: Agentic Attribute Extraction (NEW)
-**Goal**: Extract attributes through LLM-orchestrated iterative information gathering
+### Step 5: Agentic Attribute Extraction
+**Goal**: Extract attributes through LLM-orchestrated iterative information gathering with VLM
 
-**Architecture**: Agent loop with Qwen VL for visual information gathering
+**4-Role Architecture**:
+1. **LLM as Reasoner**: Analyzes attribute subquestions and determines what information is needed
+2. **LLM as Planner**: Decides whether to ask VLM for more info or generate binary questions
+3. **VLM as Perceiver**: Answers open-ended visual questions to gather information
+4. **VLM as Verifier**: Provides binary Yes/No answers with probability extraction
 
-**Agentic Loop Flow**:
+**Agentic Loop**:
 ```
 Initialize AgentState
     ↓
-Agent Decides: Need more info?
-    ├─ YES → Ask Qwen VL open-ended question
+LLM Reasoner: Analyze current knowledge
+    ↓
+LLM Planner: Need more info?
+    ├─ YES → VLM Perceiver: Answer open-ended question
     │        ↓
-    │   Store answer in state
-    │        ↓
-    │   Loop back (max 15 iterations)
+    │   Store answer, loop back (max 15 iterations)
     │
-    └─ NO → Generate binary questions
+    └─ NO → LLM generates binary questions
             ↓
-       Verify with Qwen + logits
-            ↓
-       Extract probabilities
+       VLM Verifier: Answer binary questions with probabilities
 ```
 
-**Key Components**:
-
-**1. AgentState** (Conversation Memory):
-- `original_question`: Attribute subquery to answer
-- `referenced_objects`: Objects mentioned in subquery
-- `qwen_qa_history`: List of Q&A interactions with Qwen
-- `information_gathered`: Dict mapping object_id to descriptions
-- `binary_questions`: Final questions for verification
+**AgentState** (Conversation Memory):
+- `original_question`: Attribute subquery
+- `referenced_objects`: Objects mentioned
+- `qwen_qa_history`: Q&A interactions with VLM
+- `information_gathered`: Visual descriptions per object
+- `binary_questions`: Final verification questions
 - `reasoning_trace`: Agent's chain of thought
 
-**2. Pydantic Models**:
-- `QwenInformationRequest`: Agent's request for visual info
-  - `object_id`: Object to query
-  - `question`: Open-ended question (e.g., "What color is this dog?")
-  - `reasoning`: Why agent needs this info
+**Pydantic Models**:
+- `AgentDecision`: "ask_qwen" or "generate_binary_questions" with reasoning
+- `QwenInformationRequest`: Open-ended question for VLM (e.g., "What color is this dog?")
+- `BinaryAttributeQuestion`: Yes/No question with object_id, attribute_class, attribute_value
 
-- `BinaryAttributeQuestion`: Final binary question for verification
-  - `object_id`: Object being queried
-  - `attribute_class`: Category (e.g., "color", "size")
-  - `attribute_value`: Specific value (e.g., "brown")
-  - `binary_question`: Yes/No question (e.g., "Is dog_a_1 brown?")
-
-- `AgentDecision`: Agent's decision at each step
-  - `action`: "ask_qwen" or "generate_binary_questions"
-  - `reasoning`: Chain of thought explanation
-  - `qwen_request` or `binary_questions`: Based on action
-
-**3. Processing Flow**:
-
-**Information Gathering Phase** (Iterative):
+**Verification with Direct Cropping** ⭐:
 ```python
-# Agent analyzes current knowledge
-decision = agent_decide_next_action(state)
+# Crop to object with 15% margin - removes distracting context
+cropped_image = crop_with_margin(image, obj.bbox, margin=0.15)
 
-if decision.action == "ask_qwen":
-    # Ask Qwen VL open-ended question with bbox grounding
-    answer = qwen_vl.run_inference_with_logits(image, question)
-    state.add_qwen_interaction(request, answer)
-    # Loop continues...
+# Simple prompt (NO bbox coordinates in text!)
+prompt = f"Is the buffalo large? Answer Yes or No.\n\nAnswer:"
+
+# Extract probability via verbalizer summing
+response, logits = qwen_vl.run_inference_with_logits(cropped_image, prompt)
+probability = get_verifier_probability(logits, response, tokenizer)
 ```
-
-**Binary Question Generation**:
-```python
-if decision.action == "generate_binary_questions":
-    # Agent has enough info, generates final questions
-    state.binary_questions = decision.binary_questions
-    # Exit loop, proceed to verification
-```
-
-**Verification Phase**:
-```python
-for bq in binary_questions:
-    # Verify with Qwen using logits
-    response, logits = qwen_vl.run_inference_with_logits(image, bq.binary_question)
-
-    # Extract probability using verbalizer summing
-    probability = get_verifier_probability(logits, response, tokenizer)
-
-    # Store result
-    results.append(AttributeData(
-        object_id=bq.object_id,
-        attribute_class=bq.attribute_class,
-        value=bq.attribute_value,
-        confidence=probability
-    ))
-```
-
-**Example Execution**:
-
-**Input**: "Do the dogs in image_1 have the same color as the dogs in image_2?"
-**Referenced Objects**: `["dog_a_1", "dog_a_2", "dog_b_1", "dog_b_2"]`
-
-**Iteration 1-4** (Information Gathering):
-- Agent: "I need to know colors of all 4 dogs"
-- Ask Qwen: "What color is dog_a_1?" → "brown with white patches"
-- Ask Qwen: "What color is dog_a_2?" → "tan"
-- Ask Qwen: "What color is dog_b_1?" → "brown"
-- Ask Qwen: "What color is dog_b_2?" → "white with grey spots"
-
-**Iteration 5** (Binary Question Generation):
-- Agent: "I now have all colors. Generating binary questions."
-- Binary Questions:
-  - "Is dog_a_1 brown?"
-  - "Is dog_a_2 tan?"
-  - "Is dog_b_1 brown?"
-  - "Is dog_b_2 white?"
-  - "Is dog_a_2 brown?" (for comparison)
-  - "Is dog_b_2 brown?" (for comparison)
-
-**Verification**: Each question → Qwen with logits → P(Yes)
 
 **Key Features**:
-- ✅ **Fully General**: Works with ANY attribute category
-- ✅ **Adaptive**: Agent decides how much info needed
-- ✅ **Explainable**: Full reasoning trace saved
-- ✅ **Probabilistic**: Extracts P(Yes) from verbalizer logits
+- ✅ **Fully General**: Works with ANY attribute category (color, size, texture, shape, etc.)
+- ✅ **Adaptive**: Agent decides how much information to gather
+- ✅ **Explainable**: Full reasoning trace and Q&A history preserved
+- ✅ **Direct Cropping**: Focuses VLM attention by cropping to object bbox with margin
+- ✅ **No Text Coordinates**: Natural language prompts only, no confusing bbox text
 - ✅ **Safety**: Max 15 iterations prevents infinite loops
-- ✅ **Validated**: All LLM outputs use Pydantic
 
-**Probability Calculation**:
-- **Source**: Qwen-2.5-VL binary verification via `get_verifier_probability(logits, response, tokenizer)`
-- **Process**: 2-token softmax over Yes/No verbalizers
-- **Formula**: `P(statement_true) = e^(z_yes) / (e^(z_yes) + e^(z_no))`
-- **Error Handling**: Return 0.5 (neutral) for failed extractions
-- **No Filtering**: All results preserved for ProbLog inference
+**Implementation**: `src/pipeline/attribute_agent.py`
 
-**Implementation**:
-- **File**: `src/pipeline/agentic_attribute_processor.py` (463 lines)
-- **Method**: `process_attribute_subqueries(attribute_subqueries, image_paths, images)`
-
-**Output**: `List[AttributeData(object_id, attribute_class, value, confidence)]`
+**Output**: Attributes stored in `kb.images[image_id].attributes[object_index]`
 
 ---
 
-### Step 6: Relationship Extraction
-**Goal**: Extract spatial and interaction relationships
+### Step 6: Agentic Relationship Extraction
+**Goal**: Extract spatial and interaction relationships through LLM-orchestrated iterative gathering
 
-**Implementation**:
-- **Pipeline**: Compound subquery analysis → Llama-3.3-70B relationship candidates → Qwen-2.5-VL binary verification
-- **Method**: `relationship_extractor.extract_relationships(subqueries, image_paths, images)`
-- **Compound Handling**: LLM analyzes subqueries for cross-image and multi-relationship requirements
+**4-Role Architecture** (Mirrors Step 5):
+1. **LLM as Reasoner**: Analyzes relationship subquestions and object pairs
+2. **LLM as Planner**: Decides whether to ask VLM about relationships or generate binary questions
+3. **VLM as Perceiver**: Describes spatial/interaction relationships between object pairs
+4. **VLM as Verifier**: Provides binary Yes/No answers with probability extraction
 
-**Probability Calculation**:
-- **Source**: Qwen-2.5-VL binary verification with bounding box context
-- **Process**: 2-token softmax over Yes/No verbalizers
-- **Bounding Box Context**: `<box>(x1,y1),(x2,y2)</box>label` format
+**RelationshipAgentState**:
+- `original_question`: Relationship subquery
+- `object_pairs`: Pairs to investigate (e.g., [(bird, buffalo), (buffalo, bird)])
+- `relationship_descriptions`: Visual descriptions per object pair
+- `qwen_qa_history`: Q&A interactions with VLM
+- `binary_questions`: Final verification questions
 
-**Output**: `List[IntraRelation(subject_id, object_id, relation, probability)]`
+**Pydantic Models**:
+- `RelationshipAgentDecision`: "ask_qwen" or "generate_binary_questions" with reasoning
+- `QwenRelationshipRequest`: Question about object pair (subject_id marked RED, object_id marked BLUE)
+- `BinaryRelationshipQuestion`: Yes/No question with subject_id, object_id, relation
+
+**Verification with Union Crop + Colored Boxes** ⭐:
+```python
+# Crop to union of both objects with 15% margin
+cropped_image, adj_subj_bbox, adj_obj_bbox = crop_to_union_bbox(
+    image, subject_bbox, object_bbox, margin=0.15
+)
+
+# Draw thick colored boxes on CROPPED image (easier to see!)
+annotated = draw_colored_boxes(cropped_image, adj_subj_bbox, adj_obj_bbox)
+# RED box for subject (width=10), BLUE box for object (width=10)
+
+# Clear prompt with color references (NO bbox coordinates in text!)
+prompt = f"The bird is marked in RED and the buffalo is marked in BLUE.\n\nIs the bird perched on the buffalo?\n\nAnswer Yes or No."
+
+# Extract probability via verbalizer summing
+response, logits = qwen_vl.run_inference_with_logits(annotated, prompt)
+probability = get_verifier_probability(logits, response, tokenizer)
+```
+
+**Key Features**:
+- ✅ **Agentic Planning**: LLM decides which object pairs need visual investigation
+- ✅ **Colored Markers**: RED/BLUE boxes provide clear visual grounding
+- ✅ **Union Cropping**: Removes distracting objects while showing spatial relationship
+- ✅ **Thick Lines**: 10-pixel width boxes for better visibility
+- ✅ **No Text Coordinates**: Visual markers only, no confusing bbox text
+
+**Implementation**: `src/pipeline/relationship_agent.py`
+
+**Output**: Relationships stored in `kb.images[image_id].relationships`
 
 ---
 
@@ -425,12 +389,13 @@ Final Answer
 ## Key Technical Details
 
 ### Binary Verification Strategy:
-- **Method**: All verification via binary Yes/No questions
+- **Method**: All verification via binary Yes/No questions with direct cropping
+- **Cropping**: Crop to object bbox (attributes) or union bbox (relationships) with 15% margin
+- **Visual Grounding**: Colored boxes (relationships) or simple crops (attributes)
+- **No Text Coordinates**: Natural language prompts only, no bbox parsing required
 - **Verbalizer Summing**: Sum logits for ["Yes", "yes", "YES"] and ["No", "no", "NO"]
 - **2-Token Softmax**: `P(statement_true) = e^(z_yes) / (e^(z_yes) + e^(z_no))`
-- **Avoids Inflation**: No full-vocabulary renormalization
 - **Error Handling**: Return 0.5 (neutral) for failed extractions
-- **No Filtering**: Preserve ALL results for complete ProbLog inference
 - **Unified Function**: `get_verifier_probability()` in `src/core/probability.py`
 
 ### Confidence Calibration:
@@ -442,16 +407,17 @@ Final Answer
   - Length-normalized likelihood
 - **Binary Verification**: 2-token softmax (no calibration needed)
 
-### Agentic Attribute Extraction:
-- **Agent Loop**: Max 15 iterations
-- **Decision Points**: Ask Qwen vs Generate binary questions
-- **State Tracking**: Full conversation history and reasoning trace
+### Agentic Extraction (Attributes & Relationships):
+- **4-Role Architecture**: LLM Reasoner → LLM Planner → VLM Perceiver → VLM Verifier
+- **Agent Loop**: Max 15 iterations per subquestion
+- **State Tracking**: Full Q&A history and reasoning trace
 - **Pydantic Validation**: All agent decisions validated
-- **General**: Works with ANY attribute category without hardcoding
+- **Direct Cropping**: Focuses VLM attention on relevant objects
+- **General**: Works with ANY attribute/relationship type without hardcoding
 
 ### Memory & Performance:
-- **8-bit Quantization**: Llama-3.3-70B via BitsAndBytesConfig
-- **Auto Device Mapping**: Optimal GPU distribution
+- **GPT-4o API**: Cloud-hosted, no local memory requirements
+- **Auto Device Mapping**: Optimal GPU distribution (Florence-2, Qwen VL)
 - **Lazy Loading**: Models loaded on-demand via singleton
 - **Efficient Caption Reuse**: Step 1 captions reused throughout pipeline
 
@@ -462,19 +428,21 @@ Final Answer
 | Step | Task | Model | Probability Method |
 |------|------|-------|-------------------|
 | 1 | Image Captioning | Florence-2-large | N/A (deterministic) |
-| 2a | Entity Extraction | Llama-3.3-70B | N/A (deterministic) |
+| 2a | Entity Extraction | GPT-4o | N/A (deterministic) |
 | 2b | Object Detection | Florence-2-large | Geometric mean + Anchored sigmoid |
-| 3 | Subquery Generation | Llama-3.3-70B | N/A (deterministic) |
-| 5 | Agentic Attribute (Info Gathering) | Qwen-2.5-VL | Open-ended inference |
-| 5 | Agentic Attribute (Orchestration) | Llama-3.3-70B | N/A (decision logic) |
-| 5 | Agentic Attribute (Verification) | Qwen-2.5-VL | 2-token softmax |
-| 6 | Relationship Extraction | Qwen-2.5-VL | 2-token softmax + bbox |
+| 3 | Subquery Generation | GPT-4o | N/A (deterministic) |
+| 5 | Attribute Agent (Perceiver) | Qwen-2.5-VL | Open-ended inference |
+| 5 | Attribute Agent (Reasoner/Planner) | GPT-4o | N/A (decision logic) |
+| 5 | Attribute Agent (Verifier) | Qwen-2.5-VL | 2-token softmax + direct crop |
+| 6 | Relationship Agent (Perceiver) | Qwen-2.5-VL | Open-ended inference |
+| 6 | Relationship Agent (Reasoner/Planner) | GPT-4o | N/A (decision logic) |
+| 6 | Relationship Agent (Verifier) | Qwen-2.5-VL | 2-token softmax + union crop + colored boxes |
 | 7 | Count Processing | Poisson-Binomial | Distribution from object confidences |
 | 8 | Scene Attributes | Qwen-2.5-VL | 2-token softmax |
 | 9 | KB Construction | N/A | Preserve original confidences |
-| 10 | ProbLog Queries | Llama-3.3-70B | N/A (query generation) |
+| 10 | ProbLog Queries | GPT-4o | N/A (query generation) |
 | 11 | ProbLog Execution | ProbLog Engine | Weighted model counting |
-| 12 | Final Answer | Llama-3.3-70B | Evidence-weighted aggregation |
+| 12 | Final Answer | GPT-4o | Evidence-weighted aggregation |
 
 ---
 
@@ -489,13 +457,13 @@ src/
 │   ├── probability.py          # Probability functions (calibration, verifier)
 │   └── types.py                # Core data types
 ├── language/
-│   ├── llm_client.py           # Llama client with Pydantic validation
-│   └── output_models.py        # Pydantic models (including agentic)
+│   ├── llm_client.py           # GPT-4o client with Pydantic validation
+│   └── output_models.py        # Pydantic models (agentic decisions, questions)
 ├── pipeline/
 │   ├── detector.py             # Caption-based object detection
-│   ├── subquery_generator.py  # Subquery generation
-│   ├── agentic_attribute_processor.py  # Agentic attribute extraction (NEW)
-│   ├── relationship_extractor.py  # Relationship extraction
+│   ├── subquestion_generator.py  # Subquestion generation
+│   ├── attribute_agent.py      # Agentic attribute extraction (4-role architecture)
+│   ├── relationship_agent.py   # Agentic relationship extraction (4-role architecture)
 │   ├── count_processor.py      # Count processing
 │   ├── scene_attribute_processor.py  # Scene attribute extraction
 │   ├── problog_builder.py      # KB → ProbLog facts

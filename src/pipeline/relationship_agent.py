@@ -12,6 +12,7 @@ Architecture (Mirrors attribute_agent.py):
 Key Feature: Colored bounding boxes (RED for subject, BLUE for object) in both phases
 """
 
+import os
 from typing import List, Dict, Tuple, Optional
 from PIL import Image, ImageDraw
 from dataclasses import dataclass, field
@@ -101,15 +102,21 @@ class RelationshipAgent:
     4. Verify binary questions → Extract probabilities with colored boxes
     """
 
-    def __init__(self, max_qwen_calls: int = 15):
+    def __init__(self, max_qwen_calls: int = 15, debug: bool = False):
         """
         Initialize relationship agent.
 
         Args:
             max_qwen_calls: Maximum Qwen VL calls per subquery (prevents infinite loops)
+            debug: If True, saves cropped images and prints detailed verification info
         """
         self.model_manager = ModelManager()
         self.max_qwen_calls = max_qwen_calls
+        self.debug = debug
+
+        # Create debug directory if needed
+        if self.debug:
+            os.makedirs("debug_relationships", exist_ok=True)
 
     def process_relationship_subquestions(
         self,
@@ -430,13 +437,18 @@ Respond in strict JSON format only."""
         # Load image
         image = Image.open(image_paths[subject_image_id])
 
-        # Draw colored boxes (RED for subject, BLUE for object)
+        # Crop to union of both objects with margin - focuses VLM attention (consistent with verification)
+        cropped_image, adj_subj_bbox, adj_obj_bbox = self._crop_to_union_bbox(
+            image, subject_obj.bbox, object_obj.bbox, margin=0.15
+        )
+
+        # Draw colored boxes on CROPPED image (RED for subject, BLUE for object)
         annotated_image = self._draw_colored_boxes(
-            image, subject_obj.bbox, object_obj.bbox
+            cropped_image, adj_subj_bbox, adj_obj_bbox
         )
 
         # Format open-ended question with color references
-        prompt = f"""The {subject_obj.label} is marked in red and the {object_obj.label} is marked in blue.
+        prompt = f"""The {subject_obj.label} is marked in RED and the {object_obj.label} is marked in BLUE.
 
 {request.question}"""
 
@@ -444,6 +456,66 @@ Respond in strict JSON format only."""
         response, _ = qwen_client.run_inference_with_logits(annotated_image, prompt)
 
         return response.strip()
+
+    def _crop_to_union_bbox(
+        self,
+        image: Image.Image,
+        bbox1: List[float],
+        bbox2: List[float],
+        margin: float = 0.15
+    ) -> Tuple[Image.Image, List[float], List[float]]:
+        """
+        Crop to union of two bounding boxes with margin.
+        Returns cropped image and adjusted bbox coordinates relative to crop.
+
+        Args:
+            image: PIL Image to crop
+            bbox1: First bounding box [x1, y1, x2, y2]
+            bbox2: Second bounding box [x1, y1, x2, y2]
+            margin: Percentage margin to add (0.15 = 15% of union bbox size)
+
+        Returns:
+            Tuple of (cropped_image, adjusted_bbox1, adjusted_bbox2)
+        """
+        x1_1, y1_1, x2_1, y2_1 = bbox1
+        x1_2, y1_2, x2_2, y2_2 = bbox2
+
+        # Calculate union bounding box
+        union_x1 = min(x1_1, x1_2)
+        union_y1 = min(y1_1, y1_2)
+        union_x2 = max(x2_1, x2_2)
+        union_y2 = max(y2_1, y2_2)
+
+        # Apply margin
+        width, height = image.size
+        union_width = union_x2 - union_x1
+        union_height = union_y2 - union_y1
+        margin_x = union_width * margin
+        margin_y = union_height * margin
+
+        crop_x1 = max(0, union_x1 - margin_x)
+        crop_y1 = max(0, union_y1 - margin_y)
+        crop_x2 = min(width, union_x2 + margin_x)
+        crop_y2 = min(height, union_y2 + margin_y)
+
+        # Crop image
+        cropped = image.crop((crop_x1, crop_y1, crop_x2, crop_y2))
+
+        # Adjust bbox coordinates relative to crop
+        adjusted_bbox1 = [
+            x1_1 - crop_x1,
+            y1_1 - crop_y1,
+            x2_1 - crop_x1,
+            y2_1 - crop_y1
+        ]
+        adjusted_bbox2 = [
+            x1_2 - crop_x1,
+            y1_2 - crop_y1,
+            x2_2 - crop_x1,
+            y2_2 - crop_y1
+        ]
+
+        return cropped, adjusted_bbox1, adjusted_bbox2
 
     def _verify_binary_relationship(
         self,
@@ -479,17 +551,22 @@ Respond in strict JSON format only."""
         # Load image
         image = Image.open(image_paths[subject_image_id])
 
-        # Draw colored boxes (RED for subject, BLUE for object)
-        annotated_image = self._draw_colored_boxes(
-            image, subject_obj.bbox, object_obj.bbox
+        # Crop to union of both objects with margin - removes distracting context
+        cropped_image, adj_subj_bbox, adj_obj_bbox = self._crop_to_union_bbox(
+            image, subject_obj.bbox, object_obj.bbox, margin=0.15
         )
 
-        # Format binary question with color references
-        prompt = f"""The {subject_obj.label} is marked in red and the {object_obj.label} is marked in blue.
+        # Draw colored boxes on CROPPED image (easier to see, no distractors)
+        annotated_image = self._draw_colored_boxes(
+            cropped_image, adj_subj_bbox, adj_obj_bbox
+        )
 
-{bq.binary_question} Answer Yes or No.
+        # Format binary question with color references (NO bbox coordinates in text!)
+        prompt = f"""The {subject_obj.label} is marked in RED and the {object_obj.label} is marked in BLUE.
 
-Answer:"""
+{bq.binary_question}
+
+Answer Yes or No."""
 
         # Run verification with logits for probability extraction
         response, logits = qwen_client.run_inference_with_logits(annotated_image, prompt)
@@ -500,6 +577,37 @@ Answer:"""
             response,
             qwen_client.processor.tokenizer
         )
+
+        # DEBUG: Save crops and print full verification details
+        if self.debug:
+            # Save the annotated crop
+            debug_filename = f"debug_relationships/{bq.subject_id}__{bq.object_id}__{bq.relation}.png"
+            annotated_image.save(debug_filename)
+
+            # Print full debugging info
+            print("\n" + "=" * 80)
+            print(f"🔍 RELATIONSHIP VERIFICATION DEBUG")
+            print("=" * 80)
+            print(f"Subject: {bq.subject_id} ({subject_obj.label})")
+            print(f"Object: {bq.object_id} ({object_obj.label})")
+            print(f"Relation: {bq.relation}")
+            print(f"Binary Question: {bq.binary_question}")
+            print(f"\nOriginal bboxes:")
+            print(f"  Subject: {subject_obj.bbox}")
+            print(f"  Object: {object_obj.bbox}")
+            print(f"\nAdjusted bboxes (on cropped image):")
+            print(f"  Subject (RED): {adj_subj_bbox}")
+            print(f"  Object (BLUE): {adj_obj_bbox}")
+            print(f"\nCropped image size: {cropped_image.size}")
+            print(f"Annotated crop saved: {debug_filename}")
+            print(f"\n--- FULL PROMPT TO VLM ---")
+            print(prompt)
+            print(f"--- END PROMPT ---")
+            print(f"\n--- VLM RESPONSE ---")
+            print(f'"{response}"')
+            print(f"--- END RESPONSE ---")
+            print(f"\nExtracted Probability: {probability:.4f}")
+            print("=" * 80 + "\n")
 
         return probability
 
@@ -525,11 +633,11 @@ Answer:"""
         annotated_image = image.copy()
         draw = ImageDraw.Draw(annotated_image)
 
-        # Draw RED box for subject (thick lines)
-        draw.rectangle(subject_bbox, outline="red", width=4)
+        # Draw RED box for subject (thicker lines for better visibility)
+        draw.rectangle(subject_bbox, outline="red", width=10)
 
-        # Draw BLUE box for object (thick lines)
-        draw.rectangle(object_bbox, outline="blue", width=4)
+        # Draw BLUE box for object (thicker lines for better visibility)
+        draw.rectangle(object_bbox, outline="blue", width=10)
 
         return annotated_image
 

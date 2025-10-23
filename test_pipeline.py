@@ -44,7 +44,7 @@ def main():
         return 1
     
     # Ultimate question to answer
-    ultimate_question = "Is a bird perched on the back of a large brown animal in both images?"
+    ultimate_question = "Is a bird perched on the back of a large brown animal in a natural scene in both images?"
     print(f"Ultimate Question: {ultimate_question}")
     print()
     
@@ -194,7 +194,7 @@ def main():
                 print(f"  {i}. {sq.question}")
             if len(relationship_subquestions) > 3:
                 print(f"     ... and {len(relationship_subquestions) - 3} more")
-            relationship_agent = RelationshipAgent()
+            relationship_agent = RelationshipAgent(debug=True)  # Enable debug mode
 
             # Process only relationship subquestions
             relationships = relationship_agent.process_relationship_subquestions(
