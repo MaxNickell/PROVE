@@ -1,5 +1,5 @@
 """
-Agentic Attribute Processor for PROVE pipeline.
+Attribute Agent for PROVE pipeline.
 Uses LLM agent to orchestrate iterative information gathering from Qwen VL,
 then generates binary verification questions for probability extraction.
 
@@ -31,8 +31,8 @@ class AttributeResult:
     confidence: float  # probability from verification
 
 
-class AgenticAttributeProcessorError(RuntimeError):
-    """Custom exception for agentic attribute processing failures."""
+class AttributeAgentError(RuntimeError):
+    """Custom exception for attribute agent failures."""
     def __init__(self, message: str):
         super().__init__(message)
         self.message = message
@@ -80,9 +80,9 @@ class AgentState:
         self.reasoning_trace.append(reasoning)
 
 
-class AgenticAttributeProcessor:
+class AttributeAgent:
     """
-    Agentic attribute extraction using LLM orchestration.
+    Attribute extraction agent using LLM orchestration.
 
     The agent follows an iterative loop:
     1. Analyze current knowledge state
@@ -93,7 +93,7 @@ class AgenticAttributeProcessor:
 
     def __init__(self, max_qwen_calls: int = 15):
         """
-        Initialize agentic processor.
+        Initialize attribute agent.
 
         Args:
             max_qwen_calls: Maximum Qwen VL calls per subquery (prevents infinite loops)
@@ -119,7 +119,7 @@ class AgenticAttributeProcessor:
             Dict[str, int]: Summary of attributes extracted per image
 
         Raises:
-            AgenticAttributeProcessorError: If processing fails
+            AttributeAgentError: If processing fails
         """
         try:
             total_attributes_extracted = 0
@@ -170,7 +170,7 @@ class AgenticAttributeProcessor:
             return attributes_per_image
 
         except Exception as e:
-            raise AgenticAttributeProcessorError(f"Failed to process attribute subquestions: {str(e)}")
+            raise AttributeAgentError(f"Failed to process attribute subquestions: {str(e)}")
 
     def process_single_subquestion(
         self,

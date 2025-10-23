@@ -10,8 +10,8 @@ sys.path.insert(0, os.path.dirname(__file__))
 
 from src.pipeline.detector import Detector
 from src.pipeline.subquestion_generator import SubquestionGenerator
-from src.pipeline.agentic_attribute_processor import AgenticAttributeProcessor
-from src.pipeline.relationship_extractor import RelationshipExtractor
+from src.pipeline.attribute_agent import AttributeAgent
+from src.pipeline.relationship_agent import RelationshipAgent
 from src.pipeline.count_processor import CountProcessor
 from src.pipeline.scene_attribute_processor import SceneAttributeProcessor
 from src.pipeline.problog_builder import ProbLogBuilder
@@ -29,8 +29,8 @@ def main():
         # Test all component imports
         detector = Detector()
         subquestion_generator = SubquestionGenerator()
-        attribute_processor = AgenticAttributeProcessor()
-        relationship_extractor = RelationshipExtractor()
+        attribute_agent = AttributeAgent()
+        relationship_agent = RelationshipAgent()
         count_processor = CountProcessor()
         scene_attribute_processor = SceneAttributeProcessor()
         problog_builder = ProbLogBuilder()
@@ -44,7 +44,7 @@ def main():
         return 1
     
     # Ultimate question to answer
-    ultimate_question = "What is uniquely similar about these images?"
+    ultimate_question = "Is a bird perched on the back of a large brown animal in both images?"
     print(f"Ultimate Question: {ultimate_question}")
     print()
     
@@ -166,10 +166,10 @@ def main():
             if len(attribute_subquestions) > 3:
                 print(f"     ... and {len(attribute_subquestions) - 3} more")
 
-            attribute_processor = AgenticAttributeProcessor()
+            attribute_agent = AttributeAgent()
 
             # Process attribute subquestions individually - returns attributes per image
-            attributes_per_image = attribute_processor.process_attribute_subquestions(
+            attributes_per_image = attribute_agent.process_attribute_subquestions(
                 attribute_subquestions, image_paths, kb.images
             )
 
@@ -194,10 +194,10 @@ def main():
                 print(f"  {i}. {sq.question}")
             if len(relationship_subquestions) > 3:
                 print(f"     ... and {len(relationship_subquestions) - 3} more")
-            relationship_extractor = RelationshipExtractor()
+            relationship_agent = RelationshipAgent()
 
             # Process only relationship subquestions
-            relationships = relationship_extractor.extract_relationships(
+            relationships = relationship_agent.process_relationship_subquestions(
                 relationship_subquestions, image_paths, kb.images
             )
 

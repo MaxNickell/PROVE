@@ -262,5 +262,81 @@ class AgentDecision(BaseModel):
             raise ValueError("binary_questions list cannot be empty when action is 'generate_binary_questions'")
 
 
+class QwenRelationshipRequest(BaseModel):
+    """Request for Qwen VL to describe spatial/interaction relationship between two objects."""
+    subject_id: str = Field(..., description="Subject object ID (e.g., 'bird_a_0') - will be marked in RED")
+    object_id: str = Field(..., description="Object ID (e.g., 'buffalo_a_1') - will be marked in BLUE")
+    question: str = Field(..., description="Open-ended question about their relationship (e.g., 'Describe the spatial relationship between the bird (red) and buffalo (blue)')")
+    reasoning: str = Field(..., description="Why this relationship information is needed")
+
+    @field_validator('question')
+    @classmethod
+    def validate_question(cls, v):
+        if not v.strip():
+            raise ValueError("Question cannot be empty")
+        if not v.endswith("?"):
+            raise ValueError("Question must end with '?'")
+        return v.strip()
+
+
+class BinaryRelationshipQuestion(BaseModel):
+    """Binary question for relationship verification with colored bounding boxes."""
+    subject_id: str = Field(..., description="Subject object ID (e.g., 'bird_a_0') - will be marked in RED for bbox grounding")
+    object_id: str = Field(..., description="Object ID (e.g., 'buffalo_a_1') - will be marked in BLUE for bbox grounding")
+    relation: str = Field(..., description="Relationship type to verify (e.g., 'perched_on', 'near', 'touching', 'carrying')")
+    binary_question: str = Field(..., description="Natural language Yes/No question (e.g., 'Is the bird perched on the buffalo?')")
+
+    @field_validator('binary_question')
+    @classmethod
+    def validate_binary(cls, v):
+        if not v.strip():
+            raise ValueError("Binary question cannot be empty")
+        if "?" not in v:
+            raise ValueError("Binary question must be a question (contain '?')")
+        v_lower = v.lower().strip()
+        if v_lower.startswith("what ") or v_lower.startswith("which ") or v_lower.startswith("how "):
+            raise ValueError("Binary question cannot be open-ended (What/Which/How)")
+        return v.strip()
+
+    @field_validator('relation')
+    @classmethod
+    def validate_relation(cls, v):
+        if not v.strip():
+            raise ValueError("Relation cannot be empty")
+        return v.strip()
+
+
+class RelationshipAgentDecision(BaseModel):
+    """Agent's decision at each reasoning step in agentic relationship extraction."""
+    action: str = Field(..., description="Action to take: 'ask_qwen' or 'generate_binary_questions'")
+    reasoning: str = Field(..., description="Chain of thought reasoning for this decision")
+
+    qwen_request: QwenRelationshipRequest | None = Field(None, description="Qwen relationship request (if action is 'ask_qwen')")
+    binary_questions: List[BinaryRelationshipQuestion] | None = Field(None, description="Binary relationship questions (if action is 'generate_binary_questions')")
+
+    @field_validator('action')
+    @classmethod
+    def validate_action(cls, v):
+        if v not in ['ask_qwen', 'generate_binary_questions']:
+            raise ValueError("Action must be 'ask_qwen' or 'generate_binary_questions'")
+        return v
+
+    @field_validator('reasoning')
+    @classmethod
+    def validate_reasoning(cls, v):
+        if not v.strip() or len(v.strip()) < 10:
+            raise ValueError("Reasoning must be substantive (at least 10 characters)")
+        return v.strip()
+
+    def model_post_init(self, __context):
+        """Validate that action matches provided data."""
+        if self.action == "ask_qwen" and self.qwen_request is None:
+            raise ValueError("qwen_request required when action is 'ask_qwen'")
+        if self.action == "generate_binary_questions" and self.binary_questions is None:
+            raise ValueError("binary_questions required when action is 'generate_binary_questions'")
+        if self.action == "generate_binary_questions" and not self.binary_questions:
+            raise ValueError("binary_questions list cannot be empty when action is 'generate_binary_questions'")
+
+
 # Union type for all possible responses
-OutputModel = SubquestionResponse | RelationshipResponse | AttributePlanningResponse | CandidateResponse | CountRequirementResponse | SceneAttributeResponse | EntityExtractionResponse | AgentDecision
+OutputModel = SubquestionResponse | RelationshipResponse | AttributePlanningResponse | CandidateResponse | CountRequirementResponse | SceneAttributeResponse | EntityExtractionResponse | AgentDecision | RelationshipAgentDecision
