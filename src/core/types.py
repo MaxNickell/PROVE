@@ -62,15 +62,22 @@ class ImageData:
     counts: Dict[str, Any]  # Probabilistic object counts {"class": {"count": int, "confidence": float}}
 
     def to_dict(self) -> Dict[str, Any]:
-        return asdict(self)
+        """Convert to dictionary with explicit serialization for complex fields."""
+        return {
+            'objects': [obj.to_dict() for obj in self.objects],
+            'attributes': {k: v.to_dict() for k, v in self.attributes.items()},
+            'relationships': [rel.to_dict() for rel in self.relationships],
+            'scene_context': dict(self.scene_context) if self.scene_context else {},
+            'scene_attributes': dict(self.scene_attributes) if self.scene_attributes else {},
+            'counts': dict(self.counts) if self.counts else {}
+        }
 
 
 @dataclass
 class BinarySubquestion:
-    """Binary subquestion with object references for contextual reasoning."""
+    """Binary subquestion - pure natural language, no object IDs."""
     question: str  # Binary question answerable with Yes/No
-    referenced_objects: List[str]  # Object IDs referenced in question
-    subquery_type: str  # "attribute_comparison", "relationship", "state", etc.
+    subquery_type: str  # "attribute", "relationship", "scene_attribute", "count"
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -83,19 +90,6 @@ class AttributeRequirement:
     object_id: int            # Object index within the image (0, 1, 2...)
     attribute_classes: List[str]  # e.g., ["muscle_mass", "body_size"]
     required_for_subquestions: List[str]  # Which subquestions need these attributes
-
-    def to_dict(self) -> Dict[str, Any]:
-        return asdict(self)
-
-
-@dataclass
-class RelationshipCandidate:
-    """Relationship candidate for binary verification using simple object indices."""
-    image_id: str             # Image containing the relationship
-    subject_id: int           # Subject object index within the image
-    object_id: int            # Target object index within the image
-    relation: str             # e.g., "lifting"
-    required_for_subquestions: List[str]  # Which subquestions need this relationship
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -186,7 +180,6 @@ Attributes = List[AttributeData]
 IntraRelations = List[IntraRelation]
 BinarySubquestions = List[BinarySubquestion]
 AttributeRequirements = List[AttributeRequirement]
-RelationshipCandidates = List[RelationshipCandidate]
 ProbLogFacts = List[ProbLogFact]
 SubquestionResults = List[SubquestionResult]
 ProbLogResults = List[ProbLogResult]

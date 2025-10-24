@@ -4,9 +4,8 @@ from pydantic import BaseModel, Field, field_validator
 
 
 class SubquestionItem(BaseModel):
-    """Single subquestion item with question, type, and referenced objects."""
-    question: str = Field(..., description="The binary question")
-    referenced_objects: List[str] = Field(..., description="List of object IDs referenced in the question")
+    """Single subquestion item - pure natural language, no object IDs."""
+    question: str = Field(..., description="The binary question in natural language")
     subquery_type: str = Field(..., description="Type of subquestion: attribute, relationship, scene_attribute, or count")
 
     @field_validator('question')
@@ -35,27 +34,6 @@ class SubquestionResponse(BaseModel):
             raise ValueError("Subquestions list cannot be empty")
         if len(v) > 50:  # Reasonable upper limit
             raise ValueError("Too many subquestions generated")
-        return v
-
-
-
-
-class RelationshipItem(BaseModel):
-    """Single relationship item."""
-    subject_id: str = Field(..., description="Subject object ID")
-    relation: str = Field(..., description="Relationship type")
-    object_id: str = Field(..., description="Object object ID")
-
-
-class RelationshipResponse(BaseModel):
-    """Pydantic model for relationship extraction output."""
-    relationships: List[RelationshipItem] = Field(..., description="List of extracted relationships")
-    
-    @field_validator('relationships')
-    @classmethod
-    def validate_relationships(cls, v):
-        if len(v) > 100:  # Reasonable upper limit
-            raise ValueError("Too many relationships extracted")
         return v
 
 
@@ -184,6 +162,43 @@ class EntityExtractionResponse(BaseModel):
             raise ValueError("Entities list cannot be empty after filtering")
         # Lowercase and deduplicate
         v = list(set(e.lower() for e in v))
+        return v
+
+
+class ObjectDiscoveryResponse(BaseModel):
+    """Response for discovering relevant object IDs from natural language question."""
+    object_ids: List[str] = Field(..., description="List of relevant object IDs")
+
+    @field_validator('object_ids')
+    @classmethod
+    def validate_object_ids(cls, v):
+        if not isinstance(v, list):
+            raise ValueError("Object IDs must be a list")
+        return v
+
+
+class ObjectPair(BaseModel):
+    """Object pair for relationship discovery."""
+    subject_id: str = Field(..., description="Subject object ID")
+    object_id: str = Field(..., description="Object object ID")
+
+    @field_validator('subject_id', 'object_id')
+    @classmethod
+    def validate_ids(cls, v):
+        if not v.strip():
+            raise ValueError("Object ID cannot be empty")
+        return v.strip()
+
+
+class ObjectPairDiscoveryResponse(BaseModel):
+    """Response for discovering relevant object pairs from natural language question."""
+    object_pairs: List[ObjectPair] = Field(..., description="List of relevant object pairs")
+
+    @field_validator('object_pairs')
+    @classmethod
+    def validate_pairs(cls, v):
+        if not isinstance(v, list):
+            raise ValueError("Object pairs must be a list")
         return v
 
 
@@ -339,4 +354,4 @@ class RelationshipAgentDecision(BaseModel):
 
 
 # Union type for all possible responses
-OutputModel = SubquestionResponse | RelationshipResponse | AttributePlanningResponse | CandidateResponse | CountRequirementResponse | SceneAttributeResponse | EntityExtractionResponse | AgentDecision | RelationshipAgentDecision
+OutputModel = SubquestionResponse | AttributePlanningResponse | CandidateResponse | CountRequirementResponse | SceneAttributeResponse | EntityExtractionResponse | AgentDecision | RelationshipAgentDecision

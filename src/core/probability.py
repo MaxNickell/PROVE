@@ -12,7 +12,8 @@ from typing import List, Tuple
 def get_verifier_probability(
     logits_sequence: List[torch.Tensor],
     response: str,
-    tokenizer
+    tokenizer,
+    debug: bool = False
 ) -> float:
     """
     Extract P(statement is true) using verbalizer summing + 2-token softmax.
@@ -32,6 +33,7 @@ def get_verifier_probability(
         logits_sequence: List of logit tensors from VLM generation
         response: The actual response text (for validation/debugging)
         tokenizer: Tokenizer for encoding verbalizer variants
+        debug: If True, print detailed verbalizer logit breakdown
 
     Returns:
         float: P(statement is true) between 0.0 and 1.0
@@ -52,6 +54,10 @@ def get_verifier_probability(
         yes_verbalizers = ["Yes", "yes", "YES"]
         no_verbalizers = ["No", "no", "NO"]
 
+        # Track individual token logits for debugging
+        yes_token_details = []  # List of (verbalizer, token_id, logit_value)
+        no_token_details = []   # List of (verbalizer, token_id, logit_value)
+
         # Sum logits for all Yes verbalizers
         sum_yes_logits = -float('inf')  # Start with log(0) = -inf
         for verbalizer in yes_verbalizers:
@@ -63,6 +69,10 @@ def get_verifier_probability(
                 for token_id in token_ids:
                     if token_id < len(final_logits):
                         logit_value = final_logits[token_id].item()
+
+                        # Track for debugging
+                        yes_token_details.append((verbalizer, token_id, logit_value))
+
                         # Use logsumexp for numerical stability: log(a + b) = log(exp(log(a)) + exp(log(b)))
                         if sum_yes_logits == -float('inf'):
                             sum_yes_logits = logit_value
@@ -87,6 +97,10 @@ def get_verifier_probability(
                 for token_id in token_ids:
                     if token_id < len(final_logits):
                         logit_value = final_logits[token_id].item()
+
+                        # Track for debugging
+                        no_token_details.append((verbalizer, token_id, logit_value))
+
                         # Use logsumexp for numerical stability
                         if sum_no_logits == -float('inf'):
                             sum_no_logits = logit_value
@@ -109,6 +123,35 @@ def get_verifier_probability(
         exp_no = math.exp(sum_no_logits)
 
         prob_yes = exp_yes / (exp_yes + exp_no)
+
+        # Debug printing
+        if debug:
+            print("\n" + "=" * 80)
+            print("📊 VERBALIZER LOGITS BREAKDOWN")
+            print("=" * 80)
+
+            print("\n🟢 YES Verbalizer Tokens:")
+            for verbalizer, token_id, logit_value in yes_token_details:
+                print(f"  '{verbalizer}' (token_id={token_id}): logit = {logit_value:.4f}")
+
+            print(f"\n  → Sum of Yes logits (logsumexp): {sum_yes_logits:.4f}")
+            print(f"  → exp(sum_yes) = {exp_yes:.6f}")
+
+            print("\n🔴 NO Verbalizer Tokens:")
+            for verbalizer, token_id, logit_value in no_token_details:
+                print(f"  '{verbalizer}' (token_id={token_id}): logit = {logit_value:.4f}")
+
+            print(f"\n  → Sum of No logits (logsumexp): {sum_no_logits:.4f}")
+            print(f"  → exp(sum_no) = {exp_no:.6f}")
+
+            print("\n🎯 SOFTMAX CALCULATION:")
+            print(f"  P(Yes) = exp(sum_yes) / (exp(sum_yes) + exp(sum_no))")
+            print(f"  P(Yes) = {exp_yes:.6f} / ({exp_yes:.6f} + {exp_no:.6f})")
+            print(f"  P(Yes) = {exp_yes:.6f} / {exp_yes + exp_no:.6f}")
+            print(f"  P(Yes) = {prob_yes:.4f}")
+
+            print("\n  VLM Response: \"{}\"".format(response))
+            print("=" * 80 + "\n")
 
         return float(prob_yes)
 

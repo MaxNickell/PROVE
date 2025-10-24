@@ -140,7 +140,7 @@ class CountProcessor:
 
             # Analyze this subquery to determine count requirements
             requirements = self._analyze_single_count_subquery(
-                llm_client, subquery, images
+                llm_client, subquestion, images
             )
 
             all_requirements.extend(requirements)
@@ -225,7 +225,7 @@ Generate count requirements for: "{subquestion.question}"."""
                     requirements.append(CountRequirement(
                         image_id=req_item.image_id,
                         object_class=req_item.object_class,
-                        required_for_subqueries=[subquestion.question]
+                        required_for_subquestions=[subquestion.question]
                     ))
 
             return requirements

@@ -11,6 +11,7 @@ Architecture:
 5. Binary questions → Qwen with logits → Probability extraction
 """
 
+import os
 from typing import List, Dict, Tuple, Optional
 from PIL import Image
 from dataclasses import dataclass, field
@@ -91,15 +92,21 @@ class AttributeAgent:
     4. Verify binary questions → Extract probabilities
     """
 
-    def __init__(self, max_qwen_calls: int = 15):
+    def __init__(self, max_qwen_calls: int = 15, debug: bool = False):
         """
         Initialize attribute agent.
 
         Args:
             max_qwen_calls: Maximum Qwen VL calls per subquery (prevents infinite loops)
+            debug: If True, saves cropped images and prints detailed verification info
         """
         self.model_manager = ModelManager()
         self.max_qwen_calls = max_qwen_calls
+        self.debug = debug
+
+        # Create debug directory if needed
+        if self.debug:
+            os.makedirs("debug_attributes", exist_ok=True)
 
     def process_attribute_subquestions(
         self,
@@ -134,7 +141,6 @@ class AttributeAgent:
                     continue
 
                 print(f"\n  Processing subquestion {i}/{len(attribute_subquestions)}: {subquestion.question}")
-                print(f"  Referenced objects: {subquestion.referenced_objects}")
 
                 # Run agentic extraction for this subquestion
                 results = self.process_single_subquestion(subquestion, image_paths, images)
@@ -180,19 +186,25 @@ class AttributeAgent:
     ) -> List[AttributeResult]:
         """
         Process single attribute subquestion using agentic loop.
+        NOW: Discovers relevant objects from natural language question.
 
         Args:
-            subquestion: Attribute subquestion to process
+            subquestion: Attribute subquestion to process (no object IDs)
             image_paths: Image file paths
             images: ImageData structure
 
         Returns:
             List[AttributeResult]: Extracted attribute results with object IDs
         """
-        # 1. Initialize agent state
+        # 1. Discover which objects are relevant to this question
+        print(f"    Discovering relevant objects for: {subquestion.question}")
+        relevant_objects = self._discover_relevant_objects(subquestion.question, images)
+        print(f"    → Discovered {len(relevant_objects)} relevant objects: {relevant_objects}")
+
+        # 2. Initialize agent state with discovered objects
         state = AgentState(
             original_question=subquestion.question,
-            referenced_objects=subquestion.referenced_objects
+            referenced_objects=relevant_objects
         )
 
         print(f"    Starting agentic loop (max {self.max_qwen_calls} Qwen calls)...")
@@ -246,6 +258,61 @@ class AttributeAgent:
             print(f"      {bq.object_id}.{bq.attribute_class} = {bq.attribute_value} (p={probability:.3f})")
 
         return results
+
+    def _discover_relevant_objects(
+        self,
+        question: str,
+        images: Dict[str, ImageData]
+    ) -> List[str]:
+        """
+        LLM analyzes natural language question to discover which object IDs are relevant.
+
+        Args:
+            question: Natural language attribute question (e.g., "Are the buffalos brown?")
+            images: All detected objects with IDs
+
+        Returns:
+            List of relevant object IDs (e.g., ["buffalo_a_3", "buffalo_b_4"])
+        """
+        llm_client = self.model_manager.get_llm_client()
+
+        # Build complete object list with IDs
+        object_lines = []
+        for image_id, image_data in sorted(images.items()):
+            object_lines.append(f"\n{image_id.upper()}:")
+            for obj in image_data.objects:
+                simple_id = image_id.replace("image_", "")
+                obj_id = f"{obj.label}_{simple_id}_{obj.object_id}"
+                object_lines.append(f"  - {obj_id} ({obj.label})")
+
+        object_context = "\n".join(object_lines)
+
+        messages = [{
+            "role": "system",
+            "content": "You analyze questions to identify which detected objects are relevant."
+        }, {
+            "role": "user",
+            "content": f"""QUESTION: {question}
+
+DETECTED OBJECTS:
+{object_context}
+
+TASK: Identify which object IDs are relevant to answer this question.
+
+Rules:
+1. Parse the question to understand what object classes are mentioned
+2. Include ALL instances of relevant classes (e.g., if question asks about "buffalos", include all buffalo IDs)
+3. For comparative questions, include objects from multiple images
+4. Return ONLY the object IDs, no explanations
+
+Output JSON:
+{{
+  "object_ids": ["buffalo_a_3", "buffalo_b_4", ...]
+}}"""
+        }]
+
+        response = llm_client.discover_objects(messages)
+        return response.object_ids
 
     def _agent_decide_next_action(self, state: AgentState) -> AgentDecision:
         """
@@ -484,8 +551,34 @@ Respond in strict JSON format only."""
         probability = get_verifier_probability(
             logits,
             response,
-            qwen_client.processor.tokenizer
+            qwen_client.processor.tokenizer,
+            debug=self.debug  # Pass debug flag for detailed logit breakdown
         )
+
+        # DEBUG: Save crops and print full verification details
+        if self.debug:
+            # Save the cropped image
+            debug_filename = f"debug_attributes/{bq.object_id}__{bq.attribute_class}__{bq.attribute_value}.png"
+            cropped_image.save(debug_filename)
+
+            # Print full debugging info
+            print("\n" + "=" * 80)
+            print(f"🔍 ATTRIBUTE VERIFICATION DEBUG")
+            print("=" * 80)
+            print(f"Object: {bq.object_id} ({obj.label})")
+            print(f"Attribute: {bq.attribute_class} = {bq.attribute_value}")
+            print(f"Binary Question: {bq.binary_question}")
+            print(f"\nOriginal bbox: {obj.bbox}")
+            print(f"Cropped image size: {cropped_image.size}")
+            print(f"Cropped image saved: {debug_filename}")
+            print(f"\n--- FULL PROMPT TO VLM ---")
+            print(prompt)
+            print(f"--- END PROMPT ---")
+            print(f"\n--- VLM RESPONSE ---")
+            print(f'"{response}"')
+            print(f"--- END RESPONSE ---")
+            print(f"\nExtracted Probability: {probability:.4f}")
+            print("=" * 80 + "\n")
 
         return probability
 

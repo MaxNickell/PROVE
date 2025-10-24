@@ -174,14 +174,13 @@ class ProbLogExecutor:
         Returns:
             Dict with reasoning components
         """
-        # Create context about available facts
-        fact_context = self._create_fact_context(facts, subquestion.referenced_objects)
-        
+        # Create context about available facts (no referenced_objects needed)
+        fact_context = self._create_fact_context(facts)
+
         prompt = f"""Decompose this binary subquery into logical reasoning components that can be evaluated using the available facts:
 
 Subquery: "{subquestion.question}"
 Type: {subquestion.subquery_type}
-Referenced Objects: {subquestion.referenced_objects}
 
 Available Facts Context:
 {fact_context}
@@ -254,37 +253,36 @@ Examples:
     
     def _create_fact_context(
         self,
-        facts: List[ProbLogFact],
-        referenced_objects: List[str]
+        facts: List[ProbLogFact]
     ) -> str:
         """
-        Create context string showing available facts for referenced objects.
-        
+        Create context string showing available facts.
+
         Args:
             facts: All available facts
-            referenced_objects: Objects referenced in the subquery
-            
+
         Returns:
             str: Formatted fact context
         """
-        context_parts = []
-        
-        # Group facts by referenced objects
-        for obj_id in referenced_objects:
-            obj_facts = []
-            
-            for fact in facts:
-                # Check if this fact involves the referenced object
-                if obj_id in fact.arguments:
-                    fact_str = f"{fact.predicate}({', '.join(fact.arguments)}) [conf: {fact.probability:.2f}]"
-                    obj_facts.append(fact_str)
-            
-            if obj_facts:
-                context_parts.append(f"{obj_id}: {', '.join(obj_facts[:5])}")  # Limit to 5 facts
-            else:
-                context_parts.append(f"{obj_id}: No direct facts available")
-        
-        return "\n".join(context_parts)
+        if not facts:
+            return "No facts available"
+
+        # Show sample of facts by predicate type
+        fact_samples = []
+        predicates_shown = {}
+
+        for fact in facts[:20]:  # Show first 20 facts
+            predicate = fact.predicate
+            if predicate not in predicates_shown:
+                predicates_shown[predicate] = 0
+
+            if predicates_shown[predicate] < 5:  # Max 5 facts per predicate type
+                fact_str = f"{fact.predicate}({', '.join(fact.arguments)}) [conf: {fact.probability:.2f}]"
+                fact_samples.append(fact_str)
+                predicates_shown[predicate] += 1
+
+        summary = f"Total facts: {len(facts)}, Sample facts:\n" + "\n".join(fact_samples)
+        return summary
     
     def _compute_probability(
         self,
@@ -510,7 +508,6 @@ if __name__ == "__main__":
     subqueries = [
         BinarySubquestion(
             question="Does person_a_0 have high muscle_mass?",
-            referenced_objects=["person_a_0"],
             subquery_type="attribute"
         )
     ]
