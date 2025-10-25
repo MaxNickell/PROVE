@@ -143,9 +143,9 @@ class RelationshipAgent:
             if not relationship_subquestions:
                 return []
 
-            non_relationship_subquestions = [sq for sq in relationship_subquestions if sq.subquery_type != "relationship"]
+            non_relationship_subquestions = [sq for sq in relationship_subquestions if sq.subquestion_type != "relationship"]
             if non_relationship_subquestions:
-                invalid_types = [sq.subquery_type for sq in non_relationship_subquestions]
+                invalid_types = [sq.subquestion_type for sq in non_relationship_subquestions]
                 raise RelationshipAgentError(
                     f"RelationshipAgent only accepts relationship subquestions. "
                     f"Received {len(non_relationship_subquestions)} non-relationship subquestions: {set(invalid_types)}"
@@ -156,7 +156,7 @@ class RelationshipAgent:
 
             # Process each relationship subquestion with agent
             for i, subquestion in enumerate(relationship_subquestions, 1):
-                if subquestion.subquery_type != "relationship":
+                if subquestion.subquestion_type != "relationship":
                     continue
 
                 print(f"\n  Processing subquestion {i}/{len(relationship_subquestions)}: {subquestion.question}")

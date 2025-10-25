@@ -54,8 +54,8 @@ class SubquestionGenerator:
             # Create structured context for LLM from ImageData
             context = self._build_structured_context_from_images(images)
             
-            # Generate binary subqueries using LLM
-            prompt = self._create_subquery_prompt(ultimate_question, images)
+            # Generate binary subquestions using LLM
+            prompt = self._create_subquestion_prompt(ultimate_question, images)
 
             messages = [
                 {
@@ -124,9 +124,9 @@ Objects: {objects_str}""")
 
         return "\n".join(context_parts)
     
-    def _create_subquery_prompt(self, ultimate_question: str, images: Dict[str, ImageData]) -> str:
+    def _create_subquestion_prompt(self, ultimate_question: str, images: Dict[str, ImageData]) -> str:
         """
-        Create official prompt for binary subquery generation using template.
+        Create official prompt for binary subquestion generation using template.
 
         Args:
             ultimate_question: Main comparative question
@@ -138,7 +138,7 @@ Objects: {objects_str}""")
         # Extract captions and format object lists
         image_ids = sorted(images.keys())
         if len(image_ids) < 2:
-            raise ValueError("Expected at least 2 images for subquery generation")
+            raise ValueError("Expected at least 2 images for subquestion generation")
 
         # Get captions
         caption_a = images[image_ids[0]].scene_context.get("caption", "No caption available")
@@ -184,7 +184,7 @@ RULES
 - Count questions must explicitly ask about the number of objects of a certain class.
 - Scene attribute questions must ask an observable, image-level visual property.
 - The combined subquestions must collectively contain all the information needed to answer the ultimate question.
-- Output strict JSON with only "question" and "subquery_type" fields.
+- Output strict JSON with only "question" and "subquestion_type" fields.
 
 ---
 
@@ -206,51 +206,51 @@ Output:
   "subquestions": [
     {{
       "question": "Is the king sitting on the throne?",
-      "subquery_type": "relationship"
+      "subquestion_type": "relationship"
     }},
     {{
       "question": "Is the king wearing the crown?",
-      "subquery_type": "relationship"
+      "subquestion_type": "relationship"
     }},
     {{
       "question": "Do the guards appear to be facing or serving the king?",
-      "subquery_type": "relationship"
+      "subquestion_type": "relationship"
     }},
     {{
       "question": "Are the subjects bowing toward the king?",
-      "subquery_type": "relationship"
+      "subquestion_type": "relationship"
     }},
     {{
       "question": "How many subjects are there in image A?",
-      "subquery_type": "count"
+      "subquestion_type": "count"
     }},
     {{
       "question": "How many guards are there in image A?",
-      "subquery_type": "count"
+      "subquestion_type": "count"
     }},
     {{
       "question": "Is the man sitting on the sidewalk?",
-      "subquery_type": "relationship"
+      "subquestion_type": "relationship"
     }},
     {{
       "question": "Is the man wearing torn clothing?",
-      "subquery_type": "attribute"
+      "subquestion_type": "attribute"
     }},
     {{
       "question": "Does the man appear to be poor?",
-      "subquery_type": "attribute"
+      "subquestion_type": "attribute"
     }},
     {{
       "question": "Is the man sitting beside a cup for donations?",
-      "subquery_type": "relationship"
+      "subquestion_type": "relationship"
     }},
     {{
       "question": "Is the environment of image A bright and ornate?",
-      "subquery_type": "scene_attribute"
+      "subquestion_type": "scene_attribute"
     }},
     {{
       "question": "Is the environment of image B dimly lit and worn down?",
-      "subquery_type": "scene_attribute"
+      "subquestion_type": "scene_attribute"
     }}
   ]
 }}
@@ -273,43 +273,43 @@ Output:
   "subquestions": [
     {{
       "question": "Do the dogs in image A appear relaxed?",
-      "subquery_type": "attribute"
+      "subquestion_type": "attribute"
     }},
     {{
       "question": "Are the dogs in image A playing with each other?",
-      "subquery_type": "relationship"
+      "subquestion_type": "relationship"
     }},
     {{
       "question": "Are the dogs in image A playing with balls?",
-      "subquery_type": "relationship"
+      "subquestion_type": "relationship"
     }},
     {{
       "question": "How many dogs are there in image A?",
-      "subquery_type": "count"
+      "subquestion_type": "count"
     }},
     {{
       "question": "How many dogs are there in image B?",
-      "subquery_type": "count"
+      "subquestion_type": "count"
     }},
     {{
       "question": "Are the dogs in image B running on a track?",
-      "subquery_type": "relationship"
+      "subquestion_type": "relationship"
     }},
     {{
       "question": "Are the trainers holding leashes?",
-      "subquery_type": "relationship"
+      "subquestion_type": "relationship"
     }},
     {{
       "question": "Are the dogs in image B competing or racing?",
-      "subquery_type": "attribute"
+      "subquestion_type": "attribute"
     }},
     {{
       "question": "Is the environment in image A open and natural?",
-      "subquery_type": "scene_attribute"
+      "subquestion_type": "scene_attribute"
     }},
     {{
       "question": "Is the environment in image B structured and man-made?",
-      "subquery_type": "scene_attribute"
+      "subquestion_type": "scene_attribute"
     }}
   ]
 }}
@@ -332,35 +332,35 @@ Output:
   "subquestions": [
     {{
       "question": "Do the children each have candies in front of them?",
-      "subquery_type": "relationship"
+      "subquestion_type": "relationship"
     }},
     {{
       "question": "How many candies are there in image A?",
-      "subquery_type": "count"
+      "subquestion_type": "count"
     }},
     {{
       "question": "How many children are there in image A?",
-      "subquery_type": "count"
+      "subquestion_type": "count"
     }},
     {{
       "question": "Are the horses drinking from a full trough?",
-      "subquery_type": "relationship"
+      "subquestion_type": "relationship"
     }},
     {{
       "question": "Are the goats standing beside an empty trough?",
-      "subquery_type": "relationship"
+      "subquestion_type": "relationship"
     }},
     {{
       "question": "Do the goats appear thirsty or waiting for water?",
-      "subquery_type": "attribute"
+      "subquestion_type": "attribute"
     }},
     {{
       "question": "Is the environment in image A organized?",
-      "subquery_type": "scene_attribute"
+      "subquestion_type": "scene_attribute"
     }},
     {{
       "question": "Is the environment in image B dry?",
-      "subquery_type": "scene_attribute"
+      "subquestion_type": "scene_attribute"
     }}
   ]
 }}
@@ -402,12 +402,12 @@ Ultimate Question: {ultimate_question}"""
             try:
                 # Extract data from SubquestionItem (Pydantic already validated types)
                 question = subquestion_item.question.strip()
-                subquery_type = subquestion_item.subquery_type.strip()
+                subquestion_type = subquestion_item.subquestion_type.strip()
 
                 # Create BinarySubquestion instance
                 binary_subquestion = BinarySubquestion(
                     question=question,
-                    subquery_type=subquery_type
+                    subquestion_type=subquestion_type
                 )
 
                 binary_subquestions.append(binary_subquestion)
@@ -433,11 +433,11 @@ Ultimate Question: {ultimate_question}"""
             for subquestion in subquestions:
                 # Check required attributes exist
                 assert hasattr(subquestion, 'question')
-                assert hasattr(subquestion, 'subquery_type')
+                assert hasattr(subquestion, 'subquestion_type')
 
                 # Validate basic content (non-empty)
                 assert subquestion.question.strip()
-                assert subquestion.subquery_type.strip()
+                assert subquestion.subquestion_type.strip()
 
             return True
 
@@ -467,8 +467,8 @@ Ultimate Question: {ultimate_question}"""
 
         for subquestion in subquestions:
             # Count types
-            subquery_type = subquestion.subquery_type
-            type_counts[subquery_type] = type_counts.get(subquery_type, 0) + 1
+            subquestion_type = subquestion.subquestion_type
+            type_counts[subquestion_type] = type_counts.get(subquestion_type, 0) + 1
 
             # Track question lengths
             question_lengths.append(len(subquestion.question.split()))

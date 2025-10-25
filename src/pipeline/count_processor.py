@@ -135,7 +135,7 @@ class CountProcessor:
         all_requirements = []
 
         for subquestion in count_subquestions:
-            if subquestion.subquery_type != "count":
+            if subquestion.subquestion_type != "count":
                 continue
 
             # Analyze this subquery to determine count requirements
@@ -173,10 +173,10 @@ class CountProcessor:
 
             images_context = "\\n".join(available_images)
 
-            prompt = f"""Analyze this count subquery to determine what object classes need counting in which images.
+            prompt = f"""Analyze this count subquestion to determine what object classes need counting in which images.
 
-Subquery: "{subquestion.question}"
-Type: {subquestion.subquery_type}
+Subquestion: "{subquestion.question}"
+Type: {subquestion.subquestion_type}
 
 Available Images and Object Classes:
 {images_context}

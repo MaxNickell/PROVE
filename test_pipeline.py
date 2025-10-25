@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-PROVE Pipeline Test - Complete 11-Step Subquery-Driven Architecture.
-Tests the complete subquery-driven evidence extraction pipeline with binary verification.
+PROVE Pipeline Test - Complete 11-Step Subquestion-Driven Architecture.
+Tests the complete subquestion-driven evidence extraction pipeline with binary verification.
 """
 
 import sys
@@ -53,7 +53,7 @@ def main():
         return 1
     
     # Ultimate question to answer
-    ultimate_question = "Are there a total of 3 birds across both images and is there a bird perched on a large neon green animal?"
+    ultimate_question = "In the image to the left, a greyhound is laying down, and has a cast on a leg, and both images are indoor."
     print(f"Ultimate Question: {ultimate_question}")
     print()
     
@@ -62,8 +62,8 @@ def main():
     
     # Test images
     image_paths = {
-        "image_a": "./test_images/dev-473-3-img0.png",
-        "image_b": "./test_images/dev-473-3-img1.png"
+        "image_a": "./test_images/dev-350-2-img0.png",
+        "image_b": "./test_images/dev-350-2-img1.png"
     }
     
     try:
@@ -125,7 +125,7 @@ def main():
         print(f"Generated {len(subquestions)} binary subquestions:")
         for i, subquestion in enumerate(subquestions, 1):
             print(f"  {i}. {subquestion.question}")
-            print(f"     Type: {subquestion.subquery_type}")
+            print(f"     Type: {subquestion.subquestion_type}")
         
         print()
         
@@ -143,10 +143,10 @@ def main():
             count_subquestions = []
         else:
             # Filter subquestions by type for targeted processing
-            attribute_subquestions = [sq for sq in kb.subquestions if sq.subquery_type == "attribute"]
-            relationship_subquestions = [sq for sq in kb.subquestions if sq.subquery_type == "relationship"]
-            scene_attribute_subquestions = [sq for sq in kb.subquestions if sq.subquery_type == "scene_attribute"]
-            count_subquestions = [sq for sq in kb.subquestions if sq.subquery_type == "count"]
+            attribute_subquestions = [sq for sq in kb.subquestions if sq.subquestion_type == "attribute"]
+            relationship_subquestions = [sq for sq in kb.subquestions if sq.subquestion_type == "relationship"]
+            scene_attribute_subquestions = [sq for sq in kb.subquestions if sq.subquestion_type == "scene_attribute"]
+            count_subquestions = [sq for sq in kb.subquestions if sq.subquestion_type == "count"]
 
             print(f"Subquestion routing:")
             print(f"  Attribute: {len(attribute_subquestions)} subquestions")
@@ -512,7 +512,7 @@ def main():
         print(f"\nSubquestion breakdown:")
         subquestion_types = {}
         for sq in kb.subquestions:
-            subquestion_types[sq.subquery_type] = subquestion_types.get(sq.subquery_type, 0) + 1
+            subquestion_types[sq.subquestion_type] = subquestion_types.get(sq.subquestion_type, 0) + 1
         for sq_type, count in subquestion_types.items():
             print(f"  {sq_type}: {count}")
 

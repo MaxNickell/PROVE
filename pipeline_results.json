@@ -1,0 +1,705 @@
+{
+  "ultimate_question": "In the image to the left, a greyhound is laying down, and has a cast on a leg, and both images are indoor.",
+  "images": {
+    "image_a": {
+      "objects": [
+        {
+          "object_id": 0,
+          "label": "sidewalk",
+          "bbox": [
+            2.1000001430511475,
+            99.85449981689453,
+            597.300048828125,
+            454.4864807128906
+          ],
+          "confidence": 0.906
+        },
+        {
+          "object_id": 1,
+          "label": "dog",
+          "bbox": [
+            55.500003814697266,
+            96.6554946899414,
+            545.1000366210938,
+            391.87750244140625
+          ],
+          "confidence": 0.929
+        },
+        {
+          "object_id": 2,
+          "label": "leg",
+          "bbox": [
+            261.3000183105469,
+            275.3424987792969,
+            315.3000183105469,
+            392.79150390625
+          ],
+          "confidence": 0.877
+        },
+        {
+          "object_id": 3,
+          "label": "bandage",
+          "bbox": [
+            274.5,
+            299.10650634765625,
+            313.5,
+            373.5975036621094
+          ],
+          "confidence": 0.9
+        },
+        {
+          "object_id": 4,
+          "label": "leash",
+          "bbox": [
+            239.10000610351562,
+            119.96249389648438,
+            597.9000244140625,
+            200.85150146484375
+          ],
+          "confidence": 0.873
+        },
+        {
+          "object_id": 5,
+          "label": "hook",
+          "bbox": [
+            256.5,
+            119.5054931640625,
+            269.1000061035156,
+            136.87149047851562
+          ],
+          "confidence": 0.879
+        },
+        {
+          "object_id": 6,
+          "label": "harness",
+          "bbox": [
+            195.3000030517578,
+            129.5594940185547,
+            336.3000183105469,
+            290.8804931640625
+          ],
+          "confidence": 0.861
+        },
+        {
+          "object_id": 7,
+          "label": "sign",
+          "bbox": [
+            477.9000244140625,
+            42.272499084472656,
+            598.5,
+            184.8564910888672
+          ],
+          "confidence": 0.858
+        },
+        {
+          "object_id": 8,
+          "label": "trash can",
+          "bbox": [
+            16.5,
+            1.5994999408721924,
+            378.9000244140625,
+            316.92950439453125
+          ],
+          "confidence": 0.902
+        }
+      ],
+      "attributes": {
+        "1": {
+          "attributes": {
+            "breed": [
+              {
+                "value": "Jack Russell Terrier mix",
+                "confidence": 0.9082656495999696
+              }
+            ]
+          }
+        }
+      },
+      "relationships": [
+        {
+          "subject_id": "dog_a_1",
+          "object_id": "sidewalk_a_0",
+          "relation": "standing_on",
+          "probability": 0.8657495654653493
+        },
+        {
+          "subject_id": "dog_a_1",
+          "object_id": "bandage_a_3",
+          "relation": "wearing",
+          "probability": 0.4629105151003525
+        }
+      ],
+      "scene_attributes": {
+        "environment_type": [
+          {
+            "value": "outdoor",
+            "confidence": 0.9240867879977541
+          }
+        ]
+      },
+      "counts": {}
+    },
+    "image_b": {
+      "objects": [
+        {
+          "object_id": 0,
+          "label": "dog",
+          "bbox": [
+            60.534000396728516,
+            0.0885000005364418,
+            157.29400634765625,
+            176.5574951171875
+          ],
+          "confidence": 0.884
+        },
+        {
+          "object_id": 1,
+          "label": "shrub",
+          "bbox": [
+            4.8379998207092285,
+            0.0885000005364418,
+            231.63400268554688,
+            176.9114990234375
+          ],
+          "confidence": 0.906
+        },
+        {
+          "object_id": 2,
+          "label": "knee pad",
+          "bbox": [
+            86.96600341796875,
+            90.5354995727539,
+            103.72200012207031,
+            122.92649841308594
+          ],
+          "confidence": 0.903
+        },
+        {
+          "object_id": 3,
+          "label": "camera",
+          "bbox": [
+            101.5979995727539,
+            39.205501556396484,
+            141.00999450683594,
+            63.631500244140625
+          ],
+          "confidence": 0.822
+        },
+        {
+          "object_id": 4,
+          "label": "leg",
+          "bbox": [
+            113.87000274658203,
+            113.36849975585938,
+            139.8300018310547,
+            176.9114990234375
+          ],
+          "confidence": 0.856
+        },
+        {
+          "object_id": 5,
+          "label": "collar",
+          "bbox": [
+            101.5979995727539,
+            39.205501556396484,
+            140.53799438476562,
+            62.923500061035156
+          ],
+          "confidence": 0.872
+        },
+        {
+          "object_id": 6,
+          "label": "lawn",
+          "bbox": [
+            5.073999881744385,
+            0.0885000005364418,
+            231.63400268554688,
+            176.9114990234375
+          ],
+          "confidence": 0.921
+        },
+        {
+          "object_id": 7,
+          "label": "leash",
+          "bbox": [
+            101.5979995727539,
+            39.55950164794922,
+            231.16200256347656,
+            74.78250122070312
+          ],
+          "confidence": 0.879
+        },
+        {
+          "object_id": 8,
+          "label": "buckle",
+          "bbox": [
+            120.24200439453125,
+            113.36849975585938,
+            139.593994140625,
+            144.69749450683594
+          ],
+          "confidence": 0.863
+        },
+        {
+          "object_id": 9,
+          "label": "harness",
+          "bbox": [
+            101.5979995727539,
+            39.028499603271484,
+            141.00999450683594,
+            63.27750015258789
+          ],
+          "confidence": 0.873
+        },
+        {
+          "object_id": 10,
+          "label": "tree",
+          "bbox": [
+            0.11800000071525574,
+            0.0885000005364418,
+            6.961999893188477,
+            176.9114990234375
+          ],
+          "confidence": 0.919
+        }
+      ],
+      "attributes": {
+        "0": {
+          "attributes": {
+            "build": [
+              {
+                "value": "slender",
+                "confidence": 0.9712152514509116
+              }
+            ],
+            "legs": [
+              {
+                "value": "long",
+                "confidence": 0.9668637748858844
+              }
+            ],
+            "head": [
+              {
+                "value": "narrow",
+                "confidence": 0.978306336185776
+              }
+            ]
+          }
+        }
+      },
+      "relationships": [
+        {
+          "subject_id": "dog_b_0",
+          "object_id": "lawn_b_6",
+          "relation": "sitting_on",
+          "probability": 0.8762266468636289
+        },
+        {
+          "subject_id": "dog_b_0",
+          "object_id": "knee pad_b_2",
+          "relation": "wearing",
+          "probability": 0.8897339016205222
+        }
+      ],
+      "scene_attributes": {
+        "environment_type": [
+          {
+            "value": "outdoor",
+            "confidence": 0.9102819360855492
+          }
+        ]
+      },
+      "counts": {}
+    }
+  },
+  "subquestions": [
+    {
+      "question": "Is the dog in image A standing on a sidewalk?",
+      "subquestion_type": "relationship"
+    },
+    {
+      "question": "Is the dog in image A wearing a bandage on its leg?",
+      "subquestion_type": "relationship"
+    },
+    {
+      "question": "Is the dog in image A a greyhound?",
+      "subquestion_type": "attribute"
+    },
+    {
+      "question": "Is the environment in image A indoors?",
+      "subquestion_type": "scene_attribute"
+    },
+    {
+      "question": "Is the dog in image B sitting on a grassy lawn?",
+      "subquestion_type": "relationship"
+    },
+    {
+      "question": "Is the dog in image B wearing knee pads?",
+      "subquestion_type": "relationship"
+    },
+    {
+      "question": "Is the dog in image B a whippet or similar breed?",
+      "subquestion_type": "attribute"
+    },
+    {
+      "question": "Is the environment in image B outdoors?",
+      "subquestion_type": "scene_attribute"
+    }
+  ],
+  "problog_facts": [
+    {
+      "probability": 0.906,
+      "predicate": "entity",
+      "arguments": [
+        "image_a",
+        "sidewalk_a_0",
+        "sidewalk",
+        "2",
+        "99",
+        "597",
+        "454"
+      ]
+    },
+    {
+      "probability": 0.929,
+      "predicate": "entity",
+      "arguments": [
+        "image_a",
+        "dog_a_1",
+        "dog",
+        "55",
+        "96",
+        "545",
+        "391"
+      ]
+    },
+    {
+      "probability": 0.877,
+      "predicate": "entity",
+      "arguments": [
+        "image_a",
+        "leg_a_2",
+        "leg",
+        "261",
+        "275",
+        "315",
+        "392"
+      ]
+    },
+    {
+      "probability": 0.9,
+      "predicate": "entity",
+      "arguments": [
+        "image_a",
+        "bandage_a_3",
+        "bandage",
+        "274",
+        "299",
+        "313",
+        "373"
+      ]
+    },
+    {
+      "probability": 0.873,
+      "predicate": "entity",
+      "arguments": [
+        "image_a",
+        "leash_a_4",
+        "leash",
+        "239",
+        "119",
+        "597",
+        "200"
+      ]
+    },
+    {
+      "probability": 0.879,
+      "predicate": "entity",
+      "arguments": [
+        "image_a",
+        "hook_a_5",
+        "hook",
+        "256",
+        "119",
+        "269",
+        "136"
+      ]
+    },
+    {
+      "probability": 0.861,
+      "predicate": "entity",
+      "arguments": [
+        "image_a",
+        "harness_a_6",
+        "harness",
+        "195",
+        "129",
+        "336",
+        "290"
+      ]
+    },
+    {
+      "probability": 0.858,
+      "predicate": "entity",
+      "arguments": [
+        "image_a",
+        "sign_a_7",
+        "sign",
+        "477",
+        "42",
+        "598",
+        "184"
+      ]
+    },
+    {
+      "probability": 0.902,
+      "predicate": "entity",
+      "arguments": [
+        "image_a",
+        "trash can_a_8",
+        "trash can",
+        "16",
+        "1",
+        "378",
+        "316"
+      ]
+    },
+    {
+      "probability": 0.884,
+      "predicate": "entity",
+      "arguments": [
+        "image_b",
+        "dog_b_0",
+        "dog",
+        "60",
+        "0",
+        "157",
+        "176"
+      ]
+    },
+    {
+      "probability": 0.906,
+      "predicate": "entity",
+      "arguments": [
+        "image_b",
+        "shrub_b_1",
+        "shrub",
+        "4",
+        "0",
+        "231",
+        "176"
+      ]
+    },
+    {
+      "probability": 0.903,
+      "predicate": "entity",
+      "arguments": [
+        "image_b",
+        "knee pad_b_2",
+        "knee pad",
+        "86",
+        "90",
+        "103",
+        "122"
+      ]
+    },
+    {
+      "probability": 0.822,
+      "predicate": "entity",
+      "arguments": [
+        "image_b",
+        "camera_b_3",
+        "camera",
+        "101",
+        "39",
+        "141",
+        "63"
+      ]
+    },
+    {
+      "probability": 0.856,
+      "predicate": "entity",
+      "arguments": [
+        "image_b",
+        "leg_b_4",
+        "leg",
+        "113",
+        "113",
+        "139",
+        "176"
+      ]
+    },
+    {
+      "probability": 0.872,
+      "predicate": "entity",
+      "arguments": [
+        "image_b",
+        "collar_b_5",
+        "collar",
+        "101",
+        "39",
+        "140",
+        "62"
+      ]
+    },
+    {
+      "probability": 0.921,
+      "predicate": "entity",
+      "arguments": [
+        "image_b",
+        "lawn_b_6",
+        "lawn",
+        "5",
+        "0",
+        "231",
+        "176"
+      ]
+    },
+    {
+      "probability": 0.879,
+      "predicate": "entity",
+      "arguments": [
+        "image_b",
+        "leash_b_7",
+        "leash",
+        "101",
+        "39",
+        "231",
+        "74"
+      ]
+    },
+    {
+      "probability": 0.863,
+      "predicate": "entity",
+      "arguments": [
+        "image_b",
+        "buckle_b_8",
+        "buckle",
+        "120",
+        "113",
+        "139",
+        "144"
+      ]
+    },
+    {
+      "probability": 0.873,
+      "predicate": "entity",
+      "arguments": [
+        "image_b",
+        "harness_b_9",
+        "harness",
+        "101",
+        "39",
+        "141",
+        "63"
+      ]
+    },
+    {
+      "probability": 0.919,
+      "predicate": "entity",
+      "arguments": [
+        "image_b",
+        "tree_b_10",
+        "tree",
+        "0",
+        "0",
+        "6",
+        "176"
+      ]
+    },
+    {
+      "probability": 0.9082656495999696,
+      "predicate": "attribute",
+      "arguments": [
+        "image_a",
+        "dog_a_1",
+        "Jack Russell Terrier mix"
+      ]
+    },
+    {
+      "probability": 0.9712152514509116,
+      "predicate": "attribute",
+      "arguments": [
+        "image_b",
+        "dog_b_0",
+        "slender"
+      ]
+    },
+    {
+      "probability": 0.9668637748858844,
+      "predicate": "attribute",
+      "arguments": [
+        "image_b",
+        "dog_b_0",
+        "long"
+      ]
+    },
+    {
+      "probability": 0.978306336185776,
+      "predicate": "attribute",
+      "arguments": [
+        "image_b",
+        "dog_b_0",
+        "narrow"
+      ]
+    },
+    {
+      "probability": 0.8657495654653493,
+      "predicate": "relation",
+      "arguments": [
+        "image_a",
+        "dog_a_1",
+        "sidewalk_a_0",
+        "standing_on"
+      ]
+    },
+    {
+      "probability": 0.4629105151003525,
+      "predicate": "relation",
+      "arguments": [
+        "image_a",
+        "dog_a_1",
+        "bandage_a_3",
+        "wearing"
+      ]
+    },
+    {
+      "probability": 0.8762266468636289,
+      "predicate": "relation",
+      "arguments": [
+        "image_b",
+        "dog_b_0",
+        "lawn_b_6",
+        "sitting_on"
+      ]
+    },
+    {
+      "probability": 0.8897339016205222,
+      "predicate": "relation",
+      "arguments": [
+        "image_b",
+        "dog_b_0",
+        "knee pad_b_2",
+        "wearing"
+      ]
+    },
+    {
+      "probability": 0.9240867879977541,
+      "predicate": "scene_attr",
+      "arguments": [
+        "image_a",
+        "outdoor"
+      ]
+    },
+    {
+      "probability": 0.9102819360855492,
+      "predicate": "scene_attr",
+      "arguments": [
+        "image_b",
+        "outdoor"
+      ]
+    }
+  ],
+  "subquestion_results": [],
+  "answer": null
+}

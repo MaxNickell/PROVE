@@ -137,7 +137,7 @@ class AttributeAgent:
 
             # Process each attribute subquestion with agent
             for i, subquestion in enumerate(attribute_subquestions, 1):
-                if subquestion.subquery_type != "attribute":
+                if subquestion.subquestion_type != "attribute":
                     continue
 
                 print(f"\n  Processing subquestion {i}/{len(attribute_subquestions)}: {subquestion.question}")
@@ -480,18 +480,21 @@ Respond in strict JSON format only."""
         self,
         image: Image.Image,
         bbox: List[float],
-        margin: float = 0.15
+        margin: float = 0.15,
+        min_size: int = 32
     ) -> Image.Image:
         """
         Crop image to bounding box with percentage margin on all sides.
+        Ensures minimum dimensions for VLM processing.
 
         Args:
             image: PIL Image to crop
             bbox: Bounding box [x1, y1, x2, y2]
             margin: Percentage margin to add (0.15 = 15% of bbox size)
+            min_size: Minimum dimension in pixels (default 32, Qwen needs 28)
 
         Returns:
-            Cropped PIL Image with margin
+            Cropped PIL Image with margin (guaranteed >= min_size x min_size)
         """
         x1, y1, x2, y2 = bbox
         width, height = image.size
@@ -507,6 +510,39 @@ Respond in strict JSON format only."""
         crop_y1 = max(0, y1 - margin_y)
         crop_x2 = min(width, x2 + margin_x)
         crop_y2 = min(height, y2 + margin_y)
+
+        # Check if crop meets minimum size requirements
+        crop_width = crop_x2 - crop_x1
+        crop_height = crop_y2 - crop_y1
+
+        # Expand if too small (maintain centering)
+        if crop_width < min_size:
+            deficit = min_size - crop_width
+            expand_left = deficit / 2
+            expand_right = deficit / 2
+
+            crop_x1 = max(0, crop_x1 - expand_left)
+            crop_x2 = min(width, crop_x2 + expand_right)
+
+            # If hit boundary, expand other side more
+            if crop_x1 == 0:
+                crop_x2 = min(width, crop_x2 + expand_left)
+            if crop_x2 == width:
+                crop_x1 = max(0, crop_x1 - expand_right)
+
+        if crop_height < min_size:
+            deficit = min_size - crop_height
+            expand_top = deficit / 2
+            expand_bottom = deficit / 2
+
+            crop_y1 = max(0, crop_y1 - expand_top)
+            crop_y2 = min(height, crop_y2 + expand_bottom)
+
+            # If hit boundary, expand other side more
+            if crop_y1 == 0:
+                crop_y2 = min(height, crop_y2 + expand_top)
+            if crop_y2 == height:
+                crop_y1 = max(0, crop_y1 - expand_bottom)
 
         return image.crop((crop_x1, crop_y1, crop_x2, crop_y2))
 

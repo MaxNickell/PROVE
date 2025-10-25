@@ -36,7 +36,16 @@ class AttributeData:
     attributes: Dict[str, List[AttributeValue]]  # attribute categories with individual confidences
 
     def to_dict(self) -> Dict[str, Any]:
-        return asdict(self)
+        """Convert to dictionary with explicit serialization for nested AttributeValue objects."""
+        return {
+            'attributes': {
+                attr_class: [
+                    {'value': av.value, 'confidence': av.confidence}
+                    for av in attr_values
+                ]
+                for attr_class, attr_values in self.attributes.items()
+            }
+        }
 
 
 @dataclass
@@ -77,7 +86,7 @@ class ImageData:
 class BinarySubquestion:
     """Binary subquestion - pure natural language, no object IDs."""
     question: str  # Binary question answerable with Yes/No
-    subquery_type: str  # "attribute", "relationship", "scene_attribute", "count"
+    subquestion_type: str  # "attribute", "relationship", "scene_attribute", "count"
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)

@@ -15,6 +15,7 @@ from .output_models import (
     SceneAttributeResponse,
     EntityExtractionResponse,
     ObjectDiscoveryResponse,
+    ImageDiscoveryResponse,
     ObjectPairDiscoveryResponse
 )
 
@@ -189,6 +190,10 @@ class LLMClient:
     def discover_objects(self, messages: List[Dict[str, str]], **kwargs) -> ObjectDiscoveryResponse:
         """Discover relevant object IDs from natural language question."""
         return self.chat_with_validation(messages, ObjectDiscoveryResponse, temperature=0.2, **kwargs)
+
+    def discover_images(self, messages: List[Dict[str, str]], **kwargs) -> ImageDiscoveryResponse:
+        """Discover relevant image IDs from natural language question."""
+        return self.chat_with_validation(messages, ImageDiscoveryResponse, temperature=0.2, **kwargs)
 
     def discover_object_pairs(self, messages: List[Dict[str, str]], **kwargs) -> ObjectPairDiscoveryResponse:
         """Discover relevant object pairs from natural language question."""
