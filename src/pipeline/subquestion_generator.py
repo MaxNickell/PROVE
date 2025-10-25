@@ -54,8 +54,8 @@ class SubquestionGenerator:
             # Create structured context for LLM from ImageData
             context = self._build_structured_context_from_images(images)
             
-            # Generate binary subqueries using LLM
-            prompt = self._create_subquery_prompt(ultimate_question, images)
+            # Generate binary subquestions using LLM
+            prompt = self._create_subquestion_prompt(ultimate_question, images)
 
             messages = [
                 {
@@ -90,7 +90,8 @@ class SubquestionGenerator:
         images: Dict[str, ImageData]
     ) -> str:
         """
-        Build structured context string from ImageData structure.
+        Build structured context with ONLY object classes (no IDs).
+        Classes shown so LLM knows what entities exist in each image.
 
         Args:
             images: ImageData structure containing objects, captions, and context per image
@@ -105,27 +106,27 @@ class SubquestionGenerator:
             caption = image_data.scene_context.get("caption", "No caption available")
             objects = image_data.objects
 
-            # Format objects with IDs
-            object_list = []
+            # Get unique object classes with counts
+            class_counts = {}
             for obj in objects:
-                # Create object ID in format: label_imageid_index (using simple image key)
-                # Convert "image_a" to "a", "image_b" to "b" for simpler parsing
-                simple_image_id = image_id.replace("image_", "")
-                obj_id = f"{obj.label}_{simple_image_id}_{obj.object_id}"
-                object_list.append(f"{obj_id} ({obj.label}, conf={obj.confidence:.2f})")
+                class_counts[obj.label] = class_counts.get(obj.label, 0) + 1
 
-            objects_str = ", ".join(object_list)
+            # Format: "label (count)" if multiple instances, else just "label"
+            objects_str = ", ".join([
+                f"{label} ({count})" if count > 1 else label
+                for label, count in sorted(class_counts.items())
+            ])
 
             context_parts.append(f"""
 Image {image_id.upper()}:
-Context: {caption}
+Caption: {caption}
 Objects: {objects_str}""")
 
         return "\n".join(context_parts)
     
-    def _create_subquery_prompt(self, ultimate_question: str, images: Dict[str, ImageData]) -> str:
+    def _create_subquestion_prompt(self, ultimate_question: str, images: Dict[str, ImageData]) -> str:
         """
-        Create official prompt for binary subquery generation using template.
+        Create official prompt for binary subquestion generation using template.
 
         Args:
             ultimate_question: Main comparative question
@@ -137,26 +138,26 @@ Objects: {objects_str}""")
         # Extract captions and format object lists
         image_ids = sorted(images.keys())
         if len(image_ids) < 2:
-            raise ValueError("Expected at least 2 images for subquery generation")
+            raise ValueError("Expected at least 2 images for subquestion generation")
 
         # Get captions
         caption_a = images[image_ids[0]].scene_context.get("caption", "No caption available")
         caption_b = images[image_ids[1]].scene_context.get("caption", "No caption available")
 
-        # Format object lists in the template format
-        def format_object_list(image_data: ImageData, image_key: str) -> str:
-            """Format objects as JSON dict for template."""
-            simple_image_id = image_key.replace("image_", "")
-            objects_dict = {}
+        # Format object lists as class names with counts
+        def format_object_list(image_data: ImageData) -> str:
+            """Format objects as class names with counts."""
+            class_counts = {}
             for obj in image_data.objects:
-                obj_id = f"{obj.label}_{simple_image_id}_{obj.object_id}"
-                objects_dict[obj_id] = obj.label
-            # Format as JSON-like structure with proper indentation
-            items = [f'  "{k}": "{v}"' for k, v in objects_dict.items()]
-            return "{\n" + ",\n".join(items) + "\n}"
+                class_counts[obj.label] = class_counts.get(obj.label, 0) + 1
+            # Format as comma-separated list
+            return ", ".join([
+                f"{label} ({count})" if count > 1 else label
+                for label, count in sorted(class_counts.items())
+            ])
 
-        objects_a = format_object_list(images[image_ids[0]], image_ids[0])
-        objects_b = format_object_list(images[image_ids[1]], image_ids[1])
+        objects_a = format_object_list(images[image_ids[0]])
+        objects_b = format_object_list(images[image_ids[1]])
 
         # Use official prompt template
         prompt = f"""TASK
@@ -174,13 +175,16 @@ SUBQUESTION CATEGORIES
 
 RULES
 - Each subquestion must be answerable with Yes or No.
+- Write questions in natural language only.
+- DO NOT reference specific object IDs or indices.
+- Mention object classes generically (e.g., "the bird", "a buffalo", "the animals").
+- The object list shows what entities are detected - use this to inform your questions.
 - Attribute questions should specify which attribute class or value must be verified.
 - Relationship questions should ask one explicit visual relation.
 - Count questions must explicitly ask about the number of objects of a certain class.
 - Scene attribute questions must ask an observable, image-level visual property.
-- Only reference objects from the object list using their exact IDs in "referenced_objects".
 - The combined subquestions must collectively contain all the information needed to answer the ultimate question.
-- Output strict JSON, nothing else.
+- Output strict JSON with only "question" and "subquestion_type" fields.
 
 ---
 
@@ -191,105 +195,62 @@ Ultimate Question: Which scene depicts more power?
 
 IMAGE A
 Caption: A king sits on a golden throne in a grand hall surrounded by four guards holding spears. Red carpets line the floor and tall stained glass windows cast colorful light over the crown resting beside him. Three subjects bow before the throne while two musicians stand by holding trumpets.
-Objects:
-{{
-  "king_a_0": "king",
-  "throne_a_1": "throne",
-  "guard_a_2": "guard",
-  "guard_a_3": "guard",
-  "guard_a_4": "guard",
-  "guard_a_5": "guard",
-  "spear_a_6": "spear",
-  "spear_a_7": "spear",
-  "spear_a_8": "spear",
-  "spear_a_9": "spear",
-  "crown_a_10": "crown",
-  "subject_a_11": "subject",
-  "subject_a_12": "subject",
-  "subject_a_13": "subject"
-}}
+Objects: crown, guard (4), king, spear (4), subject (3), throne
 
 IMAGE B
 Caption: A man sits cross-legged on the sidewalk with torn clothes and an empty cup beside him. Two people walk past without looking as a gust of wind scatters some coins near his feet. Behind him, a cracked wall with faded posters leans into shadow.
-Objects:
-{{
-  "man_b_0": "man",
-  "sidewalk_b_1": "sidewalk",
-  "clothing_b_2": "clothing",
-  "cup_b_3": "cup",
-  "coin_b_4": "coin",
-  "coin_b_5": "coin",
-  "wall_b_6": "wall",
-  "poster_b_7": "poster"
-}}
+Objects: clothing, coin (2), cup, man, poster, sidewalk, wall
 
 Output:
 {{
   "subquestions": [
     {{
       "question": "Is the king sitting on the throne?",
-      "subquery_type": "relationship",
-      "referenced_objects": ["king_a_0", "throne_a_1"]
+      "subquestion_type": "relationship"
     }},
     {{
       "question": "Is the king wearing the crown?",
-      "subquery_type": "relationship",
-      "referenced_objects": ["king_a_0", "crown_a_10"]
+      "subquestion_type": "relationship"
     }},
     {{
       "question": "Do the guards appear to be facing or serving the king?",
-      "subquery_type": "relationship",
-      "referenced_objects": ["guard_a_2", "guard_a_3", "guard_a_4", "guard_a_5", "king_a_0"]
+      "subquestion_type": "relationship"
     }},
     {{
       "question": "Are the subjects bowing toward the king?",
-      "subquery_type": "relationship",
-      "referenced_objects": ["subject_a_11", "subject_a_12", "subject_a_13", "king_a_0"]
+      "subquestion_type": "relationship"
     }},
     {{
-      "question": "How many subjects are there?",
-      "subquery_type": "count",
-      "referenced_objects": ["subject_a_11", "subject_a_12", "subject_a_13"]
+      "question": "How many subjects are there in image A?",
+      "subquestion_type": "count"
     }},
     {{
-      "question": "How many guards are there?",
-      "subquery_type": "count",
-      "referenced_objects": ["guard_a_2", "guard_a_3", "guard_a_4", "guard_a_5"]
+      "question": "How many guards are there in image A?",
+      "subquestion_type": "count"
     }},
     {{
       "question": "Is the man sitting on the sidewalk?",
-      "subquery_type": "relationship",
-      "referenced_objects": ["man_b_0", "sidewalk_b_1"]
+      "subquestion_type": "relationship"
     }},
     {{
-      "question": "Is the man wearing clothing?",
-      "subquery_type": "relationship",
-      "referenced_objects": ["man_b_0", "clothing_b_2"]
-    }},
-    {{
-      "question": "Does the clothing appear torn or worn out?",
-      "subquery_type": "attribute",
-      "referenced_objects": ["clothing_b_2"]
+      "question": "Is the man wearing torn clothing?",
+      "subquestion_type": "attribute"
     }},
     {{
       "question": "Does the man appear to be poor?",
-      "subquery_type": "attribute",
-      "referenced_objects": ["man_b_0"]
+      "subquestion_type": "attribute"
     }},
     {{
-      "question": "Is the man holding or sitting beside a cup for donations (begging)?",
-      "subquery_type": "relationship",
-      "referenced_objects": ["man_b_0", "cup_b_3"]
+      "question": "Is the man sitting beside a cup for donations?",
+      "subquestion_type": "relationship"
     }},
     {{
       "question": "Is the environment of image A bright and ornate?",
-      "subquery_type": "scene_attribute",
-      "referenced_objects": []
+      "subquestion_type": "scene_attribute"
     }},
     {{
       "question": "Is the environment of image B dimly lit and worn down?",
-      "subquery_type": "scene_attribute",
-      "referenced_objects": []
+      "subquestion_type": "scene_attribute"
     }}
   ]
 }}
@@ -301,79 +262,54 @@ Ultimate Question: What is the difference between the two images?
 
 IMAGE A
 Caption: Several dogs of different breeds run freely through a sunny dog park. Two chase tennis balls, one leaps through a sprinkler, and three others roll in the grass while two owners watch from benches. Water bowls and toys are scattered across the open field.
-Objects:
-{{
-  "dog_a_0": "dog",
-  "dog_a_1": "dog",
-  "dog_a_2": "dog",
-  "dog_a_3": "dog",
-  "ball_a_4": "ball",
-  "ball_a_5": "ball",
-  "sprinkler_a_6": "sprinkler",
-  "owner_a_7": "owner",
-  "owner_a_8": "owner"
-}}
+Objects: ball (2), dog (4), owner (2), sprinkler
 
 IMAGE B
 Caption: A crowd of dogs races down a marked track during a dog competition. Four trainers stand at the sidelines holding leashes and stopwatches. A banner with the competition logo waves in the background as spectators cheer from bleachers.
-Objects:
-{{
-  "dog_b_0": "dog",
-  "dog_b_1": "dog",
-  "dog_b_2": "dog",
-  "trainer_b_3": "trainer",
-  "trainer_b_4": "trainer",
-  "track_b_5": "track",
-  "leash_b_6": "leash"
-}}
+Objects: dog (3), leash, track, trainer (2)
 
 Output:
 {{
   "subquestions": [
     {{
-      "question": "Do any of the dogs appear relaxed?",
-      "subquery_type": "attribute",
-      "referenced_objects": ["dog_a_0", "dog_a_1", "dog_a_2", "dog_a_3"]
+      "question": "Do the dogs in image A appear relaxed?",
+      "subquestion_type": "attribute"
     }},
     {{
-      "question": "Do the dogs appear to be playing with each other?",
-      "subquery_type": "relationship",
-      "referenced_objects": ["dog_a_0", "dog_a_1", "dog_a_2", "dog_a_3"]
+      "question": "Are the dogs in image A playing with each other?",
+      "subquestion_type": "relationship"
     }},
     {{
-      "question": "Do the dogs appear to be playing with balls?",
-      "subquery_type": "relationship",
-      "referenced_objects": ["dog_a_0", "dog_a_1", "dog_a_2", "dog_a_3", "ball_a_4", "ball_a_5"]
+      "question": "Are the dogs in image A playing with balls?",
+      "subquestion_type": "relationship"
     }},
     {{
-      "question": "How many dogs are there?",
-      "subquery_type": "count",
-      "referenced_objects": ["dog_a_0", "dog_a_1", "dog_a_2", "dog_a_3", "dog_b_0", "dog_b_1", "dog_b_2"]
+      "question": "How many dogs are there in image A?",
+      "subquestion_type": "count"
     }},
     {{
-      "question": "Are the dogs in image B running on the track?",
-      "subquery_type": "relationship",
-      "referenced_objects": ["dog_b_0", "dog_b_1", "dog_b_2", "track_b_5"]
+      "question": "How many dogs are there in image B?",
+      "subquestion_type": "count"
+    }},
+    {{
+      "question": "Are the dogs in image B running on a track?",
+      "subquestion_type": "relationship"
     }},
     {{
       "question": "Are the trainers holding leashes?",
-      "subquery_type": "relationship",
-      "referenced_objects": ["trainer_b_3", "trainer_b_4", "leash_b_6"]
+      "subquestion_type": "relationship"
     }},
     {{
-      "question": "Are the dogs in image B competing or racing with each other?",
-      "subquery_type": "relationship",
-      "referenced_objects": ["dog_b_0", "dog_b_1", "dog_b_2"]
+      "question": "Are the dogs in image B competing or racing?",
+      "subquestion_type": "attribute"
     }},
     {{
       "question": "Is the environment in image A open and natural?",
-      "subquery_type": "scene_attribute",
-      "referenced_objects": []
+      "subquestion_type": "scene_attribute"
     }},
     {{
       "question": "Is the environment in image B structured and man-made?",
-      "subquery_type": "scene_attribute",
-      "referenced_objects": []
+      "subquestion_type": "scene_attribute"
     }}
   ]
 }}
@@ -385,74 +321,46 @@ Ultimate Question: Which image appears more fair?
 
 IMAGE A
 Caption: Five children sit in a circle dividing colorful candies evenly among themselves. Each child smiles and places pieces into small cups. The table is neatly arranged, and everyone receives the same amount. A teacher stands nearby supervising.
-Objects:
-{{
-  "child_a_0": "child",
-  "child_a_1": "child",
-  "child_a_2": "child",
-  "child_a_3": "child",
-  "child_a_4": "child",
-  "candy_a_5": "candy",
-  "candy_a_6": "candy",
-  "cup_a_7": "cup",
-  "cup_a_8": "cup"
-}}
+Objects: candy (2), child (5), cup (2)
 
 IMAGE B
 Caption: Several animals gather around two water troughs under the sun. Three horses drink from a full container while two goats stand beside an empty trough. A farmer watches from the distance without intervening.
-Objects:
-{{
-  "horse_b_0": "horse",
-  "horse_b_1": "horse",
-  "horse_b_2": "horse",
-  "goat_b_3": "goat",
-  "goat_b_4": "goat",
-  "trough_b_5": "trough",
-  "trough_b_6": "trough"
-}}
+Objects: goat (2), horse (3), trough (2)
 
 Output:
 {{
   "subquestions": [
     {{
       "question": "Do the children each have candies in front of them?",
-      "subquery_type": "relationship",
-      "referenced_objects": ["child_a_0", "child_a_1", "child_a_2", "child_a_3", "child_a_4", "candy_a_5", "candy_a_6"]
+      "subquestion_type": "relationship"
     }},
     {{
-      "question": "How many candies are there?",
-      "subquery_type": "count",
-      "referenced_objects": ["candy_a_5", "candy_a_6"]
+      "question": "How many candies are there in image A?",
+      "subquestion_type": "count"
     }},
     {{
-      "question": "How many children are there?",
-      "subquery_type": "count",
-      "referenced_objects": ["child_a_0", "child_a_1", "child_a_2", "child_a_3", "child_a_4"]
+      "question": "How many children are there in image A?",
+      "subquestion_type": "count"
     }},
     {{
-      "question": "Are the horses drinking from the full trough?",
-      "subquery_type": "relationship",
-      "referenced_objects": ["horse_b_0", "horse_b_1", "horse_b_2", "trough_b_5"]
+      "question": "Are the horses drinking from a full trough?",
+      "subquestion_type": "relationship"
     }},
     {{
-      "question": "Are the goats standing beside the empty trough?",
-      "subquery_type": "relationship",
-      "referenced_objects": ["goat_b_3", "goat_b_4", "trough_b_6"]
+      "question": "Are the goats standing beside an empty trough?",
+      "subquestion_type": "relationship"
     }},
     {{
       "question": "Do the goats appear thirsty or waiting for water?",
-      "subquery_type": "attribute",
-      "referenced_objects": ["goat_b_3", "goat_b_4"]
+      "subquestion_type": "attribute"
     }},
     {{
       "question": "Is the environment in image A organized?",
-      "subquery_type": "scene_attribute",
-      "referenced_objects": []
+      "subquestion_type": "scene_attribute"
     }},
     {{
       "question": "Is the environment in image B dry?",
-      "subquery_type": "scene_attribute",
-      "referenced_objects": []
+      "subquestion_type": "scene_attribute"
     }}
   ]
 }}
@@ -480,46 +388,26 @@ Ultimate Question: {ultimate_question}"""
     ) -> List[BinarySubquestion]:
         """
         Convert Pydantic-validated subquestions to BinarySubquestion objects.
-        Trust LLM-provided object references and types, only validate object ID existence.
 
         Args:
             subquestions: List of SubquestionItem objects from Pydantic validation
-            all_objects: Original objects for validation
+            all_objects: Original objects (unused now, but kept for compatibility)
 
         Returns:
             List[BinarySubquestion]: BinarySubquestion instances
         """
         binary_subquestions = []
 
-        # Get valid object IDs for validation (use same format as context building)
-        valid_object_ids = set()
-        for image_id, objects in all_objects.items():
-            for obj in objects:
-                # Use same format as _build_structured_context: strip "image_" prefix
-                simple_image_id = image_id.replace("image_", "")
-                obj_id = f"{obj.label}_{simple_image_id}_{obj.object_id}"
-                valid_object_ids.add(obj_id)
-
         for subquestion_item in subquestions:
             try:
                 # Extract data from SubquestionItem (Pydantic already validated types)
                 question = subquestion_item.question.strip()
-                subquery_type = subquestion_item.subquery_type.strip()
+                subquestion_type = subquestion_item.subquestion_type.strip()
 
-                # Trust LLM-provided referenced_objects, but validate they exist
-                referenced_objects = getattr(subquestion_item, 'referenced_objects', [])
-
-                # Validate that all referenced objects exist in our valid set
-                invalid_objects = [obj_id for obj_id in referenced_objects if obj_id not in valid_object_ids]
-                if invalid_objects:
-                    print(f"Warning: Skipping subquestion with invalid object IDs: {invalid_objects}")
-                    continue
-
-                # Create BinarySubquestion instance with validated data
+                # Create BinarySubquestion instance
                 binary_subquestion = BinarySubquestion(
                     question=question,
-                    referenced_objects=referenced_objects,
-                    subquery_type=subquery_type
+                    subquestion_type=subquestion_type
                 )
 
                 binary_subquestions.append(binary_subquestion)
@@ -545,13 +433,11 @@ Ultimate Question: {ultimate_question}"""
             for subquestion in subquestions:
                 # Check required attributes exist
                 assert hasattr(subquestion, 'question')
-                assert hasattr(subquestion, 'referenced_objects')
-                assert hasattr(subquestion, 'subquery_type')
+                assert hasattr(subquestion, 'subquestion_type')
 
                 # Validate basic content (non-empty)
                 assert subquestion.question.strip()
-                assert subquestion.subquery_type.strip()
-                assert isinstance(subquestion.referenced_objects, list)
+                assert subquestion.subquestion_type.strip()
 
             return True
 
@@ -581,20 +467,16 @@ Ultimate Question: {ultimate_question}"""
 
         for subquestion in subquestions:
             # Count types
-            subquery_type = subquestion.subquery_type
-            type_counts[subquery_type] = type_counts.get(subquery_type, 0) + 1
+            subquestion_type = subquestion.subquestion_type
+            type_counts[subquestion_type] = type_counts.get(subquestion_type, 0) + 1
 
             # Track question lengths
             question_lengths.append(len(subquestion.question.split()))
-
-            # Track unique objects
-            unique_objects.update(subquestion.referenced_objects)
 
         return {
             "count": len(subquestions),
             "types": type_counts,
             "avg_question_length": sum(question_lengths) / len(question_lengths) if question_lengths else 0,
-            "unique_objects_referenced": len(unique_objects),
             "sample_questions": [sq.question for sq in subquestions[:3]]
         }
     

@@ -9,12 +9,14 @@ from pydantic import BaseModel, ValidationError
 from .output_models import (
     SubquestionResponse,
     SubquestionItem,
-    RelationshipResponse,
     AttributePlanningResponse,
     CandidateResponse,
     CountRequirementResponse,
     SceneAttributeResponse,
-    EntityExtractionResponse
+    EntityExtractionResponse,
+    ObjectDiscoveryResponse,
+    ImageDiscoveryResponse,
+    ObjectPairDiscoveryResponse
 )
 
 T = TypeVar('T', bound=BaseModel)
@@ -165,10 +167,6 @@ class LLMClient:
         """Generate subquestions with validation."""
         return self.chat_with_validation(messages, SubquestionResponse, **kwargs)
 
-    def extract_relationships(self, messages: List[Dict[str, str]], **kwargs) -> RelationshipResponse:
-        """Extract relationships with validation."""
-        return self.chat_with_validation(messages, RelationshipResponse, **kwargs)
-
     def plan_attributes(self, messages: List[Dict[str, str]], **kwargs) -> AttributePlanningResponse:
         """Plan attribute extraction requirements with validation."""
         return self.chat_with_validation(messages, AttributePlanningResponse, **kwargs)
@@ -188,3 +186,15 @@ class LLMClient:
     def extract_entities(self, messages: List[Dict[str, str]], **kwargs) -> EntityExtractionResponse:
         """Extract entities from image captions with validation."""
         return self.chat_with_validation(messages, EntityExtractionResponse, **kwargs)
+
+    def discover_objects(self, messages: List[Dict[str, str]], **kwargs) -> ObjectDiscoveryResponse:
+        """Discover relevant object IDs from natural language question."""
+        return self.chat_with_validation(messages, ObjectDiscoveryResponse, temperature=0.2, **kwargs)
+
+    def discover_images(self, messages: List[Dict[str, str]], **kwargs) -> ImageDiscoveryResponse:
+        """Discover relevant image IDs from natural language question."""
+        return self.chat_with_validation(messages, ImageDiscoveryResponse, temperature=0.2, **kwargs)
+
+    def discover_object_pairs(self, messages: List[Dict[str, str]], **kwargs) -> ObjectPairDiscoveryResponse:
+        """Discover relevant object pairs from natural language question."""
+        return self.chat_with_validation(messages, ObjectPairDiscoveryResponse, temperature=0.2, **kwargs)

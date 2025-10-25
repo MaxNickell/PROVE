@@ -143,9 +143,9 @@ class RelationshipAgent:
             if not relationship_subquestions:
                 return []
 
-            non_relationship_subquestions = [sq for sq in relationship_subquestions if sq.subquery_type != "relationship"]
+            non_relationship_subquestions = [sq for sq in relationship_subquestions if sq.subquestion_type != "relationship"]
             if non_relationship_subquestions:
-                invalid_types = [sq.subquery_type for sq in non_relationship_subquestions]
+                invalid_types = [sq.subquestion_type for sq in non_relationship_subquestions]
                 raise RelationshipAgentError(
                     f"RelationshipAgent only accepts relationship subquestions. "
                     f"Received {len(non_relationship_subquestions)} non-relationship subquestions: {set(invalid_types)}"
@@ -156,11 +156,10 @@ class RelationshipAgent:
 
             # Process each relationship subquestion with agent
             for i, subquestion in enumerate(relationship_subquestions, 1):
-                if subquestion.subquery_type != "relationship":
+                if subquestion.subquestion_type != "relationship":
                     continue
 
                 print(f"\n  Processing subquestion {i}/{len(relationship_subquestions)}: {subquestion.question}")
-                print(f"  Referenced objects: {subquestion.referenced_objects}")
 
                 # Run agentic extraction for this subquestion
                 results = self.process_single_subquestion(subquestion, image_paths, images)
@@ -191,21 +190,25 @@ class RelationshipAgent:
     ) -> List[RelationshipResult]:
         """
         Process single relationship subquestion using agentic loop.
+        NOW: Discovers relevant object pairs from natural language question.
 
         Args:
-            subquestion: Relationship subquestion to process
+            subquestion: Relationship subquestion to process (no object IDs)
             image_paths: Image file paths
             images: ImageData structure
 
         Returns:
             List[RelationshipResult]: Extracted relationship results
         """
-        # 1. Initialize agent state with object pairs from referenced objects
-        object_pairs = self._extract_object_pairs_from_references(subquestion.referenced_objects)
+        # 1. Discover which object pairs are relevant to this question
+        print(f"    Discovering relevant object pairs for: {subquestion.question}")
+        object_pairs = self._discover_relevant_object_pairs(subquestion.question, images)
+        print(f"    → Discovered {len(object_pairs)} relevant pairs")
 
+        # 2. Initialize agent state with discovered pairs
         state = RelationshipAgentState(
             original_question=subquestion.question,
-            referenced_objects=subquestion.referenced_objects,
+            referenced_objects=[],  # No longer used
             object_pairs=object_pairs
         )
 
@@ -267,30 +270,65 @@ class RelationshipAgent:
 
         return results
 
-    def _extract_object_pairs_from_references(
+    def _discover_relevant_object_pairs(
         self,
-        referenced_objects: List[str]
+        question: str,
+        images: Dict[str, ImageData]
     ) -> List[Tuple[str, str]]:
         """
-        Extract potential object pairs to investigate from referenced objects.
-        For relationships, we typically need to examine pairs of objects.
+        LLM analyzes natural language question to discover relevant object pairs.
 
         Args:
-            referenced_objects: List of object IDs from subquestion
+            question: Natural language relationship question
+                     (e.g., "Is a bird perched on the buffalo?")
+            images: All detected objects
 
         Returns:
-            List of (subject_id, object_id) tuples to investigate
+            List of (subject_id, object_id) tuples
         """
-        pairs = []
+        llm_client = self.model_manager.get_llm_client()
 
-        # Generate all possible pairs from referenced objects
-        for i in range(len(referenced_objects)):
-            for j in range(i + 1, len(referenced_objects)):
-                # Add both directions since relationships can be directional
-                pairs.append((referenced_objects[i], referenced_objects[j]))
-                pairs.append((referenced_objects[j], referenced_objects[i]))
+        # Build object list
+        object_lines = []
+        for image_id, image_data in sorted(images.items()):
+            object_lines.append(f"\n{image_id.upper()}:")
+            for obj in image_data.objects:
+                simple_id = image_id.replace("image_", "")
+                obj_id = f"{obj.label}_{simple_id}_{obj.object_id}"
+                object_lines.append(f"  - {obj_id} ({obj.label})")
 
-        return pairs
+        object_context = "\n".join(object_lines)
+
+        messages = [{
+            "role": "system",
+            "content": "You analyze relationship questions to identify which object pairs are relevant."
+        }, {
+            "role": "user",
+            "content": f"""QUESTION: {question}
+
+DETECTED OBJECTS:
+{object_context}
+
+TASK: Identify which object PAIRS are relevant for this relationship question.
+
+Rules:
+1. Parse the question to understand what relationship is being asked (e.g., "perched on", "near", "holding")
+2. Identify subject and object classes (e.g., "Is X on Y?" → subject=X, object=Y)
+3. Include ALL plausible pairs if multiple instances exist
+4. For "in both images" questions, generate pairs from both images
+5. Subject is the active entity, object is the passive entity
+
+Output JSON:
+{{
+  "object_pairs": [
+    {{"subject_id": "bird_a_0", "object_id": "buffalo_a_3"}},
+    {{"subject_id": "bird_b_2", "object_id": "cow_b_4"}}
+  ]
+}}"""
+        }]
+
+        response = llm_client.discover_object_pairs(messages)
+        return [(pair.subject_id, pair.object_id) for pair in response.object_pairs]
 
     def _agent_decide_next_action(self, state: RelationshipAgentState) -> RelationshipAgentDecision:
         """
@@ -566,25 +604,18 @@ Respond in strict JSON format only."""
 
 {bq.binary_question}
 
-Answer Yes or No."""
+Answer Yes or No.\n\nAnswer:"""
 
         # Run verification with logits for probability extraction
         response, logits = qwen_client.run_inference_with_logits(annotated_image, prompt)
 
-        # Extract probability using verbalizer summing (Yes/No logits)
-        probability = get_verifier_probability(
-            logits,
-            response,
-            qwen_client.processor.tokenizer
-        )
-
-        # DEBUG: Save crops and print full verification details
+        # DEBUG: Save crops and print full verification details (BEFORE verbalizer to group output)
         if self.debug:
             # Save the annotated crop
             debug_filename = f"debug_relationships/{bq.subject_id}__{bq.object_id}__{bq.relation}.png"
             annotated_image.save(debug_filename)
 
-            # Print full debugging info
+            # Print full debugging info FIRST (before verbalizer breakdown)
             print("\n" + "=" * 80)
             print(f"🔍 RELATIONSHIP VERIFICATION DEBUG")
             print("=" * 80)
@@ -606,7 +637,18 @@ Answer Yes or No."""
             print(f"\n--- VLM RESPONSE ---")
             print(f'"{response}"')
             print(f"--- END RESPONSE ---")
-            print(f"\nExtracted Probability: {probability:.4f}")
+
+        # Extract probability using verbalizer summing (Yes/No logits)
+        # This will print verbalizer breakdown if debug=True
+        probability = get_verifier_probability(
+            logits,
+            response,
+            qwen_client.processor.tokenizer,
+            debug=self.debug  # Pass debug flag for detailed logit breakdown
+        )
+
+        if self.debug:
+            print(f"\n✓ Final Result: {bq.subject_id} {bq.relation} {bq.object_id} (probability: {probability:.4f})")
             print("=" * 80 + "\n")
 
         return probability
@@ -633,11 +675,11 @@ Answer Yes or No."""
         annotated_image = image.copy()
         draw = ImageDraw.Draw(annotated_image)
 
-        # Draw RED box for subject (thicker lines for better visibility)
-        draw.rectangle(subject_bbox, outline="red", width=10)
+        # Draw RED box for subject (3px for visibility without overwhelming)
+        draw.rectangle(subject_bbox, outline="red", width=3)
 
-        # Draw BLUE box for object (thicker lines for better visibility)
-        draw.rectangle(object_bbox, outline="blue", width=10)
+        # Draw BLUE box for object (3px for visibility without overwhelming)
+        draw.rectangle(object_bbox, outline="blue", width=3)
 
         return annotated_image
 

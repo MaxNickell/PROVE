@@ -31,49 +31,49 @@ class ProbLogExecutor:
         """Initialize executor with ModelManager singleton."""
         self.model_manager = ModelManager()
     
-    def execute_subqueries(
+    def execute_subquestions(
         self,
         subquestions: List[BinarySubquestion],
         facts: List[ProbLogFact]
     ) -> List[SubquestionResult]:
         """
-        Execute all subqueries against the knowledge base.
-        
+        Execute all subquestions against the knowledge base.
+
         Args:
-            subquestions: Binary subqueries to answer
+            subquestions: Binary subquestions to answer
             facts: ProbLog facts (knowledge base)
-            
+
         Returns:
-            List[SubquestionResult]: Results for each subquery
-            
+            List[SubquestionResult]: Results for each subquestion
+
         Raises:
             ProbLogExecutorError: If execution fails
         """
         try:
             if not subquestions:
                 return []
-            
+
             # Get LLM client for query decomposition
             llm_client = self.model_manager.get_llm_client()
-            
+
             # Build fact lookup for efficient querying
             fact_lookup = self._build_fact_lookup(facts)
-            
-            # Process each subquery
+
+            # Process each subquestion
             results = []
-            
-            for subquery in subquestions:
-                result = self._execute_single_subquery(
-                    subquery, facts, fact_lookup, llm_client
+
+            for subquestion in subquestions:
+                result = self._execute_single_subquestion(
+                    subquestion, facts, fact_lookup, llm_client
                 )
                 results.append(result)
-            
+
             return results
-            
+
         except Exception as err:
             raise ProbLogExecutorError(f"ProbLog execution failed: {err}")
-    
-    def _execute_single_subquery(
+
+    def _execute_single_subquestion(
         self,
         subquestion: BinarySubquestion,
         facts: List[ProbLogFact],
@@ -81,46 +81,46 @@ class ProbLogExecutor:
         llm_client
     ) -> SubquestionResult:
         """
-        Execute a single subquery against the knowledge base.
-        
+        Execute a single subquestion against the knowledge base.
+
         Args:
-            subquestion: Binary subquery to execute
+            subquestion: Binary subquestion to execute
             facts: All ProbLog facts
             fact_lookup: Organized fact lookup
             llm_client: LLM client for query decomposition
-            
+
         Returns:
             SubquestionResult: Execution result
         """
         try:
-            # Decompose subquery to logical reasoning
-            reasoning_components = self._decompose_subquery(llm_client, subquery, facts)
-            
+            # Decompose subquestion to logical reasoning
+            reasoning_components = self._decompose_subquestion(llm_client, subquestion, facts)
+
             # Execute reasoning using fact lookup
             probability, supporting_facts = self._compute_probability(
                 reasoning_components, fact_lookup
             )
-            
+
             # Build evidence trail
             evidence_trail = self._build_evidence_trail(
                 reasoning_components, supporting_facts
             )
-            
+
             # Create result
             result = SubquestionResult(
-                subquery=subquestion.question,
+                subquestion=subquestion.question,
                 probability=probability,
                 supporting_facts=[fact.to_prolog_string() for fact in supporting_facts],
                 evidence_trail=evidence_trail
             )
-            
+
             return result
-            
+
         except Exception as e:
-            print(f"Warning: Failed to execute subquery '{subquestion.question}': {e}")
-            # Return default result for failed subqueries
+            print(f"Warning: Failed to execute subquestion '{subquestion.question}': {e}")
+            # Return default result for failed subquestions
             return SubquestionResult(
-                subquery=subquestion.question,
+                subquestion=subquestion.question,
                 probability=0.5,  # Default uncertainty
                 supporting_facts=[],
                 evidence_trail=[f"Failed to execute: {str(e)}"]
@@ -157,31 +157,30 @@ class ProbLogExecutor:
         
         return lookup
     
-    def _decompose_subquery(
+    def _decompose_subquestion(
         self,
         llm_client,
         subquestion: BinarySubquestion,
         facts: List[ProbLogFact]
     ) -> Dict[str, Any]:
         """
-        Decompose subquery into logical reasoning components.
-        
+        Decompose subquestion into logical reasoning components.
+
         Args:
             llm_client: LLM client
-            subquestion: Binary subquery to decompose
+            subquestion: Binary subquestion to decompose
             facts: Available facts for context
-            
+
         Returns:
             Dict with reasoning components
         """
-        # Create context about available facts
-        fact_context = self._create_fact_context(facts, subquestion.referenced_objects)
-        
-        prompt = f"""Decompose this binary subquery into logical reasoning components that can be evaluated using the available facts:
+        # Create context about available facts (no referenced_objects needed)
+        fact_context = self._create_fact_context(facts)
 
-Subquery: "{subquestion.question}"
-Type: {subquestion.subquery_type}
-Referenced Objects: {subquestion.referenced_objects}
+        prompt = f"""Decompose this binary subquestion into logical reasoning components that can be evaluated using the available facts:
+
+Subquestion: "{subquestion.question}"
+Type: {subquestion.subquestion_type}
 
 Available Facts Context:
 {fact_context}
@@ -254,37 +253,36 @@ Examples:
     
     def _create_fact_context(
         self,
-        facts: List[ProbLogFact],
-        referenced_objects: List[str]
+        facts: List[ProbLogFact]
     ) -> str:
         """
-        Create context string showing available facts for referenced objects.
-        
+        Create context string showing available facts.
+
         Args:
             facts: All available facts
-            referenced_objects: Objects referenced in the subquery
-            
+
         Returns:
             str: Formatted fact context
         """
-        context_parts = []
-        
-        # Group facts by referenced objects
-        for obj_id in referenced_objects:
-            obj_facts = []
-            
-            for fact in facts:
-                # Check if this fact involves the referenced object
-                if obj_id in fact.arguments:
-                    fact_str = f"{fact.predicate}({', '.join(fact.arguments)}) [conf: {fact.probability:.2f}]"
-                    obj_facts.append(fact_str)
-            
-            if obj_facts:
-                context_parts.append(f"{obj_id}: {', '.join(obj_facts[:5])}")  # Limit to 5 facts
-            else:
-                context_parts.append(f"{obj_id}: No direct facts available")
-        
-        return "\n".join(context_parts)
+        if not facts:
+            return "No facts available"
+
+        # Show sample of facts by predicate type
+        fact_samples = []
+        predicates_shown = {}
+
+        for fact in facts[:20]:  # Show first 20 facts
+            predicate = fact.predicate
+            if predicate not in predicates_shown:
+                predicates_shown[predicate] = 0
+
+            if predicates_shown[predicate] < 5:  # Max 5 facts per predicate type
+                fact_str = f"{fact.predicate}({', '.join(fact.arguments)}) [conf: {fact.probability:.2f}]"
+                fact_samples.append(fact_str)
+                predicates_shown[predicate] += 1
+
+        summary = f"Total facts: {len(facts)}, Sample facts:\n" + "\n".join(fact_samples)
+        return summary
     
     def _compute_probability(
         self,
@@ -510,7 +508,6 @@ if __name__ == "__main__":
     subqueries = [
         BinarySubquestion(
             question="Does person_a_0 have high muscle_mass?",
-            referenced_objects=["person_a_0"],
             subquery_type="attribute"
         )
     ]

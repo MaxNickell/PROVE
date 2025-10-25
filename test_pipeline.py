@@ -1,11 +1,16 @@
 #!/usr/bin/env python3
 """
-PROVE Pipeline Test - Complete 11-Step Subquery-Driven Architecture.
-Tests the complete subquery-driven evidence extraction pipeline with binary verification.
+PROVE Pipeline Test - Complete 11-Step Subquestion-Driven Architecture.
+Tests the complete subquestion-driven evidence extraction pipeline with binary verification.
 """
 
 import sys
 import os
+import warnings
+
+# Suppress transformers generation warnings
+warnings.filterwarnings("ignore", message="The following generation flags")
+
 sys.path.insert(0, os.path.dirname(__file__))
 
 from src.pipeline.detector import Detector
@@ -21,8 +26,12 @@ from src.core.knowledge_base import KnowledgeBase
 
 
 def main():
+    # Clear Python cache to avoid stale imports (especially for count_processor)
+    if 'src.pipeline.count_processor' in sys.modules:
+        del sys.modules['src.pipeline.count_processor']
+
     print("=== PROVE Pipeline: 11-Step Subquery-Driven Architecture ===")
-    
+
     # Test imports first
     print("Testing component imports...")
     try:
@@ -44,7 +53,7 @@ def main():
         return 1
     
     # Ultimate question to answer
-    ultimate_question = "Is a bird perched on the back of a large brown animal in a natural scene in both images?"
+    ultimate_question = "In the image to the left, a greyhound is laying down, and has a cast on a leg, and both images are indoor."
     print(f"Ultimate Question: {ultimate_question}")
     print()
     
@@ -53,8 +62,8 @@ def main():
     
     # Test images
     image_paths = {
-        "image_a": "./test_images/dev-473-3-img0.png",
-        "image_b": "./test_images/dev-473-3-img1.png"
+        "image_a": "./test_images/dev-350-2-img0.png",
+        "image_b": "./test_images/dev-350-2-img1.png"
     }
     
     try:
@@ -116,8 +125,7 @@ def main():
         print(f"Generated {len(subquestions)} binary subquestions:")
         for i, subquestion in enumerate(subquestions, 1):
             print(f"  {i}. {subquestion.question}")
-            print(f"     Type: {subquestion.subquery_type}")
-            print(f"     Objects: {subquestion.referenced_objects}")
+            print(f"     Type: {subquestion.subquestion_type}")
         
         print()
         
@@ -135,10 +143,10 @@ def main():
             count_subquestions = []
         else:
             # Filter subquestions by type for targeted processing
-            attribute_subquestions = [sq for sq in kb.subquestions if sq.subquery_type == "attribute"]
-            relationship_subquestions = [sq for sq in kb.subquestions if sq.subquery_type == "relationship"]
-            scene_attribute_subquestions = [sq for sq in kb.subquestions if sq.subquery_type == "scene_attribute"]
-            count_subquestions = [sq for sq in kb.subquestions if sq.subquery_type == "count"]
+            attribute_subquestions = [sq for sq in kb.subquestions if sq.subquestion_type == "attribute"]
+            relationship_subquestions = [sq for sq in kb.subquestions if sq.subquestion_type == "relationship"]
+            scene_attribute_subquestions = [sq for sq in kb.subquestions if sq.subquestion_type == "scene_attribute"]
+            count_subquestions = [sq for sq in kb.subquestions if sq.subquestion_type == "count"]
 
             print(f"Subquestion routing:")
             print(f"  Attribute: {len(attribute_subquestions)} subquestions")
@@ -159,14 +167,9 @@ def main():
         if not attribute_subquestions:
             print("No attribute subquestions to process")
         else:
-            print(f"Processing {len(attribute_subquestions)} attribute subquestions:")
-            print("  (Note: Agentic approach - LLM orchestrates iterative information gathering)")
-            for i, sq in enumerate(attribute_subquestions[:3], 1):  # Show first 3
-                print(f"  {i}. {sq.question}")
-            if len(attribute_subquestions) > 3:
-                print(f"     ... and {len(attribute_subquestions) - 3} more")
+            print(f"Processing {len(attribute_subquestions)} attribute subquestions")
 
-            attribute_agent = AttributeAgent()
+            attribute_agent = AttributeAgent(debug=True)
 
             # Process attribute subquestions individually - returns attributes per image
             attributes_per_image = attribute_agent.process_attribute_subquestions(
@@ -188,12 +191,8 @@ def main():
         if not relationship_subquestions:
             print("No relationship subquestions to process")
         else:
-            print(f"Processing {len(relationship_subquestions)} relationship subquestions:")
-            print("  (Note: Enhanced to handle compound subquestions requiring cross-image relationships)")
-            for i, sq in enumerate(relationship_subquestions[:3], 1):  # Show first 3
-                print(f"  {i}. {sq.question}")
-            if len(relationship_subquestions) > 3:
-                print(f"     ... and {len(relationship_subquestions) - 3} more")
+            print(f"Processing {len(relationship_subquestions)} relationship subquestions")
+
             relationship_agent = RelationshipAgent(debug=True)  # Enable debug mode
 
             # Process only relationship subquestions
@@ -268,23 +267,15 @@ def main():
         if not scene_attribute_subquestions:
             print("No scene attribute subquestions to process")
         else:
-            print(f"Processing {len(scene_attribute_subquestions)} scene attribute subquestions:")
-            print("  (Note: Each subquestion may decompose into multiple atomic binary questions)")
-            for i, sq in enumerate(scene_attribute_subquestions, 1):
-                print(f"  {i}. {sq.question}")
-                print(f"     Type: {sq.subquery_type}, Referenced Objects: {sq.referenced_objects}")
+            print(f"Processing {len(scene_attribute_subquestions)} scene attribute subquestions")
 
             # Process scene attributes using new ContextProcessor
             try:
-                print("  Initializing SceneAttributeProcessor...")
                 scene_attribute_processor = SceneAttributeProcessor()
 
-                print(f"  Processing scene attributes with {len(image_paths)} images...")
                 scene_attributes_counts = scene_attribute_processor.process_scene_attribute_subquestions(
                     scene_attribute_subquestions, image_paths, kb.images, image_contexts
                 )
-
-                print(f"  Scene context processor returned data for {len(scene_attributes_counts)} images")
 
                 # Count scene attributes now stored directly in ImageData
                 total_attributes = 0
@@ -350,6 +341,15 @@ def main():
             with open("knowledge_base.pl", "w") as f:
                 f.write(prolog_program)
             print(f"  ✓ ProbLog program saved to knowledge_base.pl ({len(prolog_program)} characters)")
+
+            # Show sample facts from knowledge_base.pl
+            print(f"\n  Sample facts from knowledge_base.pl:")
+            with open("knowledge_base.pl", "r") as f:
+                lines = f.readlines()
+                for line in lines[:10]:  # Show first 10 lines
+                    print(f"    {line.rstrip()}")
+                if len(lines) > 10:
+                    print(f"    ... and {len(lines) - 10} more facts")
 
             # Show sample facts for verification
             facts_by_predicate = {}
@@ -512,7 +512,7 @@ def main():
         print(f"\nSubquestion breakdown:")
         subquestion_types = {}
         for sq in kb.subquestions:
-            subquestion_types[sq.subquery_type] = subquestion_types.get(sq.subquery_type, 0) + 1
+            subquestion_types[sq.subquestion_type] = subquestion_types.get(sq.subquestion_type, 0) + 1
         for sq_type, count in subquestion_types.items():
             print(f"  {sq_type}: {count}")
 
