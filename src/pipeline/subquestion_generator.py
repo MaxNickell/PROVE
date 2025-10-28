@@ -168,23 +168,22 @@ You will be given:
 Given the visual context, you must reason through the ultimate question. Break down the ultimate question into a set of binary subquestions that, when answered, can collectively resolve the ultimate question.
 
 SUBQUESTION CATEGORIES
-- **attribute**: Specific visual attributes of objects
-- **relationship**: Spatial relationships or interactions
-- **scene_attribute**: Visually observable property of the entire scene
-- **count**: Which object categories' counts must be determined
+- **attribute**: Verifies a specific visual property or value of an object (e.g., color, material, size, texture).
+- **relationship**: Verifies a spatial or functional relationship between two or more objects (e.g., on top of, holding, to the left of).
+- **scene_attribute**: Verifies a global visual property of the entire scene (e.g., bright, indoor, snowy).
+- **count**: Verifies the number of objects of a given class present in the image.
 
 RULES
 - Each subquestion must be answerable with Yes or No.
 - Write questions in natural language only.
-- DO NOT reference specific object IDs or indices.
-- DO NOT combine multiple questions into a single question.
+- Do not write compositional questions in a single question. Seperate compositional questions into multiple questions (e.g., "Is the dog to the left of the blue cat?" should be two questions: "Is the dog to the left of the cat?" and "Is the cat blue?").
 - Mention object classes generically (e.g., "the mailbox", "a buffalo", "the forks").
 - The object list shows what entities are detected - use this to inform your questions.
-- Attribute questions should specify which attribute class or value must be verified.
-- Relationship questions should ask one explicit visual relation.
-- Count questions must explicitly ask about the number of objects of a certain class.
-- Scene attribute questions must ask an observable, image-level visual property.
-- The combined subquestions must collectively contain all the information needed to answer the ultimate question.
+- Attribute questions must specify a concrete visual value or property to of an object or objects to be verified.
+- Relationship questions must ask one explicit relation at a time between objects.
+- Count questions must ask directly about the number of objects of a given class.
+- Scene attribute questions must describe a clearly observable property of the full scene.
+- Together, the subquestions must provide all information needed to answer the ultimate question.
 - Output strict JSON with only "question" and "subquestion_type" fields.
 
 ---
