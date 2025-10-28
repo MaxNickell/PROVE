@@ -132,7 +132,7 @@
 - `attribute` → AttributeAgent (agentic LLM-VLM loop)
 - `relationship` → RelationshipAgent (agentic LLM-VLM loop)
 - `count` → CountProcessor
-- `scene_attribute` → SceneAttributeProcessor
+- `scene_attribute` → SceneAttributeAgent (agentic LLM-VLM loop)
 
 ---
 

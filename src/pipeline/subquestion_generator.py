@@ -119,8 +119,8 @@ class SubquestionGenerator:
 
             context_parts.append(f"""
 Image {image_id.upper()}:
-Caption: {caption}
-Objects: {objects_str}""")
+Image Caption: {caption}
+Object List: {objects_str}""")
 
         return "\n".join(context_parts)
     
@@ -177,7 +177,8 @@ RULES
 - Each subquestion must be answerable with Yes or No.
 - Write questions in natural language only.
 - DO NOT reference specific object IDs or indices.
-- Mention object classes generically (e.g., "the bird", "a buffalo", "the animals").
+- DO NOT combine multiple questions into a single question.
+- Mention object classes generically (e.g., "the mailbox", "a buffalo", "the forks").
 - The object list shows what entities are detected - use this to inform your questions.
 - Attribute questions should specify which attribute class or value must be verified.
 - Relationship questions should ask one explicit visual relation.
@@ -194,30 +195,30 @@ RULES
 Ultimate Question: Which scene depicts more power?
 
 IMAGE A
-Caption: A king sits on a golden throne in a grand hall surrounded by four guards holding spears. Red carpets line the floor and tall stained glass windows cast colorful light over the crown resting beside him. Three subjects bow before the throne while two musicians stand by holding trumpets.
-Objects: crown, guard (4), king, spear (4), subject (3), throne
+Image Caption: A king sits on a golden throne in a grand hall surrounded by guards holding spears. Red carpets line the floor and tall stained glass windows cast colorful light over the crown resting beside him. Three subjects bow before the throne while two musicians stand by holding trumpets.
+Object List: crown, guard (4), king, spear (4), subject (3), throne
 
 IMAGE B
-Caption: A man sits cross-legged on the sidewalk with torn clothes and an empty cup beside him. Two people walk past without looking as a gust of wind scatters some coins near his feet. Behind him, a cracked wall with faded posters leans into shadow.
-Objects: clothing, coin (2), cup, man, poster, sidewalk, wall
+Image Caption: A man sits cross-legged on the sidewalk with torn clothes and an empty cup beside him. Two people walk past without looking as a gust of wind scatters some coins near his feet. Behind him, a cracked wall with faded posters leans into shadow.
+Object List: clothing, coin (2), cup, man, poster, sidewalk, wall
 
 Output:
 {{
   "subquestions": [
     {{
-      "question": "Is the king sitting on the throne?",
+      "question": "Is the king in image A sitting on the throne?",
       "subquestion_type": "relationship"
     }},
     {{
-      "question": "Is the king wearing the crown?",
+      "question": "Is the king in image A wearing the crown?",
       "subquestion_type": "relationship"
     }},
     {{
-      "question": "Do the guards appear to be facing or serving the king?",
+      "question": "Do the guards in image A appear to be facing or serving the king?",
       "subquestion_type": "relationship"
     }},
     {{
-      "question": "Are the subjects bowing toward the king?",
+      "question": "Are the subjects in image A bowing toward the king?",
       "subquestion_type": "relationship"
     }},
     {{
@@ -229,19 +230,23 @@ Output:
       "subquestion_type": "count"
     }},
     {{
-      "question": "Is the man sitting on the sidewalk?",
+      "question": "Is the man in image B sitting on the sidewalk?",
       "subquestion_type": "relationship"
     }},
     {{
-      "question": "Is the man wearing torn clothing?",
+      "question": "Is the man in image B wearing torn clothing?",
+      "subquestion_type": "relationship"
+    }},
+    {{
+      "question": "Is the man's clothing in image B torn or tattered?",
       "subquestion_type": "attribute"
     }},
     {{
-      "question": "Does the man appear to be poor?",
+      "question": "Does the man in image B appear to be poor or destitute?",
       "subquestion_type": "attribute"
     }},
     {{
-      "question": "Is the man sitting beside a cup for donations?",
+      "question": "Is the man in image B sitting beside a cup for donations?",
       "subquestion_type": "relationship"
     }},
     {{
@@ -261,12 +266,12 @@ Output:
 Ultimate Question: What is the difference between the two images?
 
 IMAGE A
-Caption: Several dogs of different breeds run freely through a sunny dog park. Two chase tennis balls, one leaps through a sprinkler, and three others roll in the grass while two owners watch from benches. Water bowls and toys are scattered across the open field.
-Objects: ball (2), dog (4), owner (2), sprinkler
+Image Caption: Several dogs of different breeds run freely through a sunny dog park. Two chase tennis balls, one leaps through a sprinkler, and three others roll in the grass while two owners watch from benches. Water bowls and toys are scattered across the open field.
+Object List: ball (2), dog (4), owner (2), sprinkler
 
 IMAGE B
-Caption: A crowd of dogs races down a marked track during a dog competition. Four trainers stand at the sidelines holding leashes and stopwatches. A banner with the competition logo waves in the background as spectators cheer from bleachers.
-Objects: dog (3), leash, track, trainer (2)
+Image Caption: A crowd of dogs races down a marked track during a dog competition. Four trainers stand at the sidelines holding leashes and stopwatches. A banner with the competition logo waves in the background as spectators cheer from bleachers.
+Object List: dog (3), leash, track, trainer (2)
 
 Output:
 {{
@@ -296,19 +301,23 @@ Output:
       "subquestion_type": "relationship"
     }},
     {{
-      "question": "Are the trainers holding leashes?",
+      "question": "Are the trainers in image B holding leashes?",
       "subquestion_type": "relationship"
     }},
     {{
-      "question": "Are the dogs in image B competing or racing?",
+      "question": "Are the dogs in image B in good physical condition?",
       "subquestion_type": "attribute"
+    }},
+    {{
+      "question": "Are the dogs in image B competing or racing?",
+      "subquestion_type": "relationship"
     }},
     {{
       "question": "Is the environment in image A open and natural?",
       "subquestion_type": "scene_attribute"
     }},
     {{
-      "question": "Is the environment in image B structured and man-made?",
+      "question": "Is the environment in image B structured or man-made?",
       "subquestion_type": "scene_attribute"
     }}
   ]
@@ -320,18 +329,18 @@ Output:
 Ultimate Question: Which image appears more fair?
 
 IMAGE A
-Caption: Five children sit in a circle dividing colorful candies evenly among themselves. Each child smiles and places pieces into small cups. The table is neatly arranged, and everyone receives the same amount. A teacher stands nearby supervising.
-Objects: candy (2), child (5), cup (2)
+Image Caption: Five children sit in a circle dividing colorful candies evenly among themselves. Each child smiles and places pieces into small cups. The table is neatly arranged, and everyone receives the same amount. A teacher stands nearby supervising.
+Object List: candy (2), child (5), cup (2)
 
 IMAGE B
-Caption: Several animals gather around two water troughs under the sun. Three horses drink from a full container while two goats stand beside an empty trough. A farmer watches from the distance without intervening.
-Objects: goat (2), horse (3), trough (2)
+Image Caption: Several animals gather around two water troughs under the sun. Three horses drink from a full container while two goats stand beside an empty trough. A farmer watches from the distance without intervening.
+Object List: goat (2), horse (3), trough (2)
 
 Output:
 {{
   "subquestions": [
     {{
-      "question": "Do the children each have candies in front of them?",
+      "question": "In image A, Do the children each have candies in front of them?",
       "subquestion_type": "relationship"
     }},
     {{
@@ -343,25 +352,68 @@ Output:
       "subquestion_type": "count"
     }},
     {{
-      "question": "Are the horses drinking from a full trough?",
+      "question": "Are the horses in image B drinking from a full trough?",
       "subquestion_type": "relationship"
     }},
     {{
-      "question": "Are the goats standing beside an empty trough?",
+      "question": "Are the goats in image B standing beside an empty trough?",
       "subquestion_type": "relationship"
     }},
     {{
-      "question": "Do the goats appear thirsty or waiting for water?",
+      "question": "Do the goats in image B appear thirsty or waiting for water?",
       "subquestion_type": "attribute"
     }},
     {{
-      "question": "Is the environment in image A organized?",
+      "question": "Is the environment in image A organized or well-kept?",
       "subquestion_type": "scene_attribute"
     }},
     {{
-      "question": "Is the environment in image B dry?",
+      "question": "Is the environment in image B dry or arid?",
       "subquestion_type": "scene_attribute"
     }}
+  ]
+}}
+
+---
+
+**Example 4**
+Ultimate Question: Which image depicts a man on the left of a woman carrying a red umbrella?
+
+IMAGE A
+Image Caption: Three people walk along a rainy city street. Two men and one woman are visible. The woman in a yellow raincoat holds an umbrella, while one man in a blue jacket stands nearby carrying a shopping bag. The other man, wearing a gray coat, walks farther behind them. Cars and streetlights line the wet sidewalk.
+Object List: umbrella, woman (1), man (2), shopping bag, car (2), streetlight (1)
+
+IMAGE B
+Image Caption: Four people stroll through a sunny park. A woman in a coat holds an umbrella while two men walk nearby — one pushing a stroller and another talking on a phone. Another woman sits on a bench under a tree.
+Object List: umbrella, woman (2), man (2), stroller, bench, tree (3)
+
+Output:
+{{
+  "subquestions": [
+    {{
+      "question": "In image A, is there a man to the left of a woman?",
+      "subquestion_type": "relationship"
+    }},
+    {{
+      "question": "In image B, is there a man to the left of a woman?",
+      "subquestion_type": "relationship"
+    }},
+    {{
+      "question": "In image A, is the woman carrying an umbrella?",
+      "subquestion_type": "relationship"
+    }},
+    {{
+      "question": "In image B, is the woman carrying an umbrella?",
+      "subquestion_type": "relationship"
+    }},
+    {{
+      "question": "In image A, is the umbrella the woman is carrying red?",
+      "subquestion_type": "attribute"
+    }},
+    {{
+      "question": "In image B, is the umbrella the woman is carrying red?",
+      "subquestion_type": "attribute"
+    }},
   ]
 }}
 

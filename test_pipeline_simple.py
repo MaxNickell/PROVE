@@ -18,7 +18,7 @@ from src.pipeline.subquestion_generator import SubquestionGenerator
 from src.pipeline.attribute_agent import AttributeAgent
 from src.pipeline.relationship_agent import RelationshipAgent
 from src.pipeline.count_processor import CountProcessor
-from src.pipeline.scene_attribute_processor import SceneAttributeProcessor
+from src.pipeline.scene_attribute_agent import SceneAttributeAgent
 from src.pipeline.problog_builder import ProbLogBuilder
 from src.pipeline.problog_executor import ProbLogExecutor
 from src.pipeline.answer_generator import AnswerGenerator
@@ -155,8 +155,8 @@ def main():
         # ========================================
         print("[7/11] Processing scene attributes...")
         if scene_attribute_subquestions:
-            scene_attribute_processor = SceneAttributeProcessor()
-            scene_attributes_counts = scene_attribute_processor.process_scene_attribute_subquestions(
+            scene_attribute_agent = SceneAttributeAgent()
+            scene_attributes_counts = scene_attribute_agent.process_scene_attribute_subquestions(
                 scene_attribute_subquestions, image_paths, kb.images, image_contexts
             )
             total_scene_attrs = sum(

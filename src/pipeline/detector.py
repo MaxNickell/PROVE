@@ -123,7 +123,7 @@ RULES
 - Use singular nouns (e.g., dogs -> dog, children -> child, geese -> goose)
 - Preserve multi word compound nouns (e.g., "traffic light", "tennis racket")
 - Do NOT include modifiers (e.g., "red car" -> "car", "large window" -> "window")
-- Exclude non detectable nouns (e.g., "scene", "view", "foreground", "background")
+- Exclude non detectable nouns (e.g., "scene", "view", "foreground", "background", "camera")
 - Output strict JSON, nothing else
 
 ---

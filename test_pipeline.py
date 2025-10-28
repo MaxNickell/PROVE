@@ -18,7 +18,7 @@ from src.pipeline.subquestion_generator import SubquestionGenerator
 from src.pipeline.attribute_agent import AttributeAgent
 from src.pipeline.relationship_agent import RelationshipAgent
 from src.pipeline.count_processor import CountProcessor
-from src.pipeline.scene_attribute_processor import SceneAttributeProcessor
+from src.pipeline.scene_attribute_agent import SceneAttributeAgent
 from src.pipeline.problog_builder import ProbLogBuilder
 from src.pipeline.problog_executor import ProbLogExecutor
 from src.pipeline.answer_generator import AnswerGenerator
@@ -41,7 +41,7 @@ def main():
         attribute_agent = AttributeAgent()
         relationship_agent = RelationshipAgent()
         count_processor = CountProcessor()
-        scene_attribute_processor = SceneAttributeProcessor()
+        scene_attribute_agent = SceneAttributeAgent()
         problog_builder = ProbLogBuilder()
         problog_executor = ProbLogExecutor()
         answer_generator = AnswerGenerator()
@@ -53,7 +53,7 @@ def main():
         return 1
     
     # Ultimate question to answer
-    ultimate_question = "In the image to the left, a greyhound is laying down, and has a cast on a leg, and both images are indoor."
+    ultimate_question = "Do both images depict an sad and injured dog in an outdoor environment where both dogs are wearing a bright green harness or black collar?"
     print(f"Ultimate Question: {ultimate_question}")
     print()
     
@@ -269,11 +269,11 @@ def main():
         else:
             print(f"Processing {len(scene_attribute_subquestions)} scene attribute subquestions")
 
-            # Process scene attributes using new ContextProcessor
+            # Process scene attributes using agentic approach
             try:
-                scene_attribute_processor = SceneAttributeProcessor()
+                scene_attribute_agent = SceneAttributeAgent()
 
-                scene_attributes_counts = scene_attribute_processor.process_scene_attribute_subquestions(
+                scene_attributes_counts = scene_attribute_agent.process_scene_attribute_subquestions(
                     scene_attribute_subquestions, image_paths, kb.images, image_contexts
                 )
 
