@@ -1,0 +1,638 @@
+{
+  "ultimate_question": "Are there more birds in image A than in image B and are all birds orange?",
+  "images": {
+    "image_a": {
+      "objects": [
+        {
+          "object_id": 0,
+          "label": "buffalo",
+          "bbox": [
+            93.88300323486328,
+            182.72000122070312,
+            402.96099853515625,
+            597.4400024414062
+          ],
+          "confidence": 0.874
+        },
+        {
+          "object_id": 1,
+          "label": "camera",
+          "bbox": [
+            92.99100494384766,
+            182.0800018310547,
+            402.96099853515625,
+            597.4400024414062
+          ],
+          "confidence": 0.857
+        },
+        {
+          "object_id": 2,
+          "label": "grass",
+          "bbox": [
+            2.006999969482422,
+            4.799999713897705,
+            443.5469970703125,
+            637.1199951171875
+          ],
+          "confidence": 0.883
+        },
+        {
+          "object_id": 3,
+          "label": "sky",
+          "bbox": [
+            1.5609999895095825,
+            1.5999999046325684,
+            443.5469970703125,
+            117.43999481201172
+          ],
+          "confidence": 0.867
+        },
+        {
+          "object_id": 4,
+          "label": "shoulder",
+          "bbox": [
+            93.88300323486328,
+            182.72000122070312,
+            402.96099853515625,
+            597.4400024414062
+          ],
+          "confidence": 0.846
+        },
+        {
+          "object_id": 5,
+          "label": "field",
+          "bbox": [
+            2.006999969482422,
+            4.159999847412109,
+            443.5469970703125,
+            637.760009765625
+          ],
+          "confidence": 0.906
+        },
+        {
+          "object_id": 6,
+          "label": "bird",
+          "bbox": [
+            196.01699829101562,
+            96.31999969482422,
+            270.4989929199219,
+            202.55999755859375
+          ],
+          "confidence": 0.938
+        }
+      ],
+      "attributes": {
+        "6": {
+          "attributes": {
+            "color": [
+              {
+                "value": "orange",
+                "confidence": 0.44788083454157057
+              }
+            ]
+          }
+        }
+      },
+      "relationships": [],
+      "scene_attributes": {},
+      "counts": {
+        "bird": {
+          "distribution": {
+            "0": 0.062000000000000055,
+            "1": 0.938
+          }
+        }
+      }
+    },
+    "image_b": {
+      "objects": [
+        {
+          "object_id": 0,
+          "label": "cow",
+          "bbox": [
+            27.434999465942383,
+            79.80000305175781,
+            559.614990234375,
+            358.6000061035156
+          ],
+          "confidence": 0.864
+        },
+        {
+          "object_id": 1,
+          "label": "egret",
+          "bbox": [
+            210.33499145507812,
+            224.60000610351562,
+            285.85498046875,
+            329.0
+          ],
+          "confidence": 0.886
+        },
+        {
+          "object_id": 2,
+          "label": "grass",
+          "bbox": [
+            2.06499981880188,
+            3.0,
+            587.344970703125,
+            398.20001220703125
+          ],
+          "confidence": 0.908
+        },
+        {
+          "object_id": 3,
+          "label": "shoulder",
+          "bbox": [
+            92.33499908447266,
+            80.20000457763672,
+            402.0849914550781,
+            150.60000610351562
+          ],
+          "confidence": 0.788
+        },
+        {
+          "object_id": 4,
+          "label": "head",
+          "bbox": [
+            351.344970703125,
+            151.40000915527344,
+            559.614990234375,
+            288.20001220703125
+          ],
+          "confidence": 0.887
+        },
+        {
+          "object_id": 5,
+          "label": "shrub",
+          "bbox": [
+            2.6549999713897705,
+            3.4000000953674316,
+            586.7549438476562,
+            397.8000183105469
+          ],
+          "confidence": 0.905
+        },
+        {
+          "object_id": 6,
+          "label": "horn",
+          "bbox": [
+            387.3349914550781,
+            156.60000610351562,
+            425.094970703125,
+            189.0
+          ],
+          "confidence": 0.881
+        },
+        {
+          "object_id": 7,
+          "label": "leg",
+          "bbox": [
+            97.05499267578125,
+            247.0,
+            167.26499938964844,
+            360.6000061035156
+          ],
+          "confidence": 0.803
+        },
+        {
+          "object_id": 8,
+          "label": "field",
+          "bbox": [
+            2.06499981880188,
+            3.0,
+            587.344970703125,
+            398.20001220703125
+          ],
+          "confidence": 0.912
+        },
+        {
+          "object_id": 9,
+          "label": "bird",
+          "bbox": [
+            210.33499145507812,
+            226.60000610351562,
+            286.4449768066406,
+            327.3999938964844
+          ],
+          "confidence": 0.871
+        },
+        {
+          "object_id": 10,
+          "label": "bird",
+          "bbox": [
+            293.5249938964844,
+            35.79999923706055,
+            340.1349792480469,
+            98.20000457763672
+          ],
+          "confidence": 0.871
+        }
+      ],
+      "attributes": {
+        "9": {
+          "attributes": {
+            "color": [
+              {
+                "value": "orange",
+                "confidence": 0.3130379734334475
+              }
+            ]
+          }
+        },
+        "10": {
+          "attributes": {
+            "color": [
+              {
+                "value": "orange",
+                "confidence": 0.49289090778621775
+              }
+            ]
+          }
+        }
+      },
+      "relationships": [],
+      "scene_attributes": {},
+      "counts": {
+        "bird": {
+          "distribution": {
+            "0": 0.016641,
+            "1": 0.224718,
+            "2": 0.758641
+          }
+        }
+      }
+    }
+  },
+  "subquestions": [
+    {
+      "question": "How many birds are there in image A?",
+      "subquestion_type": "count"
+    },
+    {
+      "question": "How many birds are there in image B?",
+      "subquestion_type": "count"
+    },
+    {
+      "question": "Are all the birds in image A orange?",
+      "subquestion_type": "attribute"
+    },
+    {
+      "question": "Are all the birds in image B orange?",
+      "subquestion_type": "attribute"
+    }
+  ],
+  "problog_facts": [
+    {
+      "probability": 0.874,
+      "predicate": "entity",
+      "arguments": [
+        "image_a",
+        "buffalo_a_0",
+        "buffalo",
+        "93",
+        "182",
+        "402",
+        "597"
+      ]
+    },
+    {
+      "probability": 0.857,
+      "predicate": "entity",
+      "arguments": [
+        "image_a",
+        "camera_a_1",
+        "camera",
+        "92",
+        "182",
+        "402",
+        "597"
+      ]
+    },
+    {
+      "probability": 0.883,
+      "predicate": "entity",
+      "arguments": [
+        "image_a",
+        "grass_a_2",
+        "grass",
+        "2",
+        "4",
+        "443",
+        "637"
+      ]
+    },
+    {
+      "probability": 0.867,
+      "predicate": "entity",
+      "arguments": [
+        "image_a",
+        "sky_a_3",
+        "sky",
+        "1",
+        "1",
+        "443",
+        "117"
+      ]
+    },
+    {
+      "probability": 0.846,
+      "predicate": "entity",
+      "arguments": [
+        "image_a",
+        "shoulder_a_4",
+        "shoulder",
+        "93",
+        "182",
+        "402",
+        "597"
+      ]
+    },
+    {
+      "probability": 0.906,
+      "predicate": "entity",
+      "arguments": [
+        "image_a",
+        "field_a_5",
+        "field",
+        "2",
+        "4",
+        "443",
+        "637"
+      ]
+    },
+    {
+      "probability": 0.938,
+      "predicate": "entity",
+      "arguments": [
+        "image_a",
+        "bird_a_6",
+        "bird",
+        "196",
+        "96",
+        "270",
+        "202"
+      ]
+    },
+    {
+      "probability": 0.864,
+      "predicate": "entity",
+      "arguments": [
+        "image_b",
+        "cow_b_0",
+        "cow",
+        "27",
+        "79",
+        "559",
+        "358"
+      ]
+    },
+    {
+      "probability": 0.886,
+      "predicate": "entity",
+      "arguments": [
+        "image_b",
+        "egret_b_1",
+        "egret",
+        "210",
+        "224",
+        "285",
+        "329"
+      ]
+    },
+    {
+      "probability": 0.908,
+      "predicate": "entity",
+      "arguments": [
+        "image_b",
+        "grass_b_2",
+        "grass",
+        "2",
+        "3",
+        "587",
+        "398"
+      ]
+    },
+    {
+      "probability": 0.788,
+      "predicate": "entity",
+      "arguments": [
+        "image_b",
+        "shoulder_b_3",
+        "shoulder",
+        "92",
+        "80",
+        "402",
+        "150"
+      ]
+    },
+    {
+      "probability": 0.887,
+      "predicate": "entity",
+      "arguments": [
+        "image_b",
+        "head_b_4",
+        "head",
+        "351",
+        "151",
+        "559",
+        "288"
+      ]
+    },
+    {
+      "probability": 0.905,
+      "predicate": "entity",
+      "arguments": [
+        "image_b",
+        "shrub_b_5",
+        "shrub",
+        "2",
+        "3",
+        "586",
+        "397"
+      ]
+    },
+    {
+      "probability": 0.881,
+      "predicate": "entity",
+      "arguments": [
+        "image_b",
+        "horn_b_6",
+        "horn",
+        "387",
+        "156",
+        "425",
+        "189"
+      ]
+    },
+    {
+      "probability": 0.803,
+      "predicate": "entity",
+      "arguments": [
+        "image_b",
+        "leg_b_7",
+        "leg",
+        "97",
+        "247",
+        "167",
+        "360"
+      ]
+    },
+    {
+      "probability": 0.912,
+      "predicate": "entity",
+      "arguments": [
+        "image_b",
+        "field_b_8",
+        "field",
+        "2",
+        "3",
+        "587",
+        "398"
+      ]
+    },
+    {
+      "probability": 0.871,
+      "predicate": "entity",
+      "arguments": [
+        "image_b",
+        "bird_b_9",
+        "bird",
+        "210",
+        "226",
+        "286",
+        "327"
+      ]
+    },
+    {
+      "probability": 0.871,
+      "predicate": "entity",
+      "arguments": [
+        "image_b",
+        "bird_b_10",
+        "bird",
+        "293",
+        "35",
+        "340",
+        "98"
+      ]
+    },
+    {
+      "probability": 0.44788083454157057,
+      "predicate": "attribute",
+      "arguments": [
+        "image_a",
+        "bird_a_6",
+        "orange"
+      ]
+    },
+    {
+      "probability": 0.3130379734334475,
+      "predicate": "attribute",
+      "arguments": [
+        "image_b",
+        "bird_b_9",
+        "orange"
+      ]
+    },
+    {
+      "probability": 0.49289090778621775,
+      "predicate": "attribute",
+      "arguments": [
+        "image_b",
+        "bird_b_10",
+        "orange"
+      ]
+    },
+    {
+      "probability": 0.062000000000000055,
+      "predicate": "count",
+      "arguments": [
+        "image_a",
+        "bird",
+        "0"
+      ]
+    },
+    {
+      "probability": 0.938,
+      "predicate": "count",
+      "arguments": [
+        "image_a",
+        "bird",
+        "1"
+      ]
+    },
+    {
+      "probability": 0.016641,
+      "predicate": "count",
+      "arguments": [
+        "image_b",
+        "bird",
+        "0"
+      ]
+    },
+    {
+      "probability": 0.224718,
+      "predicate": "count",
+      "arguments": [
+        "image_b",
+        "bird",
+        "1"
+      ]
+    },
+    {
+      "probability": 0.758641,
+      "predicate": "count",
+      "arguments": [
+        "image_b",
+        "bird",
+        "2"
+      ]
+    }
+  ],
+  "subquestion_results": [
+    {
+      "subquestion": "How many birds are there in image A?",
+      "probability": 0.0,
+      "supporting_facts": [
+        "% Facts from visual evidence\n% entity facts\n0.874::entity(image_a, buffalo_a_0, buffalo, 93, 182, 402, 597).\n0.857::entity(image_a, camera_a_1, camera, 92, 182, 402, 597).\n0.883::entity(image_a, grass_a_2, grass, 2, 4, 443, 637).\n0.867::entity(image_a, sky_a_3, sky, 1, 1, 443, 117).\n0.846::entity(image_a, shoulder_a_4, shoulder, 93, 182, 402, 597).\n0.906::entity(image_a, field_a_5, field, 2, 4, 443, 637).\n0.938::entity(image_a, bird_a_6, bird, 196, 96, 270, 202).\n0.864::entity(image_b, cow_b_0, cow, 27, 79, 559, 358).\n0.886::entity(image_b, egret_b_1, egret, 210, 224, 285, 329).\n0.908::entity(image_b, grass_b_2, grass, 2, 3, 587, 398).\n0.788::entity(image_b, shoulder_b_3, shoulder, 92, 80, 402, 150).\n0.887::entity(image_b, head_b_4, head, 351, 151, 559, 288).\n0.905::entity(image_b, shrub_b_5, shrub, 2, 3, 586, 397).\n0.881::entity(image_b, horn_b_6, horn, 387, 156, 425, 189).\n0.803::entity(image_b, leg_b_7, leg, 97, 247, 167, 360).\n0.912::entity(image_b, field_b_8, field, 2, 3, 587, 398).\n0.871::entity(image_b, bird_b_9, bird, 210, 226, 286, 327).\n0.871::entity(image_b, bird_b_10, bird, 293, 35, 340, 98).\n\n% attribute facts\n0.44788083454157057::attribute(image_a, bird_a_6, orange).\n0.3130379734334475::attribute(image_b, bird_b_9, orange).\n0.49289090778621775::attribute(image_b, bird_b_10, orange).\n\n% count facts\n0.062000000000000055::count(image_a, bird, 0).\n0.938::count(image_a, bird, 1).\n0.016641::count(image_b, bird, 0).\n0.224718::count(image_b, bird, 1).\n0.758641::count(image_b, bird, 2).\n\n\n% Sugar rules\n% Helper predicates for easier rule writing\nhas_attribute(I,E,A) :- attribute(I,E,A).\nis_category(I,E,C) :- entity(I,E,C,_,_,_,_).\nhas_relationship(I,A,B,R) :- relation(I,A,B,R).\n\n% Generated rules for all subquestions\n% Rule for: How many birds are there in image A?\n\nbird_count_in_image(I, Count) :- count(I, bird, Count).\n\n% Rule for: How many birds are there in image B?\n\nbird_count_in_image(I, N) :- count(I, bird, N).\n\n% Rule for: Are all the birds in image A orange?\n\nall_birds_orange(I) :-\nis_category(I,B,bird),\nhas_attribute(I,B,orange),\ncount(I,bird,1).\n\n% Rule for: Are all the birds in image B orange?\n\nall_birds_orange(I) :-\nis_category(I,B1,bird),\nis_category(I,B2,bird),\nB1 \\= B2,\nhas_attribute(I,B1,orange),\nhas_attribute(I,B2,orange),\ncount(I,bird,2).\n\n% Queries for all subquestions\nquery(bird_count_in_image(image_a, Count)).\nquery(bird_count_in_image(image_b, 0)).\nquery(bird_count_in_image(image_b, 1)).\nquery(bird_count_in_image(image_b, 2)).\nquery(all_birds_orange(image_a)).\nquery(all_birds_orange(image_b))."
+      ],
+      "evidence_trail": [
+        "Unified ProbLog execution: 0.0000"
+      ]
+    },
+    {
+      "subquestion": "How many birds are there in image B?",
+      "probability": 0.0,
+      "supporting_facts": [
+        "% Facts from visual evidence\n% entity facts\n0.874::entity(image_a, buffalo_a_0, buffalo, 93, 182, 402, 597).\n0.857::entity(image_a, camera_a_1, camera, 92, 182, 402, 597).\n0.883::entity(image_a, grass_a_2, grass, 2, 4, 443, 637).\n0.867::entity(image_a, sky_a_3, sky, 1, 1, 443, 117).\n0.846::entity(image_a, shoulder_a_4, shoulder, 93, 182, 402, 597).\n0.906::entity(image_a, field_a_5, field, 2, 4, 443, 637).\n0.938::entity(image_a, bird_a_6, bird, 196, 96, 270, 202).\n0.864::entity(image_b, cow_b_0, cow, 27, 79, 559, 358).\n0.886::entity(image_b, egret_b_1, egret, 210, 224, 285, 329).\n0.908::entity(image_b, grass_b_2, grass, 2, 3, 587, 398).\n0.788::entity(image_b, shoulder_b_3, shoulder, 92, 80, 402, 150).\n0.887::entity(image_b, head_b_4, head, 351, 151, 559, 288).\n0.905::entity(image_b, shrub_b_5, shrub, 2, 3, 586, 397).\n0.881::entity(image_b, horn_b_6, horn, 387, 156, 425, 189).\n0.803::entity(image_b, leg_b_7, leg, 97, 247, 167, 360).\n0.912::entity(image_b, field_b_8, field, 2, 3, 587, 398).\n0.871::entity(image_b, bird_b_9, bird, 210, 226, 286, 327).\n0.871::entity(image_b, bird_b_10, bird, 293, 35, 340, 98).\n\n% attribute facts\n0.44788083454157057::attribute(image_a, bird_a_6, orange).\n0.3130379734334475::attribute(image_b, bird_b_9, orange).\n0.49289090778621775::attribute(image_b, bird_b_10, orange).\n\n% count facts\n0.062000000000000055::count(image_a, bird, 0).\n0.938::count(image_a, bird, 1).\n0.016641::count(image_b, bird, 0).\n0.224718::count(image_b, bird, 1).\n0.758641::count(image_b, bird, 2).\n\n\n% Sugar rules\n% Helper predicates for easier rule writing\nhas_attribute(I,E,A) :- attribute(I,E,A).\nis_category(I,E,C) :- entity(I,E,C,_,_,_,_).\nhas_relationship(I,A,B,R) :- relation(I,A,B,R).\n\n% Generated rules for all subquestions\n% Rule for: How many birds are there in image A?\n\nbird_count_in_image(I, Count) :- count(I, bird, Count).\n\n% Rule for: How many birds are there in image B?\n\nbird_count_in_image(I, N) :- count(I, bird, N).\n\n% Rule for: Are all the birds in image A orange?\n\nall_birds_orange(I) :-\nis_category(I,B,bird),\nhas_attribute(I,B,orange),\ncount(I,bird,1).\n\n% Rule for: Are all the birds in image B orange?\n\nall_birds_orange(I) :-\nis_category(I,B1,bird),\nis_category(I,B2,bird),\nB1 \\= B2,\nhas_attribute(I,B1,orange),\nhas_attribute(I,B2,orange),\ncount(I,bird,2).\n\n% Queries for all subquestions\nquery(bird_count_in_image(image_a, Count)).\nquery(bird_count_in_image(image_b, 0)).\nquery(bird_count_in_image(image_b, 1)).\nquery(bird_count_in_image(image_b, 2)).\nquery(all_birds_orange(image_a)).\nquery(all_birds_orange(image_b))."
+      ],
+      "evidence_trail": [
+        "Unified ProbLog execution: 0.0000"
+      ]
+    },
+    {
+      "subquestion": "Are all the birds in image A orange?",
+      "probability": 0.394065264986394,
+      "supporting_facts": [
+        "% Facts from visual evidence\n% entity facts\n0.874::entity(image_a, buffalo_a_0, buffalo, 93, 182, 402, 597).\n0.857::entity(image_a, camera_a_1, camera, 92, 182, 402, 597).\n0.883::entity(image_a, grass_a_2, grass, 2, 4, 443, 637).\n0.867::entity(image_a, sky_a_3, sky, 1, 1, 443, 117).\n0.846::entity(image_a, shoulder_a_4, shoulder, 93, 182, 402, 597).\n0.906::entity(image_a, field_a_5, field, 2, 4, 443, 637).\n0.938::entity(image_a, bird_a_6, bird, 196, 96, 270, 202).\n0.864::entity(image_b, cow_b_0, cow, 27, 79, 559, 358).\n0.886::entity(image_b, egret_b_1, egret, 210, 224, 285, 329).\n0.908::entity(image_b, grass_b_2, grass, 2, 3, 587, 398).\n0.788::entity(image_b, shoulder_b_3, shoulder, 92, 80, 402, 150).\n0.887::entity(image_b, head_b_4, head, 351, 151, 559, 288).\n0.905::entity(image_b, shrub_b_5, shrub, 2, 3, 586, 397).\n0.881::entity(image_b, horn_b_6, horn, 387, 156, 425, 189).\n0.803::entity(image_b, leg_b_7, leg, 97, 247, 167, 360).\n0.912::entity(image_b, field_b_8, field, 2, 3, 587, 398).\n0.871::entity(image_b, bird_b_9, bird, 210, 226, 286, 327).\n0.871::entity(image_b, bird_b_10, bird, 293, 35, 340, 98).\n\n% attribute facts\n0.44788083454157057::attribute(image_a, bird_a_6, orange).\n0.3130379734334475::attribute(image_b, bird_b_9, orange).\n0.49289090778621775::attribute(image_b, bird_b_10, orange).\n\n% count facts\n0.062000000000000055::count(image_a, bird, 0).\n0.938::count(image_a, bird, 1).\n0.016641::count(image_b, bird, 0).\n0.224718::count(image_b, bird, 1).\n0.758641::count(image_b, bird, 2).\n\n\n% Sugar rules\n% Helper predicates for easier rule writing\nhas_attribute(I,E,A) :- attribute(I,E,A).\nis_category(I,E,C) :- entity(I,E,C,_,_,_,_).\nhas_relationship(I,A,B,R) :- relation(I,A,B,R).\n\n% Generated rules for all subquestions\n% Rule for: How many birds are there in image A?\n\nbird_count_in_image(I, Count) :- count(I, bird, Count).\n\n% Rule for: How many birds are there in image B?\n\nbird_count_in_image(I, N) :- count(I, bird, N).\n\n% Rule for: Are all the birds in image A orange?\n\nall_birds_orange(I) :-\nis_category(I,B,bird),\nhas_attribute(I,B,orange),\ncount(I,bird,1).\n\n% Rule for: Are all the birds in image B orange?\n\nall_birds_orange(I) :-\nis_category(I,B1,bird),\nis_category(I,B2,bird),\nB1 \\= B2,\nhas_attribute(I,B1,orange),\nhas_attribute(I,B2,orange),\ncount(I,bird,2).\n\n% Queries for all subquestions\nquery(bird_count_in_image(image_a, Count)).\nquery(bird_count_in_image(image_b, 0)).\nquery(bird_count_in_image(image_b, 1)).\nquery(bird_count_in_image(image_b, 2)).\nquery(all_birds_orange(image_a)).\nquery(all_birds_orange(image_b))."
+      ],
+      "evidence_trail": [
+        "Unified ProbLog execution: 0.3941"
+      ]
+    },
+    {
+      "subquestion": "Are all the birds in image B orange?",
+      "probability": 0.20028617426072304,
+      "supporting_facts": [
+        "% Facts from visual evidence\n% entity facts\n0.874::entity(image_a, buffalo_a_0, buffalo, 93, 182, 402, 597).\n0.857::entity(image_a, camera_a_1, camera, 92, 182, 402, 597).\n0.883::entity(image_a, grass_a_2, grass, 2, 4, 443, 637).\n0.867::entity(image_a, sky_a_3, sky, 1, 1, 443, 117).\n0.846::entity(image_a, shoulder_a_4, shoulder, 93, 182, 402, 597).\n0.906::entity(image_a, field_a_5, field, 2, 4, 443, 637).\n0.938::entity(image_a, bird_a_6, bird, 196, 96, 270, 202).\n0.864::entity(image_b, cow_b_0, cow, 27, 79, 559, 358).\n0.886::entity(image_b, egret_b_1, egret, 210, 224, 285, 329).\n0.908::entity(image_b, grass_b_2, grass, 2, 3, 587, 398).\n0.788::entity(image_b, shoulder_b_3, shoulder, 92, 80, 402, 150).\n0.887::entity(image_b, head_b_4, head, 351, 151, 559, 288).\n0.905::entity(image_b, shrub_b_5, shrub, 2, 3, 586, 397).\n0.881::entity(image_b, horn_b_6, horn, 387, 156, 425, 189).\n0.803::entity(image_b, leg_b_7, leg, 97, 247, 167, 360).\n0.912::entity(image_b, field_b_8, field, 2, 3, 587, 398).\n0.871::entity(image_b, bird_b_9, bird, 210, 226, 286, 327).\n0.871::entity(image_b, bird_b_10, bird, 293, 35, 340, 98).\n\n% attribute facts\n0.44788083454157057::attribute(image_a, bird_a_6, orange).\n0.3130379734334475::attribute(image_b, bird_b_9, orange).\n0.49289090778621775::attribute(image_b, bird_b_10, orange).\n\n% count facts\n0.062000000000000055::count(image_a, bird, 0).\n0.938::count(image_a, bird, 1).\n0.016641::count(image_b, bird, 0).\n0.224718::count(image_b, bird, 1).\n0.758641::count(image_b, bird, 2).\n\n\n% Sugar rules\n% Helper predicates for easier rule writing\nhas_attribute(I,E,A) :- attribute(I,E,A).\nis_category(I,E,C) :- entity(I,E,C,_,_,_,_).\nhas_relationship(I,A,B,R) :- relation(I,A,B,R).\n\n% Generated rules for all subquestions\n% Rule for: How many birds are there in image A?\n\nbird_count_in_image(I, Count) :- count(I, bird, Count).\n\n% Rule for: How many birds are there in image B?\n\nbird_count_in_image(I, N) :- count(I, bird, N).\n\n% Rule for: Are all the birds in image A orange?\n\nall_birds_orange(I) :-\nis_category(I,B,bird),\nhas_attribute(I,B,orange),\ncount(I,bird,1).\n\n% Rule for: Are all the birds in image B orange?\n\nall_birds_orange(I) :-\nis_category(I,B1,bird),\nis_category(I,B2,bird),\nB1 \\= B2,\nhas_attribute(I,B1,orange),\nhas_attribute(I,B2,orange),\ncount(I,bird,2).\n\n% Queries for all subquestions\nquery(bird_count_in_image(image_a, Count)).\nquery(bird_count_in_image(image_b, 0)).\nquery(bird_count_in_image(image_b, 1)).\nquery(bird_count_in_image(image_b, 2)).\nquery(all_birds_orange(image_a)).\nquery(all_birds_orange(image_b))."
+      ],
+      "evidence_trail": [
+        "Unified ProbLog execution: 0.2003"
+      ]
+    }
+  ],
+  "answer": {
+    "text": "Based on the evidence, the answer appears to be negative (confidence: 0.85)",
+    "explanation": "This answer is based on statistical analysis of 4 subqueries.\n        \nAverage probability: 0.15\nHigh confidence findings: 2\nPositive evidence: 0\nNegative evidence: 4\n\nNote: This is a fallback analysis due to synthesis limitations."
+  }
+}

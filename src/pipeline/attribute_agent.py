@@ -21,6 +21,7 @@ from src.core.model_manager import ModelManager
 from src.core.types import BinarySubquestion, ObjectDetection, AttributeData, AttributeValue, ImageData
 from src.core.probability import get_verifier_probability
 from src.language.output_models import AgentDecision, QwenInformationRequest, BinaryAttributeQuestion
+from src.pipeline.base_agent import BaseVerificationAgent
 
 
 @dataclass
@@ -50,6 +51,7 @@ class AgentState:
     """
     original_question: str
     referenced_objects: List[str]
+    target_claims: Dict[str, List[str]] = field(default_factory=dict)  # NEW: What must be verified from subquestion
 
     # Information gathered from Qwen VL
     qwen_qa_history: List[Dict[str, str]] = field(default_factory=list)
@@ -81,7 +83,7 @@ class AgentState:
         self.reasoning_trace.append(reasoning)
 
 
-class AttributeAgent:
+class AttributeAgent(BaseVerificationAgent[BinaryAttributeQuestion]):
     """
     Attribute extraction agent using LLM orchestration.
 
@@ -100,13 +102,113 @@ class AttributeAgent:
             max_qwen_calls: Maximum Qwen VL calls per subquery (prevents infinite loops)
             debug: If True, saves cropped images and prints detailed verification info
         """
-        self.model_manager = ModelManager()
+        super().__init__()  # Initialize BaseVerificationAgent
         self.max_qwen_calls = max_qwen_calls
         self.debug = debug
 
         # Create debug directory if needed
         if self.debug:
             os.makedirs("debug_attributes", exist_ok=True)
+
+    def _extract_target_claims_from_subquestion(self, subquestion: str) -> Dict[str, List[str]]:
+        """
+        Extract the specific attribute values that need to be verified from subquestion.
+
+        Examples:
+        - "Is the shirt black?" → {"attribute_values": ["black"]}
+        - "Is the dog brown or tan?" → {"attribute_values": ["brown", "tan"]}
+        - "Does the car have a metallic finish?" → {"attribute_values": ["metallic"]}
+
+        Args:
+            subquestion: Natural language subquestion
+
+        Returns:
+            Dict with "attribute_values" key containing list of values to verify
+        """
+        return self._extract_target_claims_generic(
+            subquestion=subquestion,
+            claim_type="attribute values",
+            claim_key="attribute_values",
+            examples=[
+                '"Is the shirt black?" → {"attribute_values": ["black"]}',
+                '"Is the dog brown or tan?" → {"attribute_values": ["brown", "tan"]}',
+                '"Are the walls white?" → {"attribute_values": ["white"]}',
+                '"Is the car metallic red?" → {"attribute_values": ["metallic red"]}'
+            ]
+        )
+
+    def _validate_binary_questions(
+        self,
+        binary_questions: List[BinaryAttributeQuestion],
+        target_claims: Dict[str, List[str]],
+        subquestion: str
+    ) -> bool:
+        """
+        Validate that binary questions include DIRECT verification of target claims.
+
+        Args:
+            binary_questions: Generated binary questions
+            target_claims: Target claims extracted from subquestion
+            subquestion: Original subquestion
+
+        Returns:
+            bool: True if all target claims are covered, False otherwise
+        """
+        return self._validate_binary_questions_generic(
+            binary_questions=binary_questions,
+            target_claims=target_claims,
+            claim_key="attribute_values",
+            value_extractor=lambda q: q.attribute_value,
+            subquestion=subquestion
+        )
+
+    def _generate_fallback_questions(
+        self,
+        target_claims: Dict[str, List[str]],
+        objects: List[str],
+        existing_questions: List[BinaryAttributeQuestion]
+    ) -> List[BinaryAttributeQuestion]:
+        """
+        Generate minimal binary questions to directly verify missing target claims.
+
+        Args:
+            target_claims: Target claims that need verification
+            objects: List of relevant object IDs
+            existing_questions: Already generated questions
+
+        Returns:
+            List of fallback binary questions for missing targets
+        """
+        if not objects:
+            return []
+
+        # Use base class method to get missing claim values
+        missing_values = self._get_missing_claims(
+            target_claims=target_claims,
+            claim_key="attribute_values",
+            existing_questions=existing_questions,
+            value_extractor=lambda q: q.attribute_value
+        )
+
+        if not missing_values:
+            return []
+
+        print(f"  → Generating fallback questions for missing values: {missing_values}")
+
+        fallback_questions = []
+        for obj_id in objects:
+            for value in missing_values:
+                # Extract object type from ID (e.g., "shirt_a_1" → "shirt")
+                obj_type = obj_id.split('_')[0]
+
+                fallback_questions.append(BinaryAttributeQuestion(
+                    object_id=obj_id,
+                    attribute_class="color",  # Default to color, could be more sophisticated
+                    attribute_value=value,
+                    binary_question=f"Is the {obj_type} {value}?"
+                ))
+
+        return fallback_questions
 
     def process_attribute_subquestions(
         self,
@@ -157,9 +259,9 @@ class AttributeAgent:
                 if len(parts) < 3:
                     continue
 
-                simple_image_id = parts[-2]
+                image_letter = parts[-2]
                 object_index = int(parts[-1])
-                image_id = f"image_{simple_image_id}"
+                image_id = f"image_{image_letter}"
 
                 # Group by (image_id, object_index, attribute_class)
                 grouped[(image_id, object_index)][attr_result.attribute_class].append(
@@ -196,15 +298,21 @@ class AttributeAgent:
         Returns:
             List[AttributeResult]: Extracted attribute results with object IDs
         """
-        # 1. Discover which objects are relevant to this question
+        # 1. Extract target claims from subquestion (what must be verified)
+        target_claims = self._extract_target_claims_from_subquestion(subquestion.question)
+        if target_claims.get("attribute_values"):
+            print(f"    Target claims to verify: {target_claims['attribute_values']}")
+
+        # 2. Discover which objects are relevant to this question
         print(f"    Discovering relevant objects for: {subquestion.question}")
         relevant_objects = self._discover_relevant_objects(subquestion.question, images)
         print(f"    → Discovered {len(relevant_objects)} relevant objects: {relevant_objects}")
 
-        # 2. Initialize agent state with discovered objects
+        # 3. Initialize agent state with discovered objects AND target claims
         state = AgentState(
             original_question=subquestion.question,
-            referenced_objects=relevant_objects
+            referenced_objects=relevant_objects,
+            target_claims=target_claims
         )
 
         print(f"    Starting agentic loop (max {self.max_qwen_calls} Qwen calls)...")
@@ -232,6 +340,21 @@ class AttributeAgent:
                 print(f"        → Agent ready! Generating {len(decision.binary_questions)} binary questions")
                 state.binary_questions = decision.binary_questions
 
+                # Validate that target claims are covered
+                if not self._validate_binary_questions(
+                    state.binary_questions,
+                    target_claims,
+                    subquestion.question
+                ):
+                    # Generate fallback questions for missing target claims
+                    fallback_questions = self._generate_fallback_questions(
+                        target_claims,
+                        relevant_objects,
+                        state.binary_questions
+                    )
+                    state.binary_questions.extend(fallback_questions)
+                    print(f"        → Added {len(fallback_questions)} fallback questions for missing target claims")
+
                 for bq in state.binary_questions:
                     print(f"          • {bq.binary_question}")
 
@@ -239,7 +362,16 @@ class AttributeAgent:
 
         if not state.binary_questions:
             print(f"    Warning: Agent did not generate binary questions after {self.max_qwen_calls} iterations")
-            return []
+            # Generate fallback questions as last resort
+            if target_claims.get("attribute_values") and relevant_objects:
+                print(f"    Generating fallback questions for target claims...")
+                state.binary_questions = self._generate_fallback_questions(
+                    target_claims,
+                    relevant_objects,
+                    []
+                )
+            if not state.binary_questions:
+                return []
 
         # 3. Verify binary questions and extract probabilities
         print(f"    Verifying {len(state.binary_questions)} binary questions...")
@@ -281,8 +413,8 @@ class AttributeAgent:
         for image_id, image_data in sorted(images.items()):
             object_lines.append(f"\n{image_id.upper()}:")
             for obj in image_data.objects:
-                simple_id = image_id.replace("image_", "")
-                obj_id = f"{obj.label}_{simple_id}_{obj.object_id}"
+                image_letter = image_id.replace("image_", "")
+                obj_id = f"{obj.label}_{image_letter}_{obj.object_id}"
                 object_lines.append(f"  - {obj_id} ({obj.label})")
 
         object_context = "\n".join(object_lines)
@@ -338,11 +470,18 @@ Output JSON:
             for qa in state.qwen_qa_history
         ]) if state.qwen_qa_history else "  (No questions asked yet)"
 
+        # Format target claims
+        target_claims_text = ""
+        if state.target_claims.get("attribute_values"):
+            values_str = ', '.join(state.target_claims["attribute_values"])
+            target_claims_text = f"\n**Target Claims to Verify**: {values_str}\n(These specific values MUST be directly verified in your binary questions)"
+
         prompt = f"""You are an intelligent agent extracting visual attributes from images to answer complex questions.
 
 **Original Question**: {state.original_question}
 
 **Referenced Objects**: {', '.join(state.referenced_objects)}
+{target_claims_text}
 
 **Information Gathered So Far**:
 {info_summary}
@@ -365,10 +504,31 @@ Decide if you need MORE information from the vision model, OR if you have ENOUGH
 - Understand visual attributes for comparison
 
 ### ✅ **Choose "generate_binary_questions"** when you:
-- Know all relevant attribute values for all referenced objects
-- Can formulate specific Yes/No questions like "Is the dog brown?"
-- Have gathered enough information to answer the original question
-- Can verify attributes with binary questions
+- Have gathered enough visual information about the objects
+- **CRITICAL: Can directly verify the target claims (if specified)**
+- Can formulate specific Yes/No questions
+- Even if visual evidence suggests different values, you can still generate verification questions
+
+## CRITICAL RULE: Subquestion-Aligned Verification
+
+Your binary questions MUST include direct verification of target claims, even if:
+- Visual evidence suggests a different value
+- The claim appears unlikely based on what you observed
+- You think the answer will be "No"
+
+**Why:** The ProbLog reasoner needs the probability that the claim is TRUE, not just probabilities for what you observed.
+
+**Example:**
+  Original Question: "Is the shirt black?"
+  Target Claim: "black"
+  Visual Evidence: "The shirt appears to be green"
+
+  CORRECT binary questions:
+    ✓ "Is the shirt black?" (directly verifies the target claim - REQUIRED!)
+    ✓ "Is the shirt green?" (confirms alternative, helps reasoning - OPTIONAL)
+
+  INCORRECT binary questions:
+    ✗ Only "Is the shirt green?" (doesn't verify the claim!)
 
 ## Important Guidelines
 
@@ -381,7 +541,9 @@ Decide if you need MORE information from the vision model, OR if you have ENOUGH
    - The object_id field identifies which object (e.g., "dog_a_1")
    - The binary_question uses natural language (e.g., "Is the dog brown?")
 
-3. **Generate questions that collectively answer the original question**
+3. **ALWAYS include questions for target claims (if specified)**
+   - Even if visual evidence suggests otherwise
+   - This ensures we can compute probabilities for the actual question being asked
 
 4. **For comparison questions** (e.g., "same color"), generate:
    - Questions for each object's actual attribute ("Is the dog brown?")
@@ -639,11 +801,11 @@ Respond in strict JSON format only."""
             if len(parts) < 3:
                 return None, None
 
-            simple_image_id = parts[-2]  # Second to last part (e.g., "a")
+            image_letter = parts[-2]  # Second to last part (e.g., "a")
             object_index = int(parts[-1])
 
-            # Convert simple image ID back to full key (e.g., "a" -> "image_a")
-            image_id = f"image_{simple_image_id}"
+            # Convert image letter back to full key (e.g., "a" -> "image_a")
+            image_id = f"image_{image_letter}"
 
             if image_id in images:
                 objects = images[image_id].objects

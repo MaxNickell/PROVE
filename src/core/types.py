@@ -93,18 +93,6 @@ class BinarySubquestion:
 
 
 @dataclass
-class AttributeRequirement:
-    """Attribute extraction requirement for specific object using simple identifiers."""
-    image_id: str             # "image_a", "image_b", etc.
-    object_id: int            # Object index within the image (0, 1, 2...)
-    attribute_classes: List[str]  # e.g., ["muscle_mass", "body_size"]
-    required_for_subquestions: List[str]  # Which subquestions need these attributes
-
-    def to_dict(self) -> Dict[str, Any]:
-        return asdict(self)
-
-
-@dataclass
 class ProbLogFact:
     """Probabilistic logical fact for knowledge base."""
     probability: float  # 0.0 to 1.0
@@ -112,8 +100,20 @@ class ProbLogFact:
     arguments: List[str]  # e.g., ["person_a_0", "muscle_mass", "high"]
     
     def to_prolog_string(self) -> str:
-        """Convert to ProbLog fact string."""
-        args_str = ", ".join(self.arguments)
+        """Convert to ProbLog fact string with proper quoting."""
+        # Quote arguments that need it (contain spaces, special chars, start with uppercase)
+        def quote_if_needed(arg: str) -> str:
+            # Already quoted
+            if arg.startswith("'") and arg.endswith("'"):
+                return arg
+            # Needs quoting if: contains space, starts with uppercase, or has special chars
+            if ' ' in arg or (arg and arg[0].isupper()) or not arg.replace('_', '').replace('-', '').isalnum():
+                # Escape single quotes inside the string
+                escaped = arg.replace("'", "\\'")
+                return f"'{escaped}'"
+            return arg
+
+        args_str = ", ".join(quote_if_needed(arg) for arg in self.arguments)
         return f"{self.probability}::{self.predicate}({args_str})."
     
     def to_dict(self) -> Dict[str, Any]:
@@ -133,17 +133,6 @@ class SubquestionResult:
 
 
 @dataclass
-class ProbLogResult:
-    """Result from ProbLog query execution."""
-    query: str
-    probability: float
-    proof_trace: Optional[str] = None
-
-    def to_dict(self) -> Dict[str, Any]:
-        return asdict(self)
-
-
-@dataclass
 class AnswerResult:
     """Final answer with explanation."""
     text: str
@@ -151,6 +140,23 @@ class AnswerResult:
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
+
+
+@dataclass
+class PipelineResult:
+    """Result from PROVE pipeline execution - clean probabilistic output."""
+    ultimate_question: str
+    ultimate_probability: float  # From ProbLog ultimate query
+    subquestion_results: List['SubquestionResult']  # Evidence trail
+    problog_program: str  # Full program for debugging
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "ultimate_question": self.ultimate_question,
+            "ultimate_probability": self.ultimate_probability,
+            "subquestion_results": [r.to_dict() for r in self.subquestion_results],
+            "problog_program": self.problog_program
+        }
 
 
 class ComparisonType(Enum):
@@ -188,7 +194,5 @@ Objects = List[ObjectDetection]
 Attributes = List[AttributeData]
 IntraRelations = List[IntraRelation]
 BinarySubquestions = List[BinarySubquestion]
-AttributeRequirements = List[AttributeRequirement]
 ProbLogFacts = List[ProbLogFact]
 SubquestionResults = List[SubquestionResult]
-ProbLogResults = List[ProbLogResult]

@@ -30,6 +30,7 @@ from src.language.output_models import (
     QwenSceneInformationRequest,
     BinarySceneAttributeQuestion
 )
+from src.pipeline.base_agent import BaseVerificationAgent
 
 
 @dataclass
@@ -59,6 +60,7 @@ class SceneAgentState:
     """
     original_question: str
     referenced_images: List[str]  # ["image_a", "image_b"]
+    target_claims: Dict[str, List[str]] = field(default_factory=dict)  # NEW: What scene attributes must be verified
 
     # Information gathered from Qwen VL about entire scenes
     qwen_qa_history: List[Dict[str, str]] = field(default_factory=list)
@@ -90,7 +92,7 @@ class SceneAgentState:
         self.reasoning_trace.append(reasoning)
 
 
-class SceneAttributeAgent:
+class SceneAttributeAgent(BaseVerificationAgent[BinarySceneAttributeQuestion]):
     """
     Scene attribute extraction agent using LLM orchestration.
 
@@ -109,13 +111,76 @@ class SceneAttributeAgent:
             max_qwen_calls: Maximum Qwen VL calls per subquestion (prevents infinite loops)
             debug: If True, saves full images and prints detailed verification info
         """
-        self.model_manager = ModelManager()
+        super().__init__()  # Initialize BaseVerificationAgent
         self.max_qwen_calls = max_qwen_calls
         self.debug = debug
 
         # Create debug directory if needed
         if self.debug:
             os.makedirs("debug_scene_attributes", exist_ok=True)
+
+    def _extract_target_claims_from_subquestion(self, subquestion: str) -> Dict[str, List[str]]:
+        """Extract the specific scene attribute values that need to be verified from subquestion."""
+        return self._extract_target_claims_generic(
+            subquestion=subquestion,
+            claim_type="scene attribute values",
+            claim_key="scene_attributes",
+            examples=[
+                '"Is the sky blue?" → {"scene_attributes": ["blue"]}',
+                '"Is this an indoor environment?" → {"scene_attributes": ["indoor"]}',
+                '"Is the lighting bright or dim?" → {"scene_attributes": ["bright", "dim"]}',
+                '"Does the scene contain grass?" → {"scene_attributes": ["grass"]}'
+            ]
+        )
+
+    def _validate_binary_questions(
+        self,
+        binary_questions: List[BinarySceneAttributeQuestion],
+        target_claims: Dict[str, List[str]],
+        subquestion: str
+    ) -> bool:
+        """Validate that binary questions include DIRECT verification of target scene attribute claims."""
+        return self._validate_binary_questions_generic(
+            binary_questions=binary_questions,
+            target_claims=target_claims,
+            claim_key="scene_attributes",
+            value_extractor=lambda q: q.attribute_value,
+            subquestion=subquestion
+        )
+
+    def _generate_fallback_questions(
+        self,
+        target_claims: Dict[str, List[str]],
+        images: List[str],
+        existing_questions: List[BinarySceneAttributeQuestion]
+    ) -> List[BinarySceneAttributeQuestion]:
+        """Generate minimal binary questions to directly verify missing target scene attribute claims."""
+        if not images:
+            return []
+
+        # Use base class method to get missing claim values
+        missing_values = self._get_missing_claims(
+            target_claims=target_claims,
+            claim_key="scene_attributes",
+            existing_questions=existing_questions,
+            value_extractor=lambda q: q.attribute_value
+        )
+
+        if not missing_values:
+            return []
+
+        print(f"  → Generating fallback questions for missing scene attributes: {missing_values}")
+
+        fallback_questions = []
+        for image_id in images:
+            for value in missing_values:
+                fallback_questions.append(BinarySceneAttributeQuestion(
+                    image_id=image_id,
+                    attribute_class="scene_attribute",
+                    attribute_value=value,
+                    binary_question=f"Does this scene have {value}?"
+                ))
+        return fallback_questions
 
     def process_scene_attribute_subquestions(
         self,
@@ -208,15 +273,21 @@ class SceneAttributeAgent:
         Returns:
             List[SceneAttributeResult]: Extracted scene attribute results with image IDs
         """
-        # 1. Discover which images are relevant to this question
+        # 1. Extract target claims from subquestion (what scene attributes must be verified)
+        target_claims = self._extract_target_claims_from_subquestion(subquestion.question)
+        if target_claims.get("scene_attributes"):
+            print(f"    Target scene attribute claims to verify: {target_claims['scene_attributes']}")
+
+        # 2. Discover which images are relevant to this question
         print(f"    Discovering relevant images for: {subquestion.question}")
         relevant_images = self._discover_relevant_images(subquestion.question, images)
         print(f"    → Discovered {len(relevant_images)} relevant images: {relevant_images}")
 
-        # 2. Initialize agent state with discovered images
+        # 3. Initialize agent state with discovered images AND target claims
         state = SceneAgentState(
             original_question=subquestion.question,
-            referenced_images=relevant_images
+            referenced_images=relevant_images,
+            target_claims=target_claims
         )
 
         print(f"    Starting agentic loop (max {self.max_qwen_calls} Qwen calls)...")
@@ -244,6 +315,21 @@ class SceneAttributeAgent:
                 print(f"        → Agent ready! Generating {len(decision.binary_questions)} binary questions")
                 state.binary_questions = decision.binary_questions
 
+                # Validate that target scene attribute claims are covered
+                if not self._validate_binary_questions(
+                    state.binary_questions,
+                    target_claims,
+                    subquestion.question
+                ):
+                    # Generate fallback questions for missing target claims
+                    fallback_questions = self._generate_fallback_questions(
+                        target_claims,
+                        relevant_images,
+                        state.binary_questions
+                    )
+                    state.binary_questions.extend(fallback_questions)
+                    print(f"        → Added {len(fallback_questions)} fallback questions for missing target claims")
+
                 for bq in state.binary_questions:
                     print(f"          • {bq.binary_question}")
 
@@ -251,7 +337,16 @@ class SceneAttributeAgent:
 
         if not state.binary_questions:
             print(f"    Warning: Agent did not generate binary questions after {self.max_qwen_calls} iterations")
-            return []
+            # Generate fallback questions as last resort
+            if target_claims.get("scene_attributes") and relevant_images:
+                print(f"    Generating fallback questions for target scene attribute claims...")
+                state.binary_questions = self._generate_fallback_questions(
+                    target_claims,
+                    relevant_images,
+                    []
+                )
+            if not state.binary_questions:
+                return []
 
         # 4. Verify binary questions and extract probabilities
         print(f"    Verifying {len(state.binary_questions)} binary questions...")
@@ -348,11 +443,18 @@ Output JSON:
             for qa in state.qwen_qa_history
         ]) if state.qwen_qa_history else "  (No questions asked yet)"
 
+        # Format target claims
+        target_claims_text = ""
+        if state.target_claims.get("scene_attributes"):
+            values_str = ', '.join(state.target_claims["scene_attributes"])
+            target_claims_text = f"\n**Target Scene Attribute Claims to Verify**: {values_str}\n(These specific scene attributes MUST be directly verified in your binary questions)"
+
         prompt = f"""You are an intelligent agent extracting visual scene attributes from images to answer complex questions.
 
 **Original Question**: {state.original_question}
 
 **Referenced Images**: {', '.join(state.referenced_images)}
+{target_claims_text}
 
 **Information Gathered So Far**:
 {info_summary}
@@ -376,9 +478,31 @@ Decide if you need MORE information from the vision model about a scene, OR if y
 
 ### ✅ **Choose "generate_binary_questions"** when you:
 - Know all relevant scene attribute values for all referenced images
+- **CRITICAL: Can directly verify the target scene attribute claims (if specified)**
 - Can formulate specific Yes/No questions like "Is this an outdoor environment?"
 - Have gathered enough information to answer the original question
-- Can verify scene attributes with binary questions
+- Even if visual evidence suggests different scene attributes, you can still generate verification questions
+
+## CRITICAL RULE: Subquestion-Aligned Verification
+
+Your binary questions MUST include direct verification of target scene attribute claims, even if:
+- Visual evidence suggests a different scene attribute value
+- The claim appears unlikely based on what you observed
+- You think the answer will be "No"
+
+**Why:** The ProbLog reasoner needs the probability that the claimed scene attribute is TRUE, not just probabilities for what you observed.
+
+**Example:**
+  Original Question: "Is the sky purple?"
+  Target Claim: "purple"
+  Visual Evidence: "The sky is blue"
+
+  CORRECT binary questions:
+    ✓ "Is the sky purple?" (directly verifies target claim - REQUIRED!)
+    ✓ "Is the sky blue?" (confirms alternative - OPTIONAL)
+
+  INCORRECT binary questions:
+    ✗ Only "Is the sky blue?" (doesn't verify the claim!)
 
 ## Important Guidelines
 

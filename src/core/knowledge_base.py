@@ -32,10 +32,8 @@ class KnowledgeBase:
 
         # Pipeline processing results
         self.subquestions: List[BinarySubquestion] = []
-        self.attribute_requirements: List[Dict[str, Any]] = []
         self.problog_facts: List[ProbLogFact] = []
         self.subquestion_results: List[SubquestionResult] = []
-        self.answer: Optional[AnswerResult] = None
 
     def ensure_image_exists(self, image_id: str) -> None:
         """
@@ -210,11 +208,6 @@ class KnowledgeBase:
         """Store subquestion execution results."""
         self.subquestion_results = results
 
-    def set_answer(self, answer: AnswerResult) -> None:
-        """Set the final answer."""
-        self.answer = answer
-
-
     def to_dict(self) -> Dict[str, Any]:
         """
         Convert knowledge base to dictionary for JSON serialization.
@@ -236,8 +229,7 @@ class KnowledgeBase:
             "images": clean_images,
             "subquestions": [sq.to_dict() for sq in self.subquestions],
             "problog_facts": [fact.to_dict() for fact in self.problog_facts],
-            "subquestion_results": [result.to_dict() for result in self.subquestion_results],
-            "answer": self.answer.to_dict() if self.answer else None
+            "subquestion_results": [result.to_dict() for result in self.subquestion_results]
         }
 
     def to_json(self, indent: int = 2) -> str:

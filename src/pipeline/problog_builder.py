@@ -83,8 +83,8 @@ class ProbLogBuilder:
         for image_id, image_data in images.items():
             for obj in image_data.objects:
                 # Create entity_id following format: category_image_objectid
-                simple_image_id = image_id.replace("image_", "")
-                entity_id = f"{obj.label}_{simple_image_id}_{obj.object_id}"
+                image_letter = image_id.replace("image_", "")
+                entity_id = f"{obj.label}_{image_letter}_{obj.object_id}"
 
                 # Extract bbox coordinates as integers
                 x1, y1, x2, y2 = [int(coord) for coord in obj.bbox]
@@ -128,8 +128,8 @@ class ProbLogBuilder:
                     continue
 
                 # Create entity_id following format: category_image_objectid
-                simple_image_id = image_id.replace("image_", "")
-                entity_id = f"{target_obj.label}_{simple_image_id}_{object_id}"
+                image_letter = image_id.replace("image_", "")
+                entity_id = f"{target_obj.label}_{image_letter}_{object_id}"
 
                 # Convert each attribute class and its values
                 for attribute_class, values in attr_data.attributes.items():

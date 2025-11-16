@@ -22,6 +22,7 @@ from src.core.model_manager import ModelManager
 from src.core.types import BinarySubquestion, ObjectDetection, IntraRelation, ImageData
 from src.core.probability import get_verifier_probability
 from src.language.output_models import RelationshipAgentDecision, QwenRelationshipRequest, BinaryRelationshipQuestion
+from src.pipeline.base_agent import BaseVerificationAgent
 
 
 @dataclass
@@ -51,6 +52,7 @@ class RelationshipAgentState:
     """
     original_question: str
     referenced_objects: List[str]
+    target_claims: Dict[str, List[str]] = field(default_factory=dict)  # NEW: What relationship types must be verified
 
     # Object pairs to investigate for relationships
     object_pairs: List[Tuple[str, str]] = field(default_factory=list)  # [(subj_id, obj_id), ...]
@@ -91,7 +93,7 @@ class RelationshipAgentState:
         self.reasoning_trace.append(reasoning)
 
 
-class RelationshipAgent:
+class RelationshipAgent(BaseVerificationAgent[BinaryRelationshipQuestion]):
     """
     Relationship extraction agent using LLM orchestration.
 
@@ -110,13 +112,117 @@ class RelationshipAgent:
             max_qwen_calls: Maximum Qwen VL calls per subquery (prevents infinite loops)
             debug: If True, saves cropped images and prints detailed verification info
         """
-        self.model_manager = ModelManager()
+        super().__init__()  # Initialize BaseVerificationAgent
         self.max_qwen_calls = max_qwen_calls
         self.debug = debug
 
         # Create debug directory if needed
         if self.debug:
             os.makedirs("debug_relationships", exist_ok=True)
+
+    def _extract_target_claims_from_subquestion(self, subquestion: str) -> Dict[str, List[str]]:
+        """
+        Extract the specific relationship types that need to be verified from subquestion.
+
+        Examples:
+        - "Is the candy on top of the table?" → {"relations": ["on_top_of"]}
+        - "Is the bird perched on the buffalo?" → {"relations": ["perched_on"]}
+        - "Is the book near or touching the lamp?" → {"relations": ["near", "touching"]}
+
+        Args:
+            subquestion: Natural language subquestion
+
+        Returns:
+            Dict with "relations" key containing list of relation types to verify
+        """
+        return self._extract_target_claims_generic(
+            subquestion=subquestion,
+            claim_type="relationship types",
+            claim_key="relations",
+            examples=[
+                '"Is the candy on top of the table?" → {"relations": ["on_top_of"]}',
+                '"Is the bird perched on the buffalo?" → {"relations": ["perched_on"]}',
+                '"Is the book near or touching the lamp?" → {"relations": ["near", "touching"]}',
+                '"Is the cup below the shelf?" → {"relations": ["below"]}'
+            ]
+        )
+
+    def _validate_binary_questions(
+        self,
+        binary_questions: List[BinaryRelationshipQuestion],
+        target_claims: Dict[str, List[str]],
+        subquestion: str
+    ) -> bool:
+        """
+        Validate that binary questions include DIRECT verification of target relationship claims.
+
+        Args:
+            binary_questions: Generated binary relationship questions
+            target_claims: Target claims extracted from subquestion
+            subquestion: Original subquestion
+
+        Returns:
+            bool: True if all target claims are covered, False otherwise
+        """
+        return self._validate_binary_questions_generic(
+            binary_questions=binary_questions,
+            target_claims=target_claims,
+            claim_key="relations",
+            value_extractor=lambda q: q.relation,
+            subquestion=subquestion
+        )
+
+    def _generate_fallback_questions(
+        self,
+        target_claims: Dict[str, List[str]],
+        object_pairs: List[Tuple[str, str]],
+        existing_questions: List[BinaryRelationshipQuestion]
+    ) -> List[BinaryRelationshipQuestion]:
+        """
+        Generate minimal binary questions to directly verify missing target relationship claims.
+
+        Args:
+            target_claims: Target claims that need verification
+            object_pairs: List of relevant object pairs
+            existing_questions: Already generated questions
+
+        Returns:
+            List of fallback binary questions for missing targets
+        """
+        if not object_pairs:
+            return []
+
+        # Use base class method to get missing claim values
+        missing_relations = self._get_missing_claims(
+            target_claims=target_claims,
+            claim_key="relations",
+            existing_questions=existing_questions,
+            value_extractor=lambda q: q.relation
+        )
+
+        if not missing_relations:
+            return []
+
+        print(f"  → Generating fallback questions for missing relations: {missing_relations}")
+
+        fallback_questions = []
+        for subj_id, obj_id in object_pairs:
+            for relation in missing_relations:
+                # Extract object types from IDs
+                subj_type = subj_id.split('_')[0]
+                obj_type = obj_id.split('_')[0]
+
+                # Format relation for natural language
+                relation_text = relation.replace("_", " ")
+
+                fallback_questions.append(BinaryRelationshipQuestion(
+                    subject_id=subj_id,
+                    object_id=obj_id,
+                    relation=relation,
+                    binary_question=f"Is the {subj_type} {relation_text} the {obj_type}?"
+                ))
+
+        return fallback_questions
 
     def process_relationship_subquestions(
         self,
@@ -200,16 +306,22 @@ class RelationshipAgent:
         Returns:
             List[RelationshipResult]: Extracted relationship results
         """
-        # 1. Discover which object pairs are relevant to this question
+        # 1. Extract target claims from subquestion (what relationships must be verified)
+        target_claims = self._extract_target_claims_from_subquestion(subquestion.question)
+        if target_claims.get("relations"):
+            print(f"    Target relationship claims to verify: {target_claims['relations']}")
+
+        # 2. Discover which object pairs are relevant to this question
         print(f"    Discovering relevant object pairs for: {subquestion.question}")
         object_pairs = self._discover_relevant_object_pairs(subquestion.question, images)
         print(f"    → Discovered {len(object_pairs)} relevant pairs")
 
-        # 2. Initialize agent state with discovered pairs
+        # 3. Initialize agent state with discovered pairs AND target claims
         state = RelationshipAgentState(
             original_question=subquestion.question,
             referenced_objects=[],  # No longer used
-            object_pairs=object_pairs
+            object_pairs=object_pairs,
+            target_claims=target_claims
         )
 
         print(f"    Starting agentic loop (max {self.max_qwen_calls} Qwen calls)...")
@@ -243,6 +355,21 @@ class RelationshipAgent:
                 print(f"        → Agent ready! Generating {len(decision.binary_questions)} binary questions")
                 state.binary_questions = decision.binary_questions
 
+                # Validate that target relationship claims are covered
+                if not self._validate_binary_questions(
+                    state.binary_questions,
+                    target_claims,
+                    subquestion.question
+                ):
+                    # Generate fallback questions for missing target claims
+                    fallback_questions = self._generate_fallback_questions(
+                        target_claims,
+                        object_pairs,
+                        state.binary_questions
+                    )
+                    state.binary_questions.extend(fallback_questions)
+                    print(f"        → Added {len(fallback_questions)} fallback questions for missing target claims")
+
                 for bq in state.binary_questions:
                     print(f"          • {bq.binary_question}")
 
@@ -250,7 +377,16 @@ class RelationshipAgent:
 
         if not state.binary_questions:
             print(f"    Warning: Agent did not generate binary questions after {self.max_qwen_calls} iterations")
-            return []
+            # Generate fallback questions as last resort
+            if target_claims.get("relations") and object_pairs:
+                print(f"    Generating fallback questions for target relationship claims...")
+                state.binary_questions = self._generate_fallback_questions(
+                    target_claims,
+                    object_pairs,
+                    []
+                )
+            if not state.binary_questions:
+                return []
 
         # 3. Verify binary questions and extract probabilities
         print(f"    Verifying {len(state.binary_questions)} binary questions...")
@@ -293,8 +429,8 @@ class RelationshipAgent:
         for image_id, image_data in sorted(images.items()):
             object_lines.append(f"\n{image_id.upper()}:")
             for obj in image_data.objects:
-                simple_id = image_id.replace("image_", "")
-                obj_id = f"{obj.label}_{simple_id}_{obj.object_id}"
+                image_letter = image_id.replace("image_", "")
+                obj_id = f"{obj.label}_{image_letter}_{obj.object_id}"
                 object_lines.append(f"  - {obj_id} ({obj.label})")
 
         object_context = "\n".join(object_lines)
@@ -354,6 +490,12 @@ Output JSON:
             for qa in state.qwen_qa_history
         ]) if state.qwen_qa_history else "  (No questions asked yet)"
 
+        # Format target claims
+        target_claims_text = ""
+        if state.target_claims.get("relations"):
+            relations_str = ', '.join(state.target_claims["relations"])
+            target_claims_text = f"\n**Target Relationship Claims to Verify**: {relations_str}\n(These specific relationships MUST be directly verified in your binary questions)"
+
         prompt = f"""You are an intelligent agent extracting spatial and interaction relationships between objects to answer complex questions.
 
 **Original Question**: {state.original_question}
@@ -361,6 +503,7 @@ Output JSON:
 **Referenced Objects**: {', '.join(state.referenced_objects)}
 
 **Object Pairs to Investigate**: {[f"{p[0]} & {p[1]}" for p in state.object_pairs]}
+{target_claims_text}
 
 **Relationship Information Gathered So Far**:
 {relationships_summary}
@@ -383,10 +526,31 @@ Decide if you need MORE visual information about spatial/interaction relationshi
 - Get visual details about how objects relate to each other
 
 ### ✅ **Choose "generate_binary_questions"** when you:
-- Know which spatial/interaction relationships likely exist between object pairs
-- Can formulate specific Yes/No questions like "Is the bird perched on the buffalo?"
-- Have gathered enough visual information to answer the original question
-- Can verify relationships with binary questions
+- Have gathered enough visual information about spatial/interaction relationships
+- **CRITICAL: Can directly verify the target relationship claims (if specified)**
+- Can formulate specific Yes/No questions
+- Even if visual evidence suggests different relationships, you can still generate verification questions
+
+## CRITICAL RULE: Subquestion-Aligned Verification
+
+Your binary questions MUST include direct verification of target relationship claims, even if:
+- Visual evidence suggests a different spatial relationship
+- The claim appears unlikely based on what you observed
+- You think the answer will be "No"
+
+**Why:** The ProbLog reasoner needs the probability that the claimed relationship is TRUE, not just probabilities for what you observed.
+
+**Example:**
+  Original Question: "Is the candy on top of the table?"
+  Target Claim: "on_top_of"
+  Visual Evidence: "The candy is below the table"
+
+  CORRECT binary questions:
+    ✓ "Is the candy on top of the table?" (directly verifies target claim - REQUIRED!)
+    ✓ "Is the candy below the table?" (confirms alternative - OPTIONAL)
+
+  INCORRECT binary questions:
+    ✗ Only "Is the candy below the table?" (doesn't verify the claim!)
 
 ## Important: Colored Bounding Boxes
 
@@ -704,11 +868,11 @@ Answer Yes or No.\n\nAnswer:"""
             if len(parts) < 3:
                 return None, None
 
-            simple_image_id = parts[-2]  # Second to last part (e.g., "a")
+            image_letter = parts[-2]  # Second to last part (e.g., "a")
             object_index = int(parts[-1])
 
-            # Convert simple image ID back to full key (e.g., "a" -> "image_a")
-            image_id = f"image_{simple_image_id}"
+            # Convert image letter back to full key (e.g., "a" -> "image_a")
+            image_id = f"image_{image_letter}"
 
             if image_id in images:
                 objects = images[image_id].objects
