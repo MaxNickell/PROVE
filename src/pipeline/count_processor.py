@@ -135,9 +135,7 @@ class CountProcessor:
         all_requirements = []
 
         for subquestion in count_subquestions:
-            if subquestion.subquestion_type != "count":
-                continue
-
+            # No type check needed - all are count questions by context
             # Analyze this subquery to determine count requirements
             requirements = self._analyze_single_count_subquery(
                 llm_client, subquestion, images
@@ -176,7 +174,6 @@ class CountProcessor:
             prompt = f"""Analyze this count subquestion to determine what object classes need counting in which images.
 
 Subquestion: "{subquestion.question}"
-Type: {subquestion.subquestion_type}
 
 Available Images and Object Classes:
 {images_context}

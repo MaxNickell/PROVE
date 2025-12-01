@@ -48,7 +48,6 @@ class KnowledgeBase:
                 attributes={},
                 relationships=[],
                 scene_context={},
-                scene_attributes={},
                 counts={}
             )
 

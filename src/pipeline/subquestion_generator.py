@@ -167,211 +167,91 @@ You will be given:
 - An object list for each image
 Given the visual context, you must reason through the ultimate question. Break down the ultimate question into a set of binary subquestions that, when answered, can collectively resolve the ultimate question.
 
-SUBQUESTION CATEGORIES
-- **attribute**: Verifies a specific visual property or value of an object (e.g., color, material, size, texture).
-- **relationship**: Verifies a spatial or functional relationship between two or more objects (e.g., on top of, holding, to the left of).
-- **scene_attribute**: Verifies a global visual property of the entire scene (e.g., bright, indoor, snowy).
-- **count**: Verifies the number of objects of a given class present in the image.
-
 RULES
 - Each subquestion must be answerable with Yes or No.
 - Write questions in natural language only.
-- Do not write compositional questions in a single question. Seperate compositional questions into multiple questions (e.g., "Is the dog to the left of the blue cat?" should be two questions: "Is the dog to the left of the cat?" and "Is the cat blue?").
-- Mention object classes generically (e.g., "the mailbox", "a buffalo", "the forks").
+- Mention object classes generically (e.g., "the mailbox", "a rabbit", "the forks").
 - The object list shows what entities are detected - use this to inform your questions.
-- Attribute questions must specify a concrete visual value or property to of an object or objects to be verified.
-- Relationship questions must ask one explicit relation at a time between objects.
-- Count questions must ask directly about the number of objects of a given class.
-- Scene attribute questions must describe a clearly observable property of the full scene.
 - Together, the subquestions must provide all information needed to answer the ultimate question.
-- Output strict JSON with only "question" and "subquestion_type" fields.
+- Output strict JSON.
 
 ---
 
 ### EXAMPLES
 
 **Example 1**
-Ultimate Question: Which scene depicts more power?
+Ultimate Question: Are there more people wearing blue shirts sitting at tables in image A than in image B?
 
 IMAGE A
-Image Caption: A king sits on a golden throne in a grand hall surrounded by guards holding spears. Red carpets line the floor and tall stained glass windows cast colorful light over the crown resting beside him. Three subjects bow before the throne while two musicians stand by holding trumpets.
-Object List: crown, guard (4), king, spear (4), subject (3), throne
+Image Caption: A busy outdoor café lines a cobblestone street. Several small round tables with metal chairs are arranged under large umbrellas. Groups of people sit and talk while a waiter carries a tray of drinks between the tables. A couple of customers waiting in line stand near the entrance, and a cyclist passes by in the background. A few people in blue shirts are scattered among the seated and standing customers, some with bags or laptops on the tables.
+Object List: person (9), table (6), chair (12), shirt-blue (4), umbrella (3), tray, drink (8), bag (3), laptop (2), bicycle, building (2), menu board
 
 IMAGE B
-Image Caption: A man sits cross-legged on the sidewalk with torn clothes and an empty cup beside him. Two people walk past without looking as a gust of wind scatters some coins near his feet. Behind him, a cracked wall with faded posters leans into shadow.
-Object List: clothing, coin (2), cup, man, poster, sidewalk, wall
+Image Caption: Inside a modern co-working space, long wooden tables are arranged in rows with office chairs on both sides. Several people work on laptops while others stand near a whiteboard covered in notes. A person in a blue shirt gestures toward the board, and another in a blue hoodie leans against a pillar near the back. Coffee mugs, notebooks, and headphones are scattered across the tables. Large windows look out onto a street with passing cars.
+Object List: person (10), table (4), chair (10), shirt-blue (2), hoodie-blue, laptop (7), mug (5), notebook (6), headphone (3), whiteboard, pillar, window (3), car (4)
 
 Output:
-{{
-  "subquestions": [
-    {{
-      "question": "Is the king in image A sitting on the throne?",
-      "subquestion_type": "relationship"
-    }},
-    {{
-      "question": "Is the king in image A wearing the crown?",
-      "subquestion_type": "relationship"
-    }},
-    {{
-      "question": "Do the guards in image A appear to be facing or serving the king?",
-      "subquestion_type": "relationship"
-    }},
-    {{
-      "question": "Are the subjects in image A bowing toward the king?",
-      "subquestion_type": "relationship"
-    }},
-    {{
-      "question": "How many subjects are there in image A?",
-      "subquestion_type": "count"
-    }},
-    {{
-      "question": "How many guards are there in image A?",
-      "subquestion_type": "count"
-    }},
-    {{
-      "question": "Is the man in image B sitting on the sidewalk?",
-      "subquestion_type": "relationship"
-    }},
-    {{
-      "question": "Is the man in image B wearing torn clothing?",
-      "subquestion_type": "relationship"
-    }},
-    {{
-      "question": "Is the man's clothing in image B torn or tattered?",
-      "subquestion_type": "attribute"
-    }},
-    {{
-      "question": "Does the man in image B appear to be poor or destitute?",
-      "subquestion_type": "attribute"
-    }},
-    {{
-      "question": "Is the man in image B sitting beside a cup for donations?",
-      "subquestion_type": "relationship"
-    }},
-    {{
-      "question": "Is the environment of image A bright and ornate?",
-      "subquestion_type": "scene_attribute"
-    }},
-    {{
-      "question": "Is the environment of image B dimly lit and worn down?",
-      "subquestion_type": "scene_attribute"
-    }}
-  ]
-}}
+[
+  "In image A, how many people sitting at a table are wearing a blue shirt?",
+  "In Image B, how many people sitting at a table are wearing a blue shirt?"
+]
 
 ---
 
 **Example 2**
-Ultimate Question: What is the difference between the two images?
+Ultimate Question: Do both images show at least two cats resting on surfaces higher than any dog?
 
 IMAGE A
-Image Caption: Several dogs of different breeds run freely through a sunny dog park. Two chase tennis balls, one leaps through a sprinkler, and three others roll in the grass while two owners watch from benches. Water bowls and toys are scattered across the open field.
-Object List: ball (2), dog (4), owner (2), sprinkler
+Image Caption: In a cozy living room, a large dog lies stretched out on a rug near a coffee table. A sofa sits against the wall with a colorful blanket draped over the back. One cat perches on the top of the sofa, and another cat is somewhere on a tall bookshelf beside a potted plant and several stacked books. A TV stands on a low stand opposite the sofa, and a floor lamp glows softly in the corner.
+Object List: dog, cat (2), sofa, rug, coffee table, bookshelf, book (10), plant (2), TV, TV stand, lamp, blanket, pillow (3)
 
 IMAGE B
-Image Caption: A crowd of dogs races down a marked track during a dog competition. Four trainers stand at the sidelines holding leashes and stopwatches. A banner with the competition logo waves in the background as spectators cheer from bleachers.
-Object List: dog (3), leash, track, trainer (2)
+Image Caption: In a small sunroom, sunlight pours through large windows onto a tiled floor. Two dogs rest near a food bowl placed on the ground. A narrow windowsill runs along the back wall, and one cat stretches out along it while another cat curls up on the top of a cushioned chair near a side table. A scratching post stands in one corner, and a watering can sits beside several potted plants.
+Object List: dog (2), cat (2), chair, cushion, side table, windowsill, food bowl, scratching post, plant (4), watering can, window (3), tile floor
 
 Output:
-{{
-  "subquestions": [
-    {{
-      "question": "Do the dogs in image A appear relaxed?",
-      "subquestion_type": "attribute"
-    }},
-    {{
-      "question": "Are the dogs in image A playing with each other?",
-      "subquestion_type": "relationship"
-    }},
-    {{
-      "question": "Are the dogs in image A playing with balls?",
-      "subquestion_type": "relationship"
-    }},
-    {{
-      "question": "How many dogs are there in image A?",
-      "subquestion_type": "count"
-    }},
-    {{
-      "question": "How many dogs are there in image B?",
-      "subquestion_type": "count"
-    }},
-    {{
-      "question": "Are the dogs in image B running on a track?",
-      "subquestion_type": "relationship"
-    }},
-    {{
-      "question": "Are the trainers in image B holding leashes?",
-      "subquestion_type": "relationship"
-    }},
-    {{
-      "question": "Are the dogs in image B in good physical condition?",
-      "subquestion_type": "attribute"
-    }},
-    {{
-      "question": "Are the dogs in image B competing or racing?",
-      "subquestion_type": "relationship"
-    }},
-    {{
-      "question": "Is the environment in image A open and natural?",
-      "subquestion_type": "scene_attribute"
-    }},
-    {{
-      "question": "Is the environment in image B structured or man-made?",
-      "subquestion_type": "scene_attribute"
-    }}
-  ]
-}}
+[
+  "In image A, how many cats are resting on a surface above all dogs?",
+  "In image B, how many cats are resting on a surface above all dogs?",
+]
 
 ---
 
 **Example 3**
-Ultimate Question: Which image appears more fair?
+Ultimate Question: Do both images contain exactly one red traffic light directly above a painted crosswalk?
 
 IMAGE A
-Image Caption: Five children sit in a circle dividing colorful candies evenly among themselves. Each child smiles and places pieces into small cups. The table is neatly arranged, and everyone receives the same amount. A teacher stands nearby supervising.
-Object List: candy (2), child (5), cup (2)
+Image Caption: At a downtown intersection at dusk, cars wait at a stop line while pedestrians gather on the sidewalk. Two traffic lights hang over the street from metal poles; one faces the main road while another faces a smaller side street. A wide painted crosswalk with white stripes stretches across the main road in front of the waiting cars. Storefronts with bright signs and a bus stop shelter line the sidewalk, and a bicyclist rides past the corner.
+Object List: car (5), traffic light (2), crosswalk, pole (2), bus shelter, bicycle, store (4), sign (5), sidewalk, building (3)
 
 IMAGE B
-Image Caption: Several animals gather around two water troughs under the sun. Three horses drink from a full container while two goats stand beside an empty trough. A farmer watches from the distance without intervening.
-Object List: goat (2), horse (3), trough (2)
+Image Caption: In a quieter residential area during the day, a single intersection joins two narrow roads. One traffic light is mounted on a horizontal bar extending from a pole at the corner. A faded crosswalk with worn white lines crosses one of the streets, and a school zone sign stands nearby. A parked car, a mailbox, and a row of trees line the sidewalk. A pedestrian walks a dog along the opposite side of the street.
+Object List: traffic light, crosswalk, pole, bar, sign-school, car, mailbox, tree (6), sidewalk, pedestrian, dog, house (3)
 
 Output:
-{{
-  "subquestions": [
-    {{
-      "question": "In image A, Do the children each have candies in front of them?",
-      "subquestion_type": "relationship"
-    }},
-    {{
-      "question": "How many candies are there in image A?",
-      "subquestion_type": "count"
-    }},
-    {{
-      "question": "How many children are there in image A?",
-      "subquestion_type": "count"
-    }},
-    {{
-      "question": "Are the horses in image B drinking from a full trough?",
-      "subquestion_type": "relationship"
-    }},
-    {{
-      "question": "Are the goats in image B standing beside an empty trough?",
-      "subquestion_type": "relationship"
-    }},
-    {{
-      "question": "Do the goats in image B appear thirsty or waiting for water?",
-      "subquestion_type": "attribute"
-    }},
-    {{
-      "question": "Is the environment in image A organized or well-kept?",
-      "subquestion_type": "scene_attribute"
-    }},
-    {{
-      "question": "Is the environment in image B dry or arid?",
-      "subquestion_type": "scene_attribute"
-    }}
-  ]
-}}
+[
+    "In image A, how many red traffic lights are directly above a painted crosswalk?",
+    "In image B, how many red traffic lights are directly above a painted crosswalk?",
+]
+
+---
+
+**Example 4**
+Ultimate Question: Is there exactly one image where a child holding a red ball stands closer to a leashed dog than to any adult?
+
+IMAGE A
+Image Caption: In a grassy park, a child in a striped shirt holds a bright red ball near a paved path. An adult stands a few steps away talking to another grown-up near a picnic table covered with food containers and drinks. A medium-sized dog on a leash is somewhere between the child and the picnic table, with the leash leading back toward the first adult. Another dog without a leash sniffs near a trash can by a tree. A playground and several benches are visible in the distance.
+Object List: child, adult (2), dog (2), leash, ball-red, picnic table, container (5), drink (3), trash can, tree (4), bench (3), playground, path
+
+IMAGE B
+Image Caption: On a neighborhood sidewalk, a child carries a red ball while walking beside an adult who holds two leashes attached to small dogs trotting ahead. The dogs are slightly farther from the child than the adult is. Another adult walks behind them pushing a stroller. Parked cars line the street, and houses with front yards and mailboxes extend down the block. A streetlamp stands at the corner.
+Object List: child, adult (2), dog (2), leash (2), ball-red, stroller, car (4), house (5), mailbox (4), streetlamp, sidewalk, yard (5)
+
+Output:
+[
+    "In image A, is there a child holding a red ball and the child is closer to a leashed dog than to any adult?",
+    "In image B, is there a child holding a red ball and the child is closer to a leashed dog than to any adult?",
+]
 
 ---
 
@@ -380,41 +260,17 @@ Ultimate Question: Which image depicts a man on the left of a woman carrying a r
 
 IMAGE A
 Image Caption: Three people walk along a rainy city street. Two men and one woman are visible. The woman in a yellow raincoat holds an umbrella, while one man in a blue jacket stands nearby carrying a shopping bag. The other man, wearing a gray coat, walks farther behind them. Cars and streetlights line the wet sidewalk.
-Object List: umbrella, woman (1), man (2), shopping bag, car (2), streetlight (1)
+Object List: umbrella, woman, man (2), shopping bag, car (2), streetlight
 
 IMAGE B
 Image Caption: Four people stroll through a sunny park. A woman in a coat holds an umbrella while two men walk nearby — one pushing a stroller and another talking on a phone. Another woman sits on a bench under a tree.
 Object List: umbrella, woman (2), man (2), stroller, bench, tree (3)
 
 Output:
-{{
-  "subquestions": [
-    {{
-      "question": "In image A, is there a man to the left of a woman?",
-      "subquestion_type": "relationship"
-    }},
-    {{
-      "question": "In image B, is there a man to the left of a woman?",
-      "subquestion_type": "relationship"
-    }},
-    {{
-      "question": "In image A, is the woman carrying an umbrella?",
-      "subquestion_type": "relationship"
-    }},
-    {{
-      "question": "In image B, is the woman carrying an umbrella?",
-      "subquestion_type": "relationship"
-    }},
-    {{
-      "question": "In image A, is the umbrella the woman is carrying red?",
-      "subquestion_type": "attribute"
-    }},
-    {{
-      "question": "In image B, is the umbrella the woman is carrying red?",
-      "subquestion_type": "attribute"
-    }},
-  ]
-}}
+[
+  "In image A, is there a man to the left of a woman carrying a red umbrella?",
+  "In image B, is there a man to the left of a woman carrying a red umbrella?"
+]
 
 ---
 
@@ -434,14 +290,14 @@ Ultimate Question: {ultimate_question}"""
     
     def _convert_to_binary_subquestions(
         self,
-        subquestions: List,
+        subquestions: List[str],
         all_objects: Dict[str, List[ObjectDetection]]
     ) -> List[BinarySubquestion]:
         """
-        Convert Pydantic-validated subquestions to BinarySubquestion objects.
+        Convert list of question strings to BinarySubquestion objects.
 
         Args:
-            subquestions: List of SubquestionItem objects from Pydantic validation
+            subquestions: List of question strings from Pydantic validation
             all_objects: Original objects (unused now, but kept for compatibility)
 
         Returns:
@@ -449,18 +305,13 @@ Ultimate Question: {ultimate_question}"""
         """
         binary_subquestions = []
 
-        for subquestion_item in subquestions:
+        for question in subquestions:
             try:
-                # Extract data from SubquestionItem (Pydantic already validated types)
-                question = subquestion_item.question.strip()
-                subquestion_type = subquestion_item.subquestion_type.strip()
+                if not isinstance(question, str):
+                    continue
 
-                # Create BinarySubquestion instance
-                binary_subquestion = BinarySubquestion(
-                    question=question,
-                    subquestion_type=subquestion_type
-                )
-
+                # Create BinarySubquestion instance (no type field anymore)
+                binary_subquestion = BinarySubquestion(question=question.strip())
                 binary_subquestions.append(binary_subquestion)
 
             except Exception as e:
@@ -484,11 +335,9 @@ Ultimate Question: {ultimate_question}"""
             for subquestion in subquestions:
                 # Check required attributes exist
                 assert hasattr(subquestion, 'question')
-                assert hasattr(subquestion, 'subquestion_type')
 
                 # Validate basic content (non-empty)
                 assert subquestion.question.strip()
-                assert subquestion.subquestion_type.strip()
 
             return True
 
