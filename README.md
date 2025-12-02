@@ -15,7 +15,7 @@ answer = model.predict(
     "image_b.jpg",
     "Is there a white bird on top of another animal in both images?"
 )
-print(answer)  # "Yes" or "No" (natural language)
+print(answer)  # "True" or "False"
 ```
 
 ---
@@ -23,10 +23,10 @@ print(answer)  # "Yes" or "No" (natural language)
 ## Core Architecture
 
 ```
-Question → Subquestions → Evidence → ProbLog → LLM Composition → Answer
+Question → Subquestions → Evidence → ProbLog → LLM Composition → True/False
 ```
 
-**Key Principle**: Break complex questions into binary subquestions, collect visual evidence through agentic VLM interaction, compose results through probabilistic logic, and synthesize natural language answer via LLM.
+**Key Principle**: Break complex questions into binary subquestions, collect visual evidence through agentic VLM interaction, compose results through probabilistic logic, and synthesize binary answer via LLM.
 
 ---
 
@@ -184,8 +184,8 @@ query(white_bird_on_animal(image_a)).
 **Process**:
 1. Convert subquestion probabilities to binary (≥0.5 = TRUE, <0.5 = FALSE)
 2. Show LLM binary answers to subquestions
-3. Ask ultimate question
-4. Return natural language answer
+3. Ask ultimate question with instruction to output only "True" or "False"
+4. Return binary answer
 
 **Minimal Prompt**:
 ```
@@ -195,14 +195,16 @@ Given the following subquestion answers:
 2. In image B, is there a white bird on top of another animal? → FALSE
 
 Is there a white bird on top of another animal in both images?
+
+Answer with ONLY 'True' or 'False', nothing else.
 ```
 
-**Output**: Natural language answer (e.g., "No")
+**Output**: Binary answer ("False")
 
 **Why LLM Composition?**:
 - Handles logical structure ("both", "either", "equal count")
 - Better than probabilistic product (overly pessimistic, assumes independence)
-- Interpretable natural language output
+- Clean binary output format
 
 ---
 
@@ -318,7 +320,7 @@ answer = model.predict(
     image_b_path="img2.jpg",
     question="Are there more birds in image A than image B?"
 )
-print(answer)  # Natural language answer
+print(answer)  # "True" or "False"
 ```
 
 ### Detailed Results
@@ -333,7 +335,7 @@ result = model.predict_with_details(
 )
 
 # Access results
-print(result['answer'])  # Natural language answer
+print(result['answer'])  # "True" or "False"
 print(result['subquestions'])  # List of subquestions with probabilities
 print(result['problog_program'])  # Generated ProbLog program
 print(result['metadata'])  # Evidence statistics
@@ -469,10 +471,10 @@ Probabilistic logic enables:
 
 ProbLog returns subquestion probabilities, but ultimate question requires:
 - Logical structure understanding ("both", "equal count")
-- Natural language output
+- Binary output ("True" or "False")
 - Semantic reasoning beyond probability multiplication
 
-LLM sees binary subquestion answers → reasons about ultimate question → natural language response
+LLM sees binary subquestion answers → reasons about ultimate question → binary response
 
 ---
 
@@ -490,7 +492,7 @@ Step 4: Evidence Collection...
 Step 5: ProbLog Reasoning...
   ✓ Reasoning complete
 
-Answer: No
+Answer: False
 
 Subquestions:
 1. In image A, is there a white bird on top of another animal? (P=0.5847)
@@ -518,6 +520,6 @@ PROVE transforms complex visual questions into probabilistic answers through:
 1. **Decomposition**: Binary subquestions that break down complexity
 2. **Agentic Collection**: Autonomous evidence gathering through VLM interaction
 3. **Probabilistic Logic**: ProbLog composes evidence mathematically
-4. **LLM Synthesis**: Natural language answer from binary subquestion results
+4. **LLM Synthesis**: Binary answer ("True"/"False") from subquestion results
 
 **Key Innovation**: Neuro-symbolic architecture combining neural perception (VLMs) with symbolic reasoning (ProbLog) via agentic orchestration.

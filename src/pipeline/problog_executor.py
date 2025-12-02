@@ -171,7 +171,7 @@ has_relationship(I,A,B,R) :- relation(I,A,B,R)."""
             llm_client: LLM client
 
         Returns:
-            str: Natural language answer from LLM
+            str: Binary answer ("True" or "False")
         """
         # Convert subquestion probabilities to binary answers (threshold 0.5)
         subquestion_answers = []
@@ -189,31 +189,50 @@ has_relationship(I,A,B,R) :- relation(I,A,B,R)."""
             subquestion_answers
         )
 
-        # Call LLM
+        # Call LLM with system instruction for binary output
         print(f"  Calling LLM for ultimate reasoning...")
-        response = llm_client.chat([{"role": "user", "content": prompt}])
+        messages = [
+            {
+                "role": "system",
+                "content": "You are a logical reasoning assistant. Answer questions with ONLY 'True' or 'False'. Do not provide any explanation or additional text."
+            },
+            {
+                "role": "user",
+                "content": prompt
+            }
+        ]
+        response = llm_client.chat(messages, temperature=0.0)
+
+        # Parse response to extract True/False
+        answer = response.strip()
+        # Normalize to True/False
+        if "true" in answer.lower():
+            answer = "True"
+        elif "false" in answer.lower():
+            answer = "False"
+        else:
+            # Fallback if LLM doesn't follow instruction
+            print(f"  Warning: LLM returned unexpected answer: '{answer}'")
+            answer = "False"  # Conservative default
 
         # Display answer
-        print(f"\n  LLM Answer:")
-        answer_lines = response.strip().split('\n')
-        for line in answer_lines:
-            if line.strip():
-                print(f"    {line}")
+        print(f"\n  LLM Answer: {answer}")
 
-        return response.strip()
+        return answer
 
     def _create_ultimate_reasoning_prompt(
         self,
         ultimate_question: str,
         subquestion_answers: List[Dict]
     ) -> str:
-        """Create minimal prompt - let ultimate question guide output format."""
+        """Create prompt that constrains LLM to output only True or False."""
         prompt = "Given the following subquestion answers:\n\n"
 
         for i, sq in enumerate(subquestion_answers, 1):
             prompt += f"{i}. {sq['question']} → {sq['answer']}\n"
 
-        prompt += f"\n{ultimate_question}"
+        prompt += f"\n{ultimate_question}\n\n"
+        prompt += "Answer with ONLY 'True' or 'False', nothing else."
 
         return prompt
 

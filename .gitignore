@@ -22,4 +22,13 @@ yoloe-11l-seg-pf.pt
 #
 .claude
 
+models
 models/*  
+
+nlvr
+nlvr/*
+data
+data/*
+
+nlvr2_results/
+nlvr2_results/*

@@ -73,7 +73,7 @@ class PROVE:
             question: Ultimate question to answer
 
         Returns:
-            Natural language answer
+            Binary answer ("True" or "False")
 
         Raises:
             FileNotFoundError: If image paths don't exist
@@ -102,7 +102,7 @@ class PROVE:
 
         Returns:
             Dict with keys:
-                - answer: Natural language answer (str)
+                - answer: Binary answer ("True" or "False")
                 - subquestions: List of subquestions with probabilities
                 - problog_program: Generated ProbLog program (str)
                 - metadata: Object counts, evidence stats, etc.
