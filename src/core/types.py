@@ -67,8 +67,7 @@ class ImageData:
     attributes: Dict[int, AttributeData]  # {object_id: AttributeData}
     relationships: List[IntraRelation]
     scene_context: Dict[str, Any]  # Processing aids like captions
-    scene_attributes: Dict[str, Any]  # Extracted scene-level attributes
-    counts: Dict[str, Any]  # Probabilistic object counts {"class": {"count": int, "confidence": float}}
+    counts: Dict[str, Any]  # Probabilistic count distributions {"class": {"distribution": {count: prob}}}
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary with explicit serialization for complex fields."""
@@ -77,16 +76,14 @@ class ImageData:
             'attributes': {k: v.to_dict() for k, v in self.attributes.items()},
             'relationships': [rel.to_dict() for rel in self.relationships],
             'scene_context': dict(self.scene_context) if self.scene_context else {},
-            'scene_attributes': dict(self.scene_attributes) if self.scene_attributes else {},
             'counts': dict(self.counts) if self.counts else {}
         }
 
 
 @dataclass
 class BinarySubquestion:
-    """Binary subquestion - pure natural language, no object IDs."""
+    """Binary subquestion - pure natural language, no type classification."""
     question: str  # Binary question answerable with Yes/No
-    subquestion_type: str  # "attribute", "relationship", "scene_attribute", "count"
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -125,11 +122,18 @@ class SubquestionResult:
     """Result from ProbLog execution of a subquestion."""
     subquestion: str  # Original binary subquestion
     probability: float  # Computed probability
-    supporting_facts: List[str]  # ProbLog facts that contributed
+    supporting_facts: List['ProbLogFact']  # Scoped ProbLog facts for this subquestion
+    problog_program: str  # Complete scoped ProbLog program
     evidence_trail: List[str]  # Human-readable evidence chain
 
     def to_dict(self) -> Dict[str, Any]:
-        return asdict(self)
+        return {
+            'subquestion': self.subquestion,
+            'probability': self.probability,
+            'supporting_facts': [f.to_dict() for f in self.supporting_facts],
+            'problog_program': self.problog_program,
+            'evidence_trail': self.evidence_trail
+        }
 
 
 @dataclass

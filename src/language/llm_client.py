@@ -8,11 +8,9 @@ from pydantic import BaseModel, ValidationError
 
 from .output_models import (
     SubquestionResponse,
-    SubquestionItem,
     AttributePlanningResponse,
     CandidateResponse,
     CountRequirementResponse,
-    SceneAttributeResponse,
     EntityExtractionResponse,
     ObjectDiscoveryResponse,
     ImageDiscoveryResponse,
@@ -178,10 +176,6 @@ class LLMClient:
     def analyze_count_requirements(self, messages: List[Dict[str, str]], **kwargs) -> CountRequirementResponse:
         """Analyze count requirements with validation."""
         return self.chat_with_validation(messages, CountRequirementResponse, **kwargs)
-
-    def analyze_scene_attributes(self, messages: List[Dict[str, str]], **kwargs) -> SceneAttributeResponse:
-        """Analyze scene attributes with validation."""
-        return self.chat_with_validation(messages, SceneAttributeResponse, **kwargs)
 
     def extract_entities(self, messages: List[Dict[str, str]], **kwargs) -> EntityExtractionResponse:
         """Extract entities from image captions with validation."""

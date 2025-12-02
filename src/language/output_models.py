@@ -1,31 +1,11 @@
 from __future__ import annotations
-from typing import List, Dict
+from typing import List, Dict, Literal
 from pydantic import BaseModel, Field, field_validator
 
 
-class SubquestionItem(BaseModel):
-    """Single subquestion item - pure natural language, no object IDs."""
-    question: str = Field(..., description="The binary question in natural language")
-    subquestion_type: str = Field(..., description="Type of subquestion: attribute, relationship, scene_attribute, or count")
-
-    @field_validator('question')
-    @classmethod
-    def validate_question(cls, v):
-        if not v.strip():
-            raise ValueError("Question cannot be empty")
-        return v.strip()
-
-    @field_validator('subquestion_type')
-    @classmethod
-    def validate_type(cls, v):
-        if v not in ['attribute', 'relationship', 'scene_attribute', 'count']:
-            raise ValueError("Subquestion type must be 'attribute', 'relationship', 'scene_attribute', or 'count'")
-        return v
-
-
 class SubquestionResponse(BaseModel):
-    """Pydantic model for subquestion generation output."""
-    subquestions: List[SubquestionItem] = Field(..., description="List of binary subquestions with metadata")
+    """Simple list of subquestion strings - no type classification."""
+    subquestions: List[str] = Field(..., description="List of binary subquestions")
 
     @field_validator('subquestions')
     @classmethod
@@ -34,7 +14,10 @@ class SubquestionResponse(BaseModel):
             raise ValueError("Subquestions list cannot be empty")
         if len(v) > 50:  # Reasonable upper limit
             raise ValueError("Too many subquestions generated")
-        return v
+        for question in v:
+            if not isinstance(question, str) or not question.strip():
+                raise ValueError("Each subquestion must be a non-empty string")
+        return [q.strip() for q in v]
 
 
 
@@ -109,38 +92,6 @@ class CountRequirementResponse(BaseModel):
             raise ValueError("Count requirements must be a list")
         if len(v) > 10:  # Reasonable upper limit
             raise ValueError("Too many count requirements extracted")
-        return v
-
-
-class SceneAttributeCandidateItem(BaseModel):
-    """Single scene attribute candidate."""
-    image_id: str = Field(..., description="Image identifier")
-    attribute_class: str = Field(..., description="Scene attribute category")
-    candidate_value: str = Field(..., description="Specific value to verify")
-    binary_question: str = Field(..., description="Binary Yes/No question")
-
-    @field_validator('image_id', 'attribute_class', 'candidate_value', 'binary_question')
-    @classmethod
-    def validate_non_empty(cls, v):
-        if not v.strip():
-            raise ValueError("Field cannot be empty")
-        return v.strip()
-
-
-class SceneAttributeResponse(BaseModel):
-    """Pydantic model for scene attribute planning output."""
-    scene_attribute_candidates: List[SceneAttributeCandidateItem] = Field(
-        ...,
-        description="List of scene attribute candidates for verification"
-    )
-
-    @field_validator('scene_attribute_candidates')
-    @classmethod
-    def validate_candidates(cls, v):
-        if not isinstance(v, list):
-            raise ValueError("Scene attribute candidates must be a list")
-        if len(v) > 20:  # Reasonable upper limit
-            raise ValueError("Too many scene attribute candidates")
         return v
 
 
@@ -440,5 +391,166 @@ class SceneAgentDecision(BaseModel):
             raise ValueError("binary_questions list cannot be empty when action is 'generate_binary_questions'")
 
 
+# ==============================================================================
+# Unified Agent Models
+# ==============================================================================
+
+class PerceiveDecision(BaseModel):
+    """Decision to ask VLM an open-ended question to gather information."""
+
+    action: Literal["perceive"] = Field(
+        "perceive",
+        description="Action type"
+    )
+
+    reasoning: str = Field(
+        ...,
+        description="Why this information is needed"
+    )
+
+    target: str = Field(
+        ...,
+        description="Entity ID to perceive (e.g., 'dog_a_1', 'table_b_3')"
+    )
+
+    question: str = Field(
+        ...,
+        description="Open-ended question for VLM (e.g., 'What color is this dog?')"
+    )
+
+    @field_validator('reasoning', 'target', 'question')
+    @classmethod
+    def validate_non_empty(cls, v):
+        if not v or not v.strip():
+            raise ValueError("Field cannot be empty")
+        return v.strip()
+
+
+class VerifyDecision(BaseModel):
+    """Decision to verify facts via binary questions and collect probabilities."""
+
+    action: Literal["verify"] = Field(
+        "verify",
+        description="Action type"
+    )
+
+    reasoning: str = Field(
+        ...,
+        description="Why verifying these facts"
+    )
+
+    verify_type: str = Field(
+        ...,
+        description="Type of evidence: 'attribute', 'relationship', or 'scene'"
+    )
+
+    targets: List[str] = Field(
+        ...,
+        description="Entity IDs to verify (e.g., ['dog_a_0', 'dog_a_1'])"
+    )
+
+    property: str = Field(
+        ...,
+        description="Property to check (e.g., 'color', 'material', 'on_top_of')"
+    )
+
+    value: str | None = Field(
+        None,
+        description="Expected value (e.g., 'red', 'wooden') or None for any value"
+    )
+
+    @field_validator('verify_type')
+    @classmethod
+    def validate_verify_type(cls, v):
+        if v not in ['attribute', 'relationship', 'count']:
+            raise ValueError("verify_type must be 'attribute', 'relationship', or 'count'")
+        return v
+
+    @field_validator('targets')
+    @classmethod
+    def validate_targets(cls, v):
+        if not v:
+            raise ValueError("targets cannot be empty")
+        return v
+
+    @field_validator('reasoning', 'property')
+    @classmethod
+    def validate_non_empty(cls, v):
+        if not v or not v.strip():
+            raise ValueError("Field cannot be empty")
+        return v.strip()
+
+
+class DoneDecision(BaseModel):
+    """Decision that evidence collection is complete."""
+
+    action: Literal["done"] = Field(
+        "done",
+        description="Action type"
+    )
+
+    reasoning: str = Field(
+        ...,
+        description="Why evidence collection is complete"
+    )
+
+    @field_validator('reasoning')
+    @classmethod
+    def validate_reasoning(cls, v):
+        if not v or not v.strip():
+            raise ValueError("Reasoning cannot be empty")
+        return v.strip()
+
+
+# Union type for type hints
+UnifiedAgentDecision = PerceiveDecision | VerifyDecision | DoneDecision
+
+
+class UnifiedBinaryQuestion(BaseModel):
+    """
+    Binary question generated by unified agent for verification.
+
+    Used when agent is in 'verify' phase to collect probabilities.
+    """
+
+    question_type: str = Field(
+        ...,
+        description="Type: 'attribute', 'relationship', or 'scene'"
+    )
+
+    question_text: str = Field(
+        ...,
+        description="Binary question for VLM (Yes/No answerable)"
+    )
+
+    # For attribute questions
+    entity_id: str | None = Field(None, description="Entity being checked")
+    attribute_class: str | None = Field(None, description="Attribute category (e.g., 'color')")
+    attribute_value: str | None = Field(None, description="Attribute value (e.g., 'orange')")
+
+    # For relationship questions
+    subject_id: str | None = Field(None, description="Subject entity")
+    object_id: str | None = Field(None, description="Object entity")
+    relation: str | None = Field(None, description="Relationship type (e.g., 'on_top_of')")
+
+    # For scene questions
+    scene_attribute: str | None = Field(None, description="Scene property")
+    scene_value: str | None = Field(None, description="Scene value")
+
+    @field_validator('question_type')
+    @classmethod
+    def validate_type(cls, v):
+        if v not in ['attribute', 'relationship', 'scene']:
+            raise ValueError("question_type must be 'attribute', 'relationship', or 'scene'")
+        return v
+
+    @field_validator('question_text')
+    @classmethod
+    def validate_text(cls, v):
+        if not v.strip():
+            raise ValueError("question_text cannot be empty")
+        return v.strip()
+
+
 # Union type for all possible responses
-OutputModel = SubquestionResponse | AttributePlanningResponse | CandidateResponse | CountRequirementResponse | SceneAttributeResponse | EntityExtractionResponse | AgentDecision | RelationshipAgentDecision | SceneAgentDecision
+OutputModel = SubquestionResponse | AttributePlanningResponse | CandidateResponse | CountRequirementResponse | EntityExtractionResponse | AgentDecision | RelationshipAgentDecision | SceneAgentDecision | UnifiedAgentDecision | UnifiedBinaryQuestion

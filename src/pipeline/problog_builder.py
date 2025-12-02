@@ -3,7 +3,7 @@ ProbLog knowledge base builder for PROVE pipeline.
 Converts extracted evidence into probabilistic logical facts using exact specification format.
 """
 
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Set, Tuple
 from src.core.types import ImageData, ProbLogFact
 
 
@@ -15,6 +15,231 @@ class ProbLogBuilderError(RuntimeError):
 
     def __str__(self):
         return self.message
+
+
+class ProbLogFactBuilder:
+    """
+    Build ProbLog facts from a single subquestion's evidence collection.
+
+    This creates SCOPED facts - only the entities and evidence relevant to one subquestion.
+    This makes LLM rule generation much more efficient by providing only relevant facts.
+    """
+
+    def __init__(self):
+        """Initialize fact builder."""
+        pass
+
+    def build_facts_from_evidence(
+        self,
+        evidence: 'EvidenceCollection',
+        images: Dict[str, ImageData]
+    ) -> List[ProbLogFact]:
+        """
+        Convert evidence collection to ProbLog facts (scoped to this subquestion).
+
+        Args:
+            evidence: Evidence collected for ONE subquestion
+            images: ImageData for entity metadata (bbox, categories)
+
+        Returns:
+            List[ProbLogFact]: Scoped facts for this subquestion only
+        """
+        facts = []
+
+        # Step 1: Extract all entity IDs referenced in evidence
+        entities_used = self._extract_entities_from_evidence(evidence, images)
+
+        # Step 2: Build entity facts ONLY for referenced entities
+        facts.extend(self._build_entity_facts_for(entities_used, images))
+
+        # Step 3: Build attribute facts from evidence
+        facts.extend(self._build_attribute_facts_from_evidence(evidence.attributes))
+
+        # Step 4: Build relationship facts from evidence
+        facts.extend(self._build_relation_facts_from_evidence(evidence.relationships))
+
+        # Step 5: Build count facts from evidence
+        facts.extend(self._build_count_facts_from_evidence(evidence.counts, images))
+
+        return facts
+
+    def _extract_entities_from_evidence(
+        self,
+        evidence: 'EvidenceCollection',
+        images: Dict[str, ImageData]
+    ) -> Set[str]:
+        """
+        Extract all entity IDs referenced in evidence.
+
+        Args:
+            evidence: Evidence collection
+            images: ImageData to resolve count-based entity references
+
+        Returns:
+            Set of entity IDs like {"bird_a_3", "buffalo_a_4"}
+        """
+        entities = set()
+
+        # From attributes: (entity_id, attr_class, value, prob)
+        for entity_id, _, _, _ in evidence.attributes:
+            entities.add(entity_id)
+
+        # From relationships: (subj_id, obj_id, relation, prob)
+        for subj_id, obj_id, _, _ in evidence.relationships:
+            entities.add(subj_id)
+            entities.add(obj_id)
+
+        # From counts: need to find entities of that category in that image
+        for count_key in evidence.counts.keys():
+            # count_key format: "image_a_bird"
+            parts = count_key.rsplit('_', 1)
+            if len(parts) == 2:
+                image_id_part, category = parts
+                # image_id_part is like "image_a"
+
+                # Find all entities of this category in this image
+                if image_id_part in images:
+                    for obj in images[image_id_part].objects:
+                        if obj.label == category:
+                            image_letter = image_id_part.replace("image_", "")
+                            entity_id = f"{obj.label}_{image_letter}_{obj.object_id}"
+                            entities.add(entity_id)
+
+        return entities
+
+    def _build_entity_facts_for(
+        self,
+        entity_ids: Set[str],
+        images: Dict[str, ImageData]
+    ) -> List[ProbLogFact]:
+        """
+        Build entity facts for ONLY the specified entity IDs.
+
+        Args:
+            entity_ids: Set of entity IDs to include
+            images: ImageData to get entity metadata
+
+        Returns:
+            List[ProbLogFact]: Entity facts for specified entities only
+        """
+        facts = []
+
+        for image_id, image_data in images.items():
+            image_letter = image_id.replace("image_", "")
+
+            for obj in image_data.objects:
+                # Check if this entity is referenced in evidence
+                entity_id = f"{obj.label}_{image_letter}_{obj.object_id}"
+
+                if entity_id in entity_ids:
+                    # Extract bbox
+                    x1, y1, x2, y2 = [int(coord) for coord in obj.bbox]
+
+                    # Create entity fact
+                    fact = ProbLogFact(
+                        probability=obj.confidence,
+                        predicate="entity",
+                        arguments=[image_id, entity_id, obj.label, str(x1), str(y1), str(x2), str(y2)]
+                    )
+                    facts.append(fact)
+
+        return facts
+
+    def _build_attribute_facts_from_evidence(
+        self,
+        attributes: List[Tuple[str, str, str, float]]
+    ) -> List[ProbLogFact]:
+        """
+        Build attribute facts from evidence.attributes list.
+
+        Args:
+            attributes: List of (entity_id, attr_class, value, prob)
+
+        Returns:
+            List[ProbLogFact]: Attribute facts
+        """
+        facts = []
+
+        for entity_id, attr_class, value, prob in attributes:
+            # Extract image_id from entity_id (e.g., "bird_a_3" -> "image_a")
+            parts = entity_id.split('_')
+            if len(parts) >= 2:
+                image_letter = parts[-2]
+                image_id = f"image_{image_letter}"
+
+                fact = ProbLogFact(
+                    probability=prob,
+                    predicate="attribute",
+                    arguments=[image_id, entity_id, value]
+                )
+                facts.append(fact)
+
+        return facts
+
+    def _build_relation_facts_from_evidence(
+        self,
+        relationships: List[Tuple[str, str, str, float]]
+    ) -> List[ProbLogFact]:
+        """
+        Build relation facts from evidence.relationships list.
+
+        Args:
+            relationships: List of (subj_id, obj_id, relation, prob)
+
+        Returns:
+            List[ProbLogFact]: Relation facts
+        """
+        facts = []
+
+        for subj_id, obj_id, relation, prob in relationships:
+            # Extract image_id from subject_id
+            parts = subj_id.split('_')
+            if len(parts) >= 2:
+                image_letter = parts[-2]
+                image_id = f"image_{image_letter}"
+
+                fact = ProbLogFact(
+                    probability=prob,
+                    predicate="relation",
+                    arguments=[image_id, subj_id, obj_id, relation]
+                )
+                facts.append(fact)
+
+        return facts
+
+    def _build_count_facts_from_evidence(
+        self,
+        counts: Dict[str, Dict[int, float]],
+        images: Dict[str, ImageData]
+    ) -> List[ProbLogFact]:
+        """
+        Build count facts from evidence.counts dictionary.
+
+        Args:
+            counts: Dict mapping "image_id_category" to distribution {count: prob}
+            images: ImageData (for validation)
+
+        Returns:
+            List[ProbLogFact]: Count facts
+        """
+        facts = []
+
+        for count_key, distribution in counts.items():
+            # Parse count_key: "image_a_bird" -> image_id="image_a", category="bird"
+            parts = count_key.rsplit('_', 1)
+            if len(parts) == 2:
+                image_id, category = parts
+
+                # Create separate fact for each count value in distribution
+                for count_value, probability in distribution.items():
+                    fact = ProbLogFact(
+                        probability=probability,
+                        predicate="count",
+                        arguments=[image_id, category, str(count_value)]
+                    )
+                    facts.append(fact)
+
+        return facts
 
 
 class ProbLogBuilder:

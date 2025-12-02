@@ -35,8 +35,7 @@ class ProbLogExecutor:
     5. Return probability result
     """
 
-    # Sugar rules always included in programs
-    SUGAR_RULES = """% Helper predicates for easier rule writing
+    SUGAR_RULES = """% Helper predicates
 has_attribute(I,E,A) :- attribute(I,E,A).
 is_category(I,E,C) :- entity(I,E,C,_,_,_,_).
 has_relationship(I,A,B,R) :- relation(I,A,B,R)."""
@@ -48,225 +47,222 @@ has_relationship(I,A,B,R) :- relation(I,A,B,R)."""
     def execute_subquestions(
         self,
         subquestions: List[BinarySubquestion],
-        facts: List[ProbLogFact],
+        evidence_collections: List['EvidenceCollection'],
+        images: Dict[str, 'ImageData'],
         ultimate_question: str = None
-    ) -> Tuple[List[SubquestionResult], float]:
+    ) -> Tuple[List[SubquestionResult], str]:
         """
-        Execute all subquestions in one unified ProbLog program.
-        Also generates and executes ultimate question composition rule.
+        Execute subquestions using SCOPED evidence (one evidence collection per subquestion).
 
-        Flow:
-        1. Generate rules for ALL subquestions (LLM calls)
-        2. Generate ultimate composition rule (NEW)
-        3. Build unified program (facts + sugar + all rules + all queries + ultimate query)
-        4. Execute once via ProbLog library
-        5. Extract results for each subquestion AND ultimate answer
+        NEW EFFICIENT FLOW:
+        1. For each subquestion + evidence pair:
+           - Build scoped facts from evidence (only relevant entities)
+           - Generate rules with scoped facts (smaller LLM prompt)
+           - Execute scoped program and get probability
+        2. Generate ultimate composition from subquestion predicates
+        3. Execute ultimate query
 
         Args:
             subquestions: Binary subquestions to answer
-            facts: ProbLog facts (knowledge base)
+            evidence_collections: Evidence for each subquestion (1:1 mapping)
+            images: ImageData for entity metadata
             ultimate_question: Original ultimate question (optional)
 
         Returns:
-            Tuple[List[SubquestionResult], float]: (subquestion results, ultimate probability)
+            Tuple[List[SubquestionResult], str]: (subquestion results, natural language answer)
 
         Raises:
             ProbLogExecutorError: If execution fails
         """
         try:
             if not subquestions:
-                return [], 0.5
+                return [], "No subquestions provided."
 
-            if not facts:
-                print("⚠ Warning: No facts available for reasoning")
-                return [
-                    SubquestionResult(
-                        subquestion=sq.question,
-                        probability=0.5,
-                        supporting_facts=[],
-                        evidence_trail=["No facts available"]
-                    )
-                    for sq in subquestions
-                ], 0.5
+            if not evidence_collections or len(evidence_collections) != len(subquestions):
+                raise ProbLogExecutorError(f"Evidence collections mismatch: {len(evidence_collections)} vs {len(subquestions)} subquestions")
 
+            # Import ProbLogFactBuilder here to avoid circular import
+            from src.pipeline.problog_builder import ProbLogFactBuilder
+
+            fact_builder = ProbLogFactBuilder()
             llm_client = self.model_manager.get_llm_client()
             total = len(subquestions)
 
-            print(f"\n🔍 Generating rules for {total} subquestions...")
+            print(f"\n🔍 Executing {total} subquestions with SCOPED evidence...")
 
-            # Step 1: Generate rules for ALL subquestions
-            all_rules = []
-            all_queries = []
-            for i, subquestion in enumerate(subquestions, 1):
-                print(f"  [{i}/{total}] Generating rules: {subquestion.question}")
-                rules_string, query_string = self._generate_rules_for_subquestion(
-                    subquestion, facts, llm_client
-                )
-                all_rules.append(f"% Rule for: {subquestion.question}")
-                all_rules.append(rules_string)
-                all_queries.append(query_string)
-
-            # Step 2: Generate ultimate composition rule (NEW)
-            ultimate_probability = 0.5  # Default
-            if ultimate_question:
-                print(f"\n🔍 Generating ultimate composition rule...")
-                print(f"  Ultimate question: {ultimate_question}")
-                composition_rule, ultimate_query = self._generate_ultimate_composition_rule(
-                    ultimate_question, subquestions, llm_client
-                )
-                all_rules.append(f"\n% Ultimate composition rule")
-                all_rules.append(composition_rule)
-                all_queries.append(ultimate_query)
-                print(f"  ✓ Generated composition rule")
-
-            # Step 3: Build unified program
-            facts_string = self._facts_to_problog_string(facts)
-            unified_program = self._build_unified_program(
-                facts_string, all_rules, all_queries
-            )
-
-            # Step 4: Save complete program to knowledge_base.pl
-            with open('knowledge_base.pl', 'w') as f:
-                f.write("% PROVE Pipeline - Unified ProbLog Program\n")
-                f.write(f"% Generated for {total} subquestions\n")
-                if ultimate_question:
-                    f.write(f"% Ultimate question: {ultimate_question}\n")
-                f.write("\n")
-                f.write(unified_program)
-
-            print(f"✓ Generated unified ProbLog program ({len(unified_program)} chars)")
-            print(f"  Saved to: knowledge_base.pl")
-
-            # Step 5: Execute once
-            print(f"\n🔍 Executing unified ProbLog program...")
-            result_dict = self._execute_unified_program(unified_program)
-
-            # Step 6: Extract results for each subquestion
+            # Step 1: Execute each subquestion with its scoped evidence
             results = []
-            for i, (subquestion, query_string) in enumerate(zip(subquestions, all_queries[:-1] if ultimate_question else all_queries), 1):
-                probability = self._extract_query_result(result_dict, query_string)
+            all_predicates = []  # For ultimate composition
+
+            for i, (subquestion, evidence) in enumerate(zip(subquestions, evidence_collections), 1):
                 print(f"  [{i}/{total}] {subquestion.question}")
+
+                # Build scoped facts from THIS subquestion's evidence
+                scoped_facts = fact_builder.build_facts_from_evidence(evidence, images)
+
+                # Generate rules with scoped facts (much smaller prompt!)
+                rules_string, query_string = self._generate_rules_for_subquestion(
+                    subquestion, scoped_facts, llm_client
+                )
+
+                # Build complete scoped program
+                facts_string = self._facts_to_problog_string(scoped_facts)
+                scoped_program = self._build_complete_program(facts_string, rules_string, query_string)
+
+                # Execute scoped program
+                probability = self._execute_problog_program(scoped_program, query_string)
+
                 print(f"    → Probability: {probability:.4f}")
 
+                # Extract predicate name for ultimate composition
+                predicate_match = re.search(r'query\(([^(]+)\(', query_string)
+                if predicate_match:
+                    all_predicates.append(predicate_match.group(1))
+
+                # Store result with scoped facts and program
                 results.append(SubquestionResult(
                     subquestion=subquestion.question,
                     probability=probability,
-                    supporting_facts=[unified_program],
-                    evidence_trail=[f"Unified ProbLog execution: {probability:.4f}"]
+                    supporting_facts=scoped_facts,
+                    problog_program=scoped_program,
+                    evidence_trail=[
+                        f"Evidence: {len(evidence.attributes)} attributes, {len(evidence.relationships)} relationships, {len(evidence.counts)} counts",
+                        f"Scoped facts: {len(scoped_facts)}",
+                        f"Probability: {probability:.4f}"
+                    ]
                 ))
 
-            # Step 7: Extract ultimate answer probability (NEW)
+            # Step 2: Generate ultimate answer (if provided)
+            ultimate_answer = "No ultimate question provided."
             if ultimate_question:
-                ultimate_probability = self._extract_query_result(result_dict, all_queries[-1])
-                print(f"\n  🎯 ULTIMATE ANSWER: {ultimate_question}")
-                print(f"     → Probability: {ultimate_probability:.4f}")
+                print(f"\n🔍 Generating ultimate answer...")
+                print(f"  Ultimate question: {ultimate_question}")
+                ultimate_answer = self._execute_ultimate_composition_with_predicates(
+                    ultimate_question, all_predicates, results, llm_client
+                )
 
-            print(f"✓ Completed {total} subquestions + ultimate answer\n")
-            return results, ultimate_probability
+            # Step 3: Save unified program for debugging
+            unified_program = self._build_unified_debug_program(results, ultimate_question, ultimate_answer)
+            with open('knowledge_base.pl', 'w') as f:
+                f.write(unified_program)
+
+            print(f"\n✓ Completed {total} subquestions")
+            print(f"  Saved unified program to: knowledge_base.pl")
+
+            return results, ultimate_answer
 
         except Exception as err:
             raise ProbLogExecutorError(f"ProbLog execution failed: {err}")
 
-    def _execute_single_subquestion(
+    def _execute_ultimate_composition_with_predicates(
         self,
-        subquestion: BinarySubquestion,
-        facts: List[ProbLogFact]
-    ) -> SubquestionResult:
+        ultimate_question: str,
+        predicates: List[str],
+        results: List[SubquestionResult],
+        llm_client
+    ) -> str:
         """
-        Execute single subquestion using ProbLog with LLM-generated rules.
-
-        Flow:
-        1. Convert facts to ProbLog string
-        2. Generate rules for this subquestion (LLM)
-        3. Combine: facts + sugar + rules + query
-        4. Execute via ProbLog library
-        5. Return result with probability
+        Use LLM to answer ultimate question given binary subquestion answers.
 
         Args:
-            subquestion: Binary subquestion to execute
-            facts: All ProbLog facts
+            ultimate_question: Ultimate question text
+            predicates: List of predicate names (unused, kept for compatibility)
+            results: Subquestion results with probabilities
+            llm_client: LLM client
 
         Returns:
-            SubquestionResult: Execution result
+            str: Binary answer ("True" or "False")
         """
-        try:
-            llm_client = self.model_manager.get_llm_client()
+        # Convert subquestion probabilities to binary answers (threshold 0.5)
+        subquestion_answers = []
+        for result in results:
+            answer = "TRUE" if result.probability >= 0.5 else "FALSE"
+            subquestion_answers.append({
+                'question': result.subquestion,
+                'answer': answer,
+                'probability': result.probability
+            })
 
-            # Step 1: Convert facts to ProbLog string
-            facts_string = self._facts_to_problog_string(facts)
+        # Build minimal prompt
+        prompt = self._create_ultimate_reasoning_prompt(
+            ultimate_question,
+            subquestion_answers
+        )
 
-            # Step 2: Generate rules + query for this subquestion (LLM call)
-            rules_string, query_string = self._generate_rules_for_subquestion(
-                subquestion, facts, llm_client
-            )
+        # Call LLM with system instruction for binary output
+        print(f"  Calling LLM for ultimate reasoning...")
+        messages = [
+            {
+                "role": "system",
+                "content": "You are a logical reasoning assistant. Answer questions with ONLY 'True' or 'False'. Do not provide any explanation or additional text."
+            },
+            {
+                "role": "user",
+                "content": prompt
+            }
+        ]
+        response = llm_client.chat(messages, temperature=0.0)
 
-            # DEBUG: Print generated rules to diagnose issues
-            print(f"    DEBUG: Generated rules for: {subquestion.question[:50]}...")
-            print(f"      Rules preview: {rules_string[:150] if rules_string else '(empty)'}...")
-            print(f"      Query: {query_string}")
+        # Parse response to extract True/False
+        answer = response.strip()
+        # Normalize to True/False
+        if "true" in answer.lower():
+            answer = "True"
+        elif "false" in answer.lower():
+            answer = "False"
+        else:
+            # Fallback if LLM doesn't follow instruction
+            print(f"  Warning: LLM returned unexpected answer: '{answer}'")
+            answer = "False"  # Conservative default
 
-            # Step 3: Combine into complete program
-            full_program = self._build_complete_program(
-                facts_string, rules_string, query_string
-            )
+        # Display answer
+        print(f"\n  LLM Answer: {answer}")
 
-            # Save complete program to knowledge_base.pl for debugging
-            with open('knowledge_base.pl', 'w') as f:
-                f.write(f"% Subquestion: {subquestion.question}\n\n")
-                f.write(full_program)
+        return answer
 
-            # Step 4: Execute via ProbLog library
-            probability = self._execute_problog_program(full_program, query_string)
+    def _create_ultimate_reasoning_prompt(
+        self,
+        ultimate_question: str,
+        subquestion_answers: List[Dict]
+    ) -> str:
+        """Create prompt that constrains LLM to output only True or False."""
+        prompt = "Given the following subquestion answers:\n\n"
 
-            # Step 5: Return result
-            return SubquestionResult(
-                subquestion=subquestion.question,
-                probability=probability,
-                supporting_facts=[full_program],  # Store full program for debugging
-                evidence_trail=[
-                    f"Subquestion type: {subquestion.subquestion_type}",
-                    f"Generated rules: {rules_string[:200]}...",
-                    f"Query: {query_string}",
-                    f"Probability: {probability:.4f}"
-                ]
-            )
+        for i, sq in enumerate(subquestion_answers, 1):
+            prompt += f"{i}. {sq['question']} → {sq['answer']}\n"
 
-        except Exception as e:
-            print(f"⚠ Warning: Failed to execute subquestion '{subquestion.question}': {e}")
-            import traceback
-            traceback.print_exc()
-            # Return default uncertainty on failure
-            return SubquestionResult(
-                subquestion=subquestion.question,
-                probability=0.5,
-                supporting_facts=[],
-                evidence_trail=[f"Execution failed: {str(e)}"]
-            )
+        prompt += f"\n{ultimate_question}\n\n"
+        prompt += "Answer with ONLY 'True' or 'False', nothing else."
+
+        return prompt
+
+    def _build_unified_debug_program(
+        self,
+        results: List[SubquestionResult],
+        ultimate_question: str,
+        ultimate_answer: str
+    ) -> str:
+        """Build clean output with sugar rules defined once."""
+        parts = [
+            self.SUGAR_RULES,
+            ""
+        ]
+
+        if ultimate_question:
+            parts.append(f"% Ultimate: {ultimate_question}")
+            parts.append(f"% Answer: {ultimate_answer}\n")
+
+        for i, result in enumerate(results, 1):
+            parts.append(f"% Subquestion {i}: {result.subquestion}")
+            parts.append(f"% P={result.probability:.4f}")
+            parts.append(result.problog_program)
+            parts.append("")
+
+        return "\n".join(parts)
 
     def _facts_to_problog_string(self, facts: List[ProbLogFact]) -> str:
-        """
-        Convert ProbLogFact list to ProbLog string format.
-
-        Args:
-            facts: List of ProbLog facts
-
-        Returns:
-            str: Facts formatted as ProbLog string
-        """
-        fact_lines = []
-
-        # Group by predicate for organization
-        predicates = ["entity", "relation", "attribute", "scene_attr", "count"]
-
-        for predicate in predicates:
-            predicate_facts = [f for f in facts if f.predicate == predicate]
-            if predicate_facts:
-                fact_lines.append(f"% {predicate} facts")
-                for fact in predicate_facts:
-                    fact_lines.append(fact.to_prolog_string())
-                fact_lines.append("")  # Empty line between sections
-
-        return "\n".join(fact_lines)
+        """Convert facts to ProbLog string without comments."""
+        return "\n".join(f.to_prolog_string() for f in facts)
 
     def _build_complete_program(
         self,
@@ -274,86 +270,8 @@ has_relationship(I,A,B,R) :- relation(I,A,B,R)."""
         rules_string: str,
         query_string: str
     ) -> str:
-        """
-        Combine facts, sugar, rules, and query into complete ProbLog program.
-
-        Args:
-            facts_string: ProbLog facts
-            rules_string: Generated rules
-            query_string: Query statement
-
-        Returns:
-            str: Complete ProbLog program
-        """
-        program_parts = [
-            "% Facts from visual evidence",
-            facts_string,
-            "",
-            "% Sugar rules",
-            self.SUGAR_RULES,
-            "",
-            "% Generated rules for this subquestion",
-            rules_string,
-            "",
-            "% Query",
-            query_string
-        ]
-
-        return "\n".join(program_parts)
-
-    def _build_unified_program(
-        self,
-        facts_string: str,
-        all_rules: List[str],
-        all_queries: List[str]
-    ) -> str:
-        """
-        Build single ProbLog program with all rules and queries.
-
-        Args:
-            facts_string: ProbLog facts
-            all_rules: List of rule strings (includes comment headers)
-            all_queries: List of query strings
-
-        Returns:
-            str: Complete unified ProbLog program
-        """
-        program_parts = [
-            "% Facts from visual evidence",
-            facts_string,
-            "",
-            "% Sugar rules",
-            self.SUGAR_RULES,
-            "",
-            "% Generated rules for all subquestions",
-            "\n\n".join(all_rules),
-            "",
-            "% Queries for all subquestions",
-            "\n".join(all_queries)
-        ]
-
-        return "\n".join(program_parts)
-
-    def _execute_unified_program(self, program: str) -> dict:
-        """
-        Execute unified ProbLog program and return all results.
-
-        Args:
-            program: Complete ProbLog program string
-
-        Returns:
-            dict: Dictionary mapping query terms to probabilities
-        """
-        program = program.replace('`', '').replace('\r', '')
-
-        try:
-            result = get_evaluatable().create_from(PrologString(program)).evaluate()
-            return dict(result)
-        except Exception as e:
-            print(f"⚠ Warning: Unified ProbLog execution failed: {e}")
-            import traceback
-            traceback.print_exc()
-            return {}
+        """Build complete ProbLog program with sugar rules for execution."""
+        return f"{self.SUGAR_RULES}\n\n{facts_string}\n\n{rules_string}\n\n{query_string}"
 
     def _extract_query_result(self, result_dict: dict, query_string: str) -> float:
         """
@@ -555,27 +473,20 @@ INSTRUCTIONS
 - Use the sugar rules to make your rules cleaner
 - Create a query(...) statement for the specific image mentioned
 - Use proper ProbLog syntax: predicates end with '.', rules use ':-'
-- If subquestion asks about a specific image, query that image
+- CRITICAL: Only use exact categories from the Available Facts (e.g., if facts show 'buffalo' and 'cow', use those specific categories - NOT abstract terms like 'animal')
 - DO NOT use markdown code blocks or backticks in your output
-- DO NOT wrap output in ```prolog or ``` code fences
 - Output ONLY the rule definitions and query, nothing else
 
 ---
 
 EXAMPLE 1
-Subquestions:
-1. Is the dog in image A wearing a green harness?
-2. Is the dog in image B wearing a black collar?
+Subquestion: Is the dog in image A wearing a green harness?
 
-Problog Facts:
+Available Facts:
 0.861::entity(image_a, harness_a_0, harness, 195,129,336,290).
 0.929::entity(image_a, dog_a_4, dog, 55,96,545,391).
-0.873::entity(image_b, dog_b_3, dog, 60,0,157,176).
-0.872::entity(image_b, collar_b_4, collar, 101,39,140,62).
 0.854::relation(image_a, harness_a_0, dog_a_4, wearing).
-0.875::relation(image_b, collar_b_4, dog_b_3, wearing).
 0.954::attribute(image_a, harness_a_0, green).
-0.885::attribute(image_b, collar_b_4, black).
 
 Expected Output:
 dog_wearing_green_harness(I) :-
@@ -584,81 +495,52 @@ dog_wearing_green_harness(I) :-
     has_relationship(I,H,D,wearing),
     has_attribute(I,H,green).
 
-dog_wearing_black_collar(I) :-
-    is_category(I,D,dog),
-    is_category(I,C,collar),
-    has_relationship(I,C,D,wearing),
-    has_attribute(I,C,black).
-
 query(dog_wearing_green_harness(image_a)).
-query(dog_wearing_black_collar(image_b)).
 
 ---
 
 EXAMPLE 2
-Subquestions:
-1. In image A, is there a man to the left of a woman?
-2. In image A, is a woman holding an umbrella?
-3. In image A, is the umbrella red?
+Subquestion: Does image A contain two birds?
 
-Problog Facts:
-0.881::entity(image_a, man_a_0, man, 150,150,300,400).
-0.887::entity(image_a, woman_a_1, woman, 300,150,450,400).
-0.905::entity(image_a, umbrella_a_2, umbrella, 320,80,420,200).
-0.892::relation(image_a, woman_a_1, umbrella_a_2, holding).
-0.846::relation(image_a, man_a_0, woman_a_1, left_of).
-0.943::attribute(image_a, umbrella_a_2, red).
+Available Facts:
+0.871::entity(image_a, bird_a_0, bird, 210,226,286,327).
+0.871::entity(image_a, bird_a_1, bird, 293,35,340,98).
+0.016::count(image_a, bird, 0).
+0.225::count(image_a, bird, 1).
+0.759::count(image_a, bird, 2).
 
 Expected Output:
-man_left_of_woman(I) :-
-    is_category(I,M,man),
-    is_category(I,W,woman),
-    has_relationship(I,M,W,left_of).
+bird_count_two(I) :- count(I, bird, 2).
 
-woman_holding_umbrella(I) :-
-    is_category(I,W,woman),
-    is_category(I,U,umbrella),
-    has_relationship(I,W,U,holding).
-
-umbrella_is_red(I) :-
-    is_category(I,U,umbrella),
-    has_attribute(I,U,red).
-
-query(man_left_of_woman(image_a)).
-query(woman_holding_umbrella(image_a)).
-query(umbrella_is_red(image_a)).
+query(bird_count_two(image_a)).
 
 ---
 
 EXAMPLE 3
-Subquestions:
-1. Is image A indoor?
-2. Does image A contain four students?
+Subquestion: Is there a white bird on top of another animal in image A?
 
-Problog Facts:
-0.931::entity(image_a, student_a_0, student, 50,120,200,300).
-0.905::entity(image_a, student_a_1, student, 210,120,350,300).
-0.915::entity(image_a, student_a_2, student, 360,120,480,300).
-0.927::entity(image_a, student_a_3, student, 490,120,620,300).
-0.954::scene_attr(image_a, indoor).
-0.894::count(image_a, student, 4).
+Available Facts:
+0.874::entity(image_a, buffalo_a_0, buffalo, 93,182,402,597).
+0.938::entity(image_a, bird_a_7, bird, 196,96,270,202).
+0.906::relation(image_a, bird_a_7, buffalo_a_0, on_top_of).
+0.787::attribute(image_a, bird_a_7, white).
 
 Expected Output:
-scene_is_indoor(I) :- scene_attr(I, indoor).
+white_bird_on_animal(I) :-
+    is_category(I,B,bird),
+    is_category(I,A,buffalo),
+    has_relationship(I,B,A,on_top_of),
+    has_attribute(I,B,white).
 
-student_count_four(I) :- count(I, student, 4).
-
-query(scene_is_indoor(image_a)).
-query(student_count_four(image_a)).
+query(white_bird_on_animal(image_a)).
 
 ---
 
 NOW GENERATE RULES FOR THIS SUBQUESTION
 
 Subquestion: "{subquestion.question}"
-Subquestion Type: {subquestion.subquestion_type}
 
-Available Facts:
+Available Facts (scoped to this subquestion):
 {facts_string}
 
 Output ONLY the rule definitions and query statements. No explanations or additional text."""
