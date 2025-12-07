@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import List, Dict, Literal
+from typing import List, Dict, Literal, Union
 from pydantic import BaseModel, Field, field_validator
 
 
@@ -18,47 +18,6 @@ class SubquestionResponse(BaseModel):
             if not isinstance(question, str) or not question.strip():
                 raise ValueError("Each subquestion must be a non-empty string")
         return [q.strip() for q in v]
-
-
-
-
-class AttributePlanningResponse(BaseModel):
-    """Pydantic model for attribute planning output."""
-    attribute_requirements: Dict[str, List[str]] = Field(..., description="Object ID to required attribute classes mapping")
-    
-    @field_validator('attribute_requirements')
-    @classmethod
-    def validate_requirements(cls, v):
-        if not isinstance(v, dict):
-            raise ValueError("Attribute requirements must be a dictionary")
-        for obj_id, attr_classes in v.items():
-            if not isinstance(attr_classes, list):
-                raise ValueError(f"Attribute classes for {obj_id} must be a list")
-            for attr_class in attr_classes:
-                if not isinstance(attr_class, str) or not attr_class.strip():
-                    raise ValueError(f"Invalid attribute class: {attr_class}")
-        return v
-
-
-class CandidateResponse(BaseModel):
-    """Pydantic model for attribute candidate generation output."""
-    candidates: List[str] = Field(..., description="List of candidate attribute values")
-
-    @field_validator('candidates')
-    @classmethod
-    def validate_candidates(cls, v):
-        if not isinstance(v, list):
-            raise ValueError("Candidates must be a list")
-        if not v:
-            raise ValueError("Candidates list cannot be empty")
-        if len(v) > 10:  # Reasonable upper limit
-            raise ValueError("Too many candidates generated")
-        # Ensure all values are strings
-        for i, candidate in enumerate(v):
-            if not isinstance(candidate, str) or not candidate.strip():
-                raise ValueError(f"Invalid candidate at index {i}: {candidate}")
-            v[i] = candidate.strip()
-        return v
 
 
 class CountRequirementItem(BaseModel):
@@ -114,281 +73,6 @@ class EntityExtractionResponse(BaseModel):
         # Lowercase and deduplicate
         v = list(set(e.lower() for e in v))
         return v
-
-
-class ObjectDiscoveryResponse(BaseModel):
-    """Response for discovering relevant object IDs from natural language question."""
-    object_ids: List[str] = Field(..., description="List of relevant object IDs")
-
-    @field_validator('object_ids')
-    @classmethod
-    def validate_object_ids(cls, v):
-        if not isinstance(v, list):
-            raise ValueError("Object IDs must be a list")
-        return v
-
-
-class ImageDiscoveryResponse(BaseModel):
-    """Response for discovering relevant image IDs from natural language question."""
-    image_ids: List[str] = Field(..., description="List of relevant image IDs")
-
-    @field_validator('image_ids')
-    @classmethod
-    def validate_image_ids(cls, v):
-        if not isinstance(v, list):
-            raise ValueError("Image IDs must be a list")
-        return v
-
-
-class ObjectPair(BaseModel):
-    """Object pair for relationship discovery."""
-    subject_id: str = Field(..., description="Subject object ID")
-    object_id: str = Field(..., description="Object object ID")
-
-    @field_validator('subject_id', 'object_id')
-    @classmethod
-    def validate_ids(cls, v):
-        if not v.strip():
-            raise ValueError("Object ID cannot be empty")
-        return v.strip()
-
-
-class ObjectPairDiscoveryResponse(BaseModel):
-    """Response for discovering relevant object pairs from natural language question."""
-    object_pairs: List[ObjectPair] = Field(..., description="List of relevant object pairs")
-
-    @field_validator('object_pairs')
-    @classmethod
-    def validate_pairs(cls, v):
-        if not isinstance(v, list):
-            raise ValueError("Object pairs must be a list")
-        return v
-
-
-class QwenInformationRequest(BaseModel):
-    """Request for Qwen VL to gather visual information about an object."""
-    object_id: str = Field(..., description="Object ID to query (e.g., 'dog_a_1')")
-    question: str = Field(..., description="Open-ended question for Qwen (e.g., 'What color is this dog?')")
-    reasoning: str = Field(..., description="Why this information is needed")
-
-    @field_validator('question')
-    @classmethod
-    def validate_question(cls, v):
-        if not v.strip():
-            raise ValueError("Question cannot be empty")
-        if not v.endswith("?"):
-            raise ValueError("Question must end with '?'")
-        return v.strip()
-
-
-class BinaryAttributeQuestion(BaseModel):
-    """Binary question for probability extraction via verification."""
-    object_id: str = Field(..., description="Object ID being queried (e.g., 'dog_a_1') - used for bbox grounding")
-    attribute_class: str = Field(..., description="Attribute category (e.g., 'color', 'size', 'texture')")
-    attribute_value: str = Field(..., description="Specific value to verify (e.g., 'brown', 'large', 'rough')")
-    binary_question: str = Field(..., description="Binary Yes/No question using natural language (e.g., 'Is the dog brown?')")
-
-    @field_validator('binary_question')
-    @classmethod
-    def validate_binary(cls, v):
-        if not v.strip():
-            raise ValueError("Binary question cannot be empty")
-        if "?" not in v:
-            raise ValueError("Binary question must be a question (contain '?')")
-        v_lower = v.lower().strip()
-        if v_lower.startswith("what ") or v_lower.startswith("which ") or v_lower.startswith("how "):
-            raise ValueError("Binary question cannot be open-ended (What/Which/How)")
-        return v.strip()
-
-    @field_validator('attribute_class', 'attribute_value')
-    @classmethod
-    def validate_non_empty(cls, v):
-        if not v.strip():
-            raise ValueError("Field cannot be empty")
-        return v.strip()
-
-
-class AgentDecision(BaseModel):
-    """Agent's decision at each reasoning step in agentic attribute extraction."""
-    action: str = Field(..., description="Action to take: 'ask_qwen' or 'generate_binary_questions'")
-    reasoning: str = Field(..., description="Chain of thought reasoning for this decision")
-
-    qwen_request: QwenInformationRequest | None = Field(None, description="Qwen information request (if action is 'ask_qwen')")
-    binary_questions: List[BinaryAttributeQuestion] | None = Field(None, description="Binary questions (if action is 'generate_binary_questions')")
-
-    @field_validator('action')
-    @classmethod
-    def validate_action(cls, v):
-        if v not in ['ask_qwen', 'generate_binary_questions']:
-            raise ValueError("Action must be 'ask_qwen' or 'generate_binary_questions'")
-        return v
-
-    @field_validator('reasoning')
-    @classmethod
-    def validate_reasoning(cls, v):
-        if not v.strip() or len(v.strip()) < 10:
-            raise ValueError("Reasoning must be substantive (at least 10 characters)")
-        return v.strip()
-
-    def model_post_init(self, __context):
-        """Validate that action matches provided data."""
-        if self.action == "ask_qwen" and self.qwen_request is None:
-            raise ValueError("qwen_request required when action is 'ask_qwen'")
-        if self.action == "generate_binary_questions" and self.binary_questions is None:
-            raise ValueError("binary_questions required when action is 'generate_binary_questions'")
-        if self.action == "generate_binary_questions" and not self.binary_questions:
-            raise ValueError("binary_questions list cannot be empty when action is 'generate_binary_questions'")
-
-
-class QwenRelationshipRequest(BaseModel):
-    """Request for Qwen VL to describe spatial/interaction relationship between two objects."""
-    subject_id: str = Field(..., description="Subject object ID (e.g., 'bird_a_0') - will be marked in RED")
-    object_id: str = Field(..., description="Object ID (e.g., 'buffalo_a_1') - will be marked in BLUE")
-    question: str = Field(..., description="Open-ended question about their relationship (e.g., 'Describe the spatial relationship between the bird (red) and buffalo (blue)')")
-    reasoning: str = Field(..., description="Why this relationship information is needed")
-
-    @field_validator('question')
-    @classmethod
-    def validate_question(cls, v):
-        if not v.strip():
-            raise ValueError("Question cannot be empty")
-        if not v.endswith("?"):
-            raise ValueError("Question must end with '?'")
-        return v.strip()
-
-
-class BinaryRelationshipQuestion(BaseModel):
-    """Binary question for relationship verification with colored bounding boxes."""
-    subject_id: str = Field(..., description="Subject object ID (e.g., 'bird_a_0') - will be marked in RED for bbox grounding")
-    object_id: str = Field(..., description="Object ID (e.g., 'buffalo_a_1') - will be marked in BLUE for bbox grounding")
-    relation: str = Field(..., description="Relationship type to verify (e.g., 'perched_on', 'near', 'touching', 'carrying')")
-    binary_question: str = Field(..., description="Natural language Yes/No question (e.g., 'Is the bird perched on the buffalo?')")
-
-    @field_validator('binary_question')
-    @classmethod
-    def validate_binary(cls, v):
-        if not v.strip():
-            raise ValueError("Binary question cannot be empty")
-        if "?" not in v:
-            raise ValueError("Binary question must be a question (contain '?')")
-        v_lower = v.lower().strip()
-        if v_lower.startswith("what ") or v_lower.startswith("which ") or v_lower.startswith("how "):
-            raise ValueError("Binary question cannot be open-ended (What/Which/How)")
-        return v.strip()
-
-    @field_validator('relation')
-    @classmethod
-    def validate_relation(cls, v):
-        if not v.strip():
-            raise ValueError("Relation cannot be empty")
-        return v.strip()
-
-
-class RelationshipAgentDecision(BaseModel):
-    """Agent's decision at each reasoning step in agentic relationship extraction."""
-    action: str = Field(..., description="Action to take: 'ask_qwen' or 'generate_binary_questions'")
-    reasoning: str = Field(..., description="Chain of thought reasoning for this decision")
-
-    qwen_request: QwenRelationshipRequest | None = Field(None, description="Qwen relationship request (if action is 'ask_qwen')")
-    binary_questions: List[BinaryRelationshipQuestion] | None = Field(None, description="Binary relationship questions (if action is 'generate_binary_questions')")
-
-    @field_validator('action')
-    @classmethod
-    def validate_action(cls, v):
-        if v not in ['ask_qwen', 'generate_binary_questions']:
-            raise ValueError("Action must be 'ask_qwen' or 'generate_binary_questions'")
-        return v
-
-    @field_validator('reasoning')
-    @classmethod
-    def validate_reasoning(cls, v):
-        if not v.strip() or len(v.strip()) < 10:
-            raise ValueError("Reasoning must be substantive (at least 10 characters)")
-        return v.strip()
-
-    def model_post_init(self, __context):
-        """Validate that action matches provided data."""
-        if self.action == "ask_qwen" and self.qwen_request is None:
-            raise ValueError("qwen_request required when action is 'ask_qwen'")
-        if self.action == "generate_binary_questions" and self.binary_questions is None:
-            raise ValueError("binary_questions required when action is 'generate_binary_questions'")
-        if self.action == "generate_binary_questions" and not self.binary_questions:
-            raise ValueError("binary_questions list cannot be empty when action is 'generate_binary_questions'")
-
-
-class QwenSceneInformationRequest(BaseModel):
-    """Request for Qwen VL to gather visual information about an entire scene."""
-    image_id: str = Field(..., description="Image ID to query (e.g., 'image_a')")
-    question: str = Field(..., description="Open-ended question for Qwen about the scene (e.g., 'What type of environment is this?')")
-    reasoning: str = Field(..., description="Why this information is needed")
-
-    @field_validator('question')
-    @classmethod
-    def validate_question(cls, v):
-        if not v.strip():
-            raise ValueError("Question cannot be empty")
-        if not v.endswith("?"):
-            raise ValueError("Question must end with '?'")
-        return v.strip()
-
-
-class BinarySceneAttributeQuestion(BaseModel):
-    """Binary question for scene attribute verification."""
-    image_id: str = Field(..., description="Image ID being queried (e.g., 'image_a')")
-    attribute_class: str = Field(..., description="Scene attribute category (e.g., 'environment_type', 'lighting', 'weather', 'vegetation')")
-    attribute_value: str = Field(..., description="Specific value to verify (e.g., 'outdoor', 'bright', 'sunny', 'grass')")
-    binary_question: str = Field(..., description="Binary Yes/No question using natural language (e.g., 'Is this an outdoor environment?')")
-
-    @field_validator('binary_question')
-    @classmethod
-    def validate_binary(cls, v):
-        if not v.strip():
-            raise ValueError("Binary question cannot be empty")
-        if "?" not in v:
-            raise ValueError("Binary question must be a question (contain '?')")
-        v_lower = v.lower().strip()
-        if v_lower.startswith("what ") or v_lower.startswith("which ") or v_lower.startswith("how "):
-            raise ValueError("Binary question cannot be open-ended (What/Which/How)")
-        return v.strip()
-
-    @field_validator('attribute_class', 'attribute_value', 'image_id')
-    @classmethod
-    def validate_non_empty(cls, v):
-        if not v.strip():
-            raise ValueError("Field cannot be empty")
-        return v.strip()
-
-
-class SceneAgentDecision(BaseModel):
-    """Agent's decision at each reasoning step in agentic scene attribute extraction."""
-    action: str = Field(..., description="Action to take: 'ask_qwen' or 'generate_binary_questions'")
-    reasoning: str = Field(..., description="Chain of thought reasoning for this decision")
-
-    qwen_request: QwenSceneInformationRequest | None = Field(None, description="Qwen scene information request (if action is 'ask_qwen')")
-    binary_questions: List[BinarySceneAttributeQuestion] | None = Field(None, description="Binary scene questions (if action is 'generate_binary_questions')")
-
-    @field_validator('action')
-    @classmethod
-    def validate_action(cls, v):
-        if v not in ['ask_qwen', 'generate_binary_questions']:
-            raise ValueError("Action must be 'ask_qwen' or 'generate_binary_questions'")
-        return v
-
-    @field_validator('reasoning')
-    @classmethod
-    def validate_reasoning(cls, v):
-        if not v.strip() or len(v.strip()) < 10:
-            raise ValueError("Reasoning must be substantive (at least 10 characters)")
-        return v.strip()
-
-    def model_post_init(self, __context):
-        """Validate that action matches provided data."""
-        if self.action == "ask_qwen" and self.qwen_request is None:
-            raise ValueError("qwen_request required when action is 'ask_qwen'")
-        if self.action == "generate_binary_questions" and self.binary_questions is None:
-            raise ValueError("binary_questions required when action is 'generate_binary_questions'")
-        if self.action == "generate_binary_questions" and not self.binary_questions:
-            raise ValueError("binary_questions list cannot be empty when action is 'generate_binary_questions'")
 
 
 # ==============================================================================
@@ -454,9 +138,16 @@ class VerifyDecision(BaseModel):
         description="Property to check (e.g., 'color', 'material', 'on_top_of')"
     )
 
-    value: str | None = Field(
+    value: Union[str, int, None] = Field(
         None,
-        description="Expected value (e.g., 'red', 'wooden') or None for any value"
+        description="Expected value (e.g., 'red', 'wooden', 3) or None for any value"
+    )
+
+    verification_question: str | None = Field(
+        None,
+        description="Binary Yes/No question for verification (e.g., 'Is this hat solid-colored?'). "
+                    "Must be grammatically correct and answerable with Yes or No. "
+                    "Leave None for count verification (system handles those)."
     )
 
     @field_validator('verify_type')
@@ -479,6 +170,35 @@ class VerifyDecision(BaseModel):
         if not v or not v.strip():
             raise ValueError("Field cannot be empty")
         return v.strip()
+
+    @field_validator('value')
+    @classmethod
+    def validate_value(cls, v):
+        if v is None:
+            return None
+        if isinstance(v, int):
+            return str(v)
+        if isinstance(v, str):
+            return v.strip() if v.strip() else None
+        # Convert other types to string
+        return str(v)
+
+    @field_validator('verification_question')
+    @classmethod
+    def validate_verification_question(cls, v):
+        if v is None:
+            return None
+        v = v.strip()
+        if not v:
+            return None
+        # Basic validation
+        if not v.endswith('?'):
+            raise ValueError("verification_question must end with '?'")
+        v_lower = v.lower()
+        # Ensure it's binary, not open-ended
+        if v_lower.startswith("what ") or v_lower.startswith("which ") or v_lower.startswith("how many "):
+            raise ValueError("verification_question must be binary (Yes/No), not open-ended (What/Which/How)")
+        return v
 
 
 class DoneDecision(BaseModel):
@@ -506,51 +226,5 @@ class DoneDecision(BaseModel):
 UnifiedAgentDecision = PerceiveDecision | VerifyDecision | DoneDecision
 
 
-class UnifiedBinaryQuestion(BaseModel):
-    """
-    Binary question generated by unified agent for verification.
-
-    Used when agent is in 'verify' phase to collect probabilities.
-    """
-
-    question_type: str = Field(
-        ...,
-        description="Type: 'attribute', 'relationship', or 'scene'"
-    )
-
-    question_text: str = Field(
-        ...,
-        description="Binary question for VLM (Yes/No answerable)"
-    )
-
-    # For attribute questions
-    entity_id: str | None = Field(None, description="Entity being checked")
-    attribute_class: str | None = Field(None, description="Attribute category (e.g., 'color')")
-    attribute_value: str | None = Field(None, description="Attribute value (e.g., 'orange')")
-
-    # For relationship questions
-    subject_id: str | None = Field(None, description="Subject entity")
-    object_id: str | None = Field(None, description="Object entity")
-    relation: str | None = Field(None, description="Relationship type (e.g., 'on_top_of')")
-
-    # For scene questions
-    scene_attribute: str | None = Field(None, description="Scene property")
-    scene_value: str | None = Field(None, description="Scene value")
-
-    @field_validator('question_type')
-    @classmethod
-    def validate_type(cls, v):
-        if v not in ['attribute', 'relationship', 'scene']:
-            raise ValueError("question_type must be 'attribute', 'relationship', or 'scene'")
-        return v
-
-    @field_validator('question_text')
-    @classmethod
-    def validate_text(cls, v):
-        if not v.strip():
-            raise ValueError("question_text cannot be empty")
-        return v.strip()
-
-
-# Union type for all possible responses
-OutputModel = SubquestionResponse | AttributePlanningResponse | CandidateResponse | CountRequirementResponse | EntityExtractionResponse | AgentDecision | RelationshipAgentDecision | SceneAgentDecision | UnifiedAgentDecision | UnifiedBinaryQuestion
+# Union type for all possible LLM output models
+OutputModel = SubquestionResponse | CountRequirementResponse | EntityExtractionResponse | UnifiedAgentDecision

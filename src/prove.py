@@ -20,30 +20,18 @@ class PROVE:
     PROVE model for visual reasoning over image pairs.
 
     Usage:
-        model = PROVE(verbose=True)
+        model = PROVE()
         answer = model.predict("img1.jpg", "img2.jpg", "Is there a cat in both images?")
     """
 
-    def __init__(self, verbose: bool = False):
-        """
-        Initialize PROVE model.
-
-        Args:
-            verbose: Whether to print concise progress updates
-        """
-        self.verbose = verbose
-
+    def __init__(self):
+        """Initialize PROVE model."""
         # Components initialized lazily on first use
         self._model_manager = None
         self._detector = None
         self._subquestion_generator = None
         self._unified_agent = None
         self._problog_executor = None
-
-    def _log(self, message: str):
-        """Print message if verbose mode is enabled."""
-        if self.verbose:
-            print(message)
 
     def _init_components(self):
         """Initialize pipeline components (lazy loading)."""
@@ -54,7 +42,7 @@ class PROVE:
         if self._subquestion_generator is None:
             self._subquestion_generator = SubquestionGenerator()
         if self._unified_agent is None:
-            self._unified_agent = UnifiedAgent(max_iterations=20, debug=False)
+            self._unified_agent = UnifiedAgent(max_iterations=20)
         if self._problog_executor is None:
             self._problog_executor = ProbLogExecutor()
 
@@ -126,35 +114,35 @@ class PROVE:
         image_paths = {"image_a": image_a_path, "image_b": image_b_path}
 
         try:
+            # Print question
+            print(f"\nQuestion: \"{question}\"\n")
+
             # Step 1: Image Context Generation
-            self._log("Step 1: Image Context Generation...")
             florence2 = self._model_manager.get_florence2()
             for image_id, image_path in image_paths.items():
                 image = Image.open(image_path)
                 caption = florence2.describe_region(image, task="<MORE_DETAILED_CAPTION>")
                 kb.add_scene_context(image_id, {"caption": caption, "image_path": image_path})
-            self._log("  ✓ Captions generated")
 
             # Step 2: Object Detection
-            self._log("Step 2: Object Detection...")
             for image_id, image_path in image_paths.items():
-                # Reuse caption from Step 1 (efficiency improvement)
-                caption = kb.images[image_id].scene_context["caption"]
-                detections = self._detector.detect_from_caption(image_path, caption)
+                detections = self._detector.detect_from_question(image_path, question)
                 kb.add_objects(image_id, detections)
-            total_objects = sum(len(img.objects) for img in kb.images.values())
-            self._log(f"  ✓ Detected {total_objects} objects")
 
             # Step 3: Subquestion Generation
-            self._log("Step 3: Subquestion Generation...")
             subquestions = self._subquestion_generator.generate_binary_subquestions(
                 question, kb.images
             )
             kb.add_subquestions(subquestions)
-            self._log(f"  ✓ Generated {len(subquestions)} subquestions")
+
+            print("Subquestions:")
+            for i, sq in enumerate(subquestions, 1):
+                print(f"  {i}. {sq.question}")
+            print()
 
             # Step 4: Evidence Collection
-            self._log("Step 4: Evidence Collection...")
+            print("Agent:\n")
+
             evidence_by_subquestion = []
             for subquestion in kb.subquestions:
                 evidence = self._unified_agent.collect_evidence(
@@ -164,28 +152,14 @@ class PROVE:
                 )
                 evidence_by_subquestion.append(evidence)
 
-            total_attrs = sum(len(e.attributes) for e in evidence_by_subquestion)
-            total_rels = sum(len(e.relationships) for e in evidence_by_subquestion)
-            total_counts = sum(len(e.counts) for e in evidence_by_subquestion)
-            self._log(f"  ✓ Collected {total_attrs} attributes, {total_rels} relationships, {total_counts} counts")
-
             # Step 5: ProbLog Reasoning
-            self._log("Step 5: ProbLog Reasoning...")
-            subquestion_results, ultimate_answer = self._problog_executor.execute_subquestions(
+            subquestion_results, ultimate_answer, problog_program = self._problog_executor.execute_subquestions(
                 subquestions=kb.subquestions,
                 evidence_collections=evidence_by_subquestion,
                 images=kb.images,
                 ultimate_question=question
             )
             kb.add_subquestion_results(subquestion_results)
-            self._log("  ✓ Reasoning complete")
-
-            # Read generated ProbLog program
-            try:
-                with open('knowledge_base.pl', 'r') as f:
-                    problog_program = f.read()
-            except FileNotFoundError:
-                problog_program = ""
 
             # Build result
             result = {
@@ -199,16 +173,18 @@ class PROVE:
                 ],
                 'problog_program': problog_program,
                 'metadata': {
-                    'total_objects': total_objects,
+                    'total_objects': sum(len(img.objects) for img in kb.images.values()),
                     'num_subquestions': len(subquestions),
-                    'total_attributes': total_attrs,
-                    'total_relationships': total_rels,
-                    'total_counts': total_counts
+                    'total_attributes': sum(len(e.attributes) for e in evidence_by_subquestion),
+                    'total_relationships': sum(len(e.relationships) for e in evidence_by_subquestion),
+                    'total_counts': sum(len(e.counts) for e in evidence_by_subquestion)
                 }
             }
 
-            if self.verbose:
-                self._log(f"\nAnswer: {ultimate_answer}")
+            print("\nSubquestion Results:")
+            for i, sq_result in enumerate(subquestion_results, 1):
+                print(f"  {i}. {sq_result.subquestion} (p={sq_result.probability:.3f})")
+            print(f"\nAnswer: {ultimate_answer}\n")
 
             # Save logs if requested
             if save_logs:
@@ -241,7 +217,6 @@ class PROVE:
                     }, f, indent=2)
 
                 result['log_path'] = str(example_dir)
-                self._log(f"Logs saved to: {example_dir}")
 
             return result
 

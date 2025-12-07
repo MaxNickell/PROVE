@@ -1,32 +1,17 @@
 """
 Object detector using Florence-2 with ModelManager singleton.
-Refactored for memory efficiency and exact JSON schema compliance.
-"""
-
-"""
-Object detector using Florence-2 with ModelManager singleton.
-Refactored for memory efficiency and exact JSON schema compliance.
 """
 
 from typing import List, Dict, Any
 from PIL import Image
 import os
+import re
 
 from src.core.model_manager import ModelManager
 from src.core.types import ObjectDetection
 from src.core.probability import calibrate_detector_confidence
 from src.core.image_utils import load_rgb_image
 
-
-class DetectorError(RuntimeError):
-    """Custom exception for detector failures."""
-    """Custom exception for detector failures."""
-    def __init__(self, message: str):
-        super().__init__(message)
-        self.message = message
-    
-    def __str__(self):
-        return self.message
 
 
 
@@ -35,17 +20,30 @@ class Detector:
     Object detector using Florence-2 model with ModelManager singleton.
     Produces ObjectDetection instances with exact schema compliance.
     """
-    
-    """
-    Object detector using Florence-2 model with ModelManager singleton.
-    Produces ObjectDetection instances with exact schema compliance.
-    """
-    
+
     def __init__(self):
         """Initialize detector with ModelManager singleton."""
         # Use ModelManager singleton instead of creating Florence2 directly
         self.model_manager = ModelManager()
-        
+
+    def _normalize_label_to_singular(self, label: str) -> str:
+        """Normalize plural labels to singular forms."""
+        label = label.lower().strip()
+
+        # Common irregular plurals
+        plurals = {
+            'children': 'child', 'people': 'person', 'men': 'man', 'women': 'woman',
+            'feet': 'foot', 'teeth': 'tooth', 'geese': 'goose', 'mice': 'mouse'
+        }
+        if label in plurals:
+            return plurals[label]
+
+        # Simple patterns
+        if label.endswith('ies'): return label[:-3] + 'y'
+        if label.endswith('es'): return label[:-2]
+        if label.endswith('s') and not label.endswith('ss'): return label[:-1]
+        return label
+
     def detect(self, image_path: str, visualize: bool = False) -> List[ObjectDetection]:
         """
         Detect objects using caption-based open vocabulary detection.
@@ -59,21 +57,20 @@ class Detector:
             List[ObjectDetection]: Detected objects with exact schema compliance
 
         Raises:
-            DetectorError: If detection fails
+            RuntimeError: If detection fails
         """
         try:
             # Load image and generate caption
             image = load_rgb_image(image_path)
             florence2 = self.model_manager.get_florence2()
 
-            print("  Generating detailed image caption...")
             caption = florence2.describe_region(image, task="<MORE_DETAILED_CAPTION>")
 
             # Delegate to caption-based detection
             return self.detect_from_caption(image_path, caption, visualize)
 
         except Exception as err:
-            raise DetectorError(f"Object detection failed: {err}")
+            raise RuntimeError(f"Object detection failed: {err}")
 
     def detect_from_caption(self, image_path: str, caption: str, visualize: bool = False) -> List[ObjectDetection]:
         """
@@ -92,7 +89,7 @@ class Detector:
             List[ObjectDetection]: Detected objects with exact schema compliance
 
         Raises:
-            DetectorError: If detection fails
+            RuntimeError: If detection fails
         """
         try:
             # Load image (validates existence and converts to RGB)
@@ -102,9 +99,7 @@ class Detector:
             florence2 = self.model_manager.get_florence2()
             llm_client = self.model_manager.get_llm_client()
 
-            # Display caption and extract entities
-            print(f"  Caption: {caption}")
-            print("  Extracting entities from caption...")
+            # Extract entities (silent)
             messages = [
                 {
                     "role": "system",
@@ -112,70 +107,28 @@ class Detector:
                 },
                 {
                     "role": "user",
-                    "content": f"""TASK
-You will be given:
-- A caption for an image
+                    "content": f"""Extract nouns from the caption for object detection.
 
-You must convert the image caption into a list of objects.
+Rules: Use singular nouns, include compound nouns, exclude modifiers and non-detectable words.
 
-RULES
-- Only include nouns explicitly mentioned in the caption; do not infer unseen objects.
-- Use singular nouns (e.g., dogs -> dog, children -> child, geese -> goose)
-- Preserve multi word compound nouns (e.g., "traffic light", "tennis racket")
-- Do NOT include modifiers (e.g., "red car" -> "car", "large window" -> "window")
-- Exclude non detectable nouns (e.g., "scene", "view", "foreground", "background", "camera")
-- Output strict JSON, nothing else
+Example:
+Caption: A woman cooking on the stove while a child sits on a chair.
+Output: {{"entities": ["woman", "stove", "child", "chair"]}}
 
----
-
-### EXAMPLES
-
-**Example 1**
-Image Caption: A group of people are sitting at outdoor café tables on a busy street lined with parked cars and traffic lights while a man in a suit walks by carrying a briefcase.
-Output:
-{{"entities": ["person", "table", "street", "car", "traffic light", "man", "suit", "briefcase"]}}
-
-**Example 2**
-Image Caption: The photograph shows a large elephant standing beside a zookeeper inside an open enclosure. In the background, tourists watch from behind a metal fence as birds fly overhead.
-Output:
-{{"entities": ["elephant", "zookeeper", "enclosure", "tourist", "fence", "bird"]}}
-
-**Example 3**
-Image Caption: From a low camera angle, a soccer player wearing a red jersey kicks a ball toward the goal as the goalkeeper dives to the side, his hands outstretched to block the shot near the goalpost.
-Output:
-{{"entities": ["soccer player", "jersey", "ball", "goal", "goalkeeper", "hand", "goalpost"]}}
-
-**Example 4**
-Image Caption: A family enjoys a picnic under tall trees beside a calm lake, with a blanket spread on the grass and a basket filled with food and drinks. Sunlight reflects on the water creating a warm glow across the scene.
-Output:
-{{"entities": ["family", "tree", "lake", "blanket", "grass", "basket", "food", "drink", "water"]}}
-
-**Example 5**
-Image Caption: Inside a modern kitchen, a woman is cooking on the stove while a child sits on a chair drawing with colored pencils at the counter. Pots, pans, and plates are scattered across the countertop near a sink full of water.
-Output:
-{{"entities": ["kitchen", "woman", "stove", "child", "chair", "pencil", "counter", "pot", "pan", "plate", "countertop", "sink", "water"]}}
-
----
-
-### NOW BEGIN TASK
-Image Caption: {caption}"""
+Caption: {caption}"""
                 }
             ]
 
             entity_response = llm_client.extract_entities(messages, temperature=0)
             entities = entity_response.entities  # Already lowercase and deduplicated by Pydantic
-            print(f"  Extracted entities: {entities}")
 
             if not entities:
-                print("  Warning: No entities extracted from caption")
                 return []
 
-            # Step 3: Run open vocabulary detection for each entity
-            print("  Step 3: Running open vocabulary detection for each entity...")
+            # Run open vocabulary detection for each entity (silent)
             all_detections = []
 
             for entity_class in entities:
-                print(f"    Detecting: {entity_class}")
                 ovd_result = florence2.detect_open_vocabulary(image, entity_class)
 
                 bboxes = ovd_result.get("bboxes", [])
@@ -187,13 +140,14 @@ Image Caption: {caption}"""
                     raw_conf = scores[i] if scores and i < len(scores) else None
                     calibrated_conf = calibrate_detector_confidence(raw_conf) if raw_conf is not None else None
 
+                    # Normalize label to singular form
+                    normalized_label = self._normalize_label_to_singular(label)
+
                     all_detections.append({
                         "bbox": bbox,
-                        "label": label,
+                        "label": normalized_label,
                         "confidence": calibrated_conf
                     })
-
-            print(f"  Total detections: {len(all_detections)}")
 
             # Convert to ObjectDetection instances
             objects = self._convert_to_object_detections(all_detections)
@@ -203,13 +157,106 @@ Image Caption: {caption}"""
                 output_path = image_path.rsplit(".", 1)[0] + "_annotated." + image_path.rsplit(".", 1)[1]
                 annotated_image = florence2.visualize_detections(image, all_detections)
                 annotated_image.save(output_path)
-                print(f"  Saved annotated image: {output_path}")
 
             return objects
 
         except Exception as err:
-            raise DetectorError(f"Caption-based detection failed: {err}")
-    
+            raise RuntimeError(f"Caption-based detection failed: {err}")
+
+    def detect_from_question(self, image_path: str, question: str, visualize: bool = False) -> List[ObjectDetection]:
+        """
+        Detect objects using ultimate question to guide detection.
+
+        Extracts only entities mentioned in the question to ensure:
+        - No synonym mismatches (question terms used directly)
+        - Only relevant objects detected (efficiency + less noise)
+
+        Args:
+            image_path: Path to input image
+            question: Ultimate question text
+            visualize: Whether to save annotated image
+
+        Returns:
+            List[ObjectDetection]: Detected objects
+
+        Raises:
+            RuntimeError: If detection fails
+        """
+        try:
+            # Load image (validates existence and converts to RGB)
+            image = load_rgb_image(image_path)
+
+            # Get models from singleton ModelManager
+            florence2 = self.model_manager.get_florence2()
+            llm_client = self.model_manager.get_llm_client()
+
+            # Extract entities (silent)
+            messages = [
+                {
+                    "role": "system",
+                    "content": "You are an expert at converting a visual reasoning question into a list of objects used for downstream object detection."
+                },
+                {
+                    "role": "user",
+                    "content": f"""Extract nouns from the question for object detection.
+
+Rules: Use singular nouns, include compound nouns, exclude modifiers and non-detectable words.
+
+Examples:
+Question: A silver spoon has cookie dough in it.
+Output: {{"entities": ["spoon", "cookie dough"]}}
+
+Question: There are two pairs of hands wearing gloves.
+Output: {{"entities": ["hand", "glove"]}}
+
+Question: {question}"""
+                }
+            ]
+
+            entity_response = llm_client.extract_entities(messages, temperature=0)
+            entities = entity_response.entities  # Already lowercase and deduplicated by Pydantic
+
+            if not entities:
+                return []
+
+            # Run open vocabulary detection for each entity (silent)
+            all_detections = []
+
+            for entity_class in entities:
+                ovd_result = florence2.detect_open_vocabulary(image, entity_class)
+
+                bboxes = ovd_result.get("bboxes", [])
+                labels = ovd_result.get("bboxes_labels", [])
+                scores = ovd_result.get("scores", [])
+
+                # Process detections for this entity class
+                for i, (bbox, label) in enumerate(zip(bboxes, labels)):
+                    raw_conf = scores[i] if scores and i < len(scores) else None
+                    calibrated_conf = calibrate_detector_confidence(raw_conf) if raw_conf is not None else None
+
+                    # Normalize label to singular form
+                    normalized_label = self._normalize_label_to_singular(label)
+
+                    all_detections.append({
+                        "bbox": bbox,
+                        "label": normalized_label,
+                        "confidence": calibrated_conf
+                    })
+
+            # Convert to ObjectDetection instances
+            objects = self._convert_to_object_detections(all_detections)
+
+            # Optionally visualize
+            if visualize and objects:
+                output_path = image_path.rsplit(".", 1)[0] + "_annotated." + image_path.rsplit(".", 1)[1]
+                annotated_image = florence2.visualize_detections(image, all_detections)
+                annotated_image.save(output_path)
+
+            return objects
+
+        except Exception as err:
+            raise RuntimeError(f"Question-based detection failed: {err}")
+
     def detect_with_crops(self, image_path: str, save_crops: bool = False, 
                          crop_dir: str = "crops") -> List[ObjectDetection]:
         """
@@ -236,7 +283,7 @@ Image Caption: {caption}"""
             return objects
             
         except Exception as err:
-            raise DetectorError(f"Florence-2 detection with crops failed: {err}")
+            raise RuntimeError(f"Florence-2 detection with crops failed: {err}")
     
     def _convert_to_object_detections(self, raw_detections: List[Dict[str, Any]]) -> List[ObjectDetection]:
         """
@@ -351,7 +398,7 @@ Image Caption: {caption}"""
             return captions
             
         except Exception as err:
-            raise DetectorError(f"Caption generation failed: {err}")
+            raise RuntimeError(f"Caption generation failed: {err}")
     
     def get_detection_summary(self, objects: List[ObjectDetection]) -> Dict[str, Any]:
         """

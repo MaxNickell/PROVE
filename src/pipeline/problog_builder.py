@@ -7,14 +7,6 @@ from typing import List, Dict, Any, Set, Tuple
 from src.core.types import ImageData, ProbLogFact
 
 
-class ProbLogBuilderError(RuntimeError):
-    """Custom exception for ProbLog building failures."""
-    def __init__(self, message: str):
-        super().__init__(message)
-        self.message = message
-
-    def __str__(self):
-        return self.message
 
 
 class ProbLogFactBuilder:
@@ -288,7 +280,7 @@ class ProbLogBuilder:
             return validated_facts
 
         except Exception as err:
-            raise ProbLogBuilderError(f"ProbLog knowledge base building failed: {err}")
+            raise RuntimeError(f"ProbLog knowledge base building failed: {err}")
 
     def _build_entity_facts(
         self,

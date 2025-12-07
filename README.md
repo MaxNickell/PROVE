@@ -9,7 +9,7 @@
 ```python
 from src import PROVE
 
-model = PROVE(verbose=True)
+model = PROVE()
 answer = model.predict(
     "image_a.jpg",
     "image_b.jpg",
@@ -23,10 +23,12 @@ print(answer)  # "True" or "False"
 ## Core Architecture
 
 ```
-Question → Subquestions → Evidence → ProbLog → LLM Composition → True/False
+Question → Subquestions → Agent (Perceive/Verify) → ProbLog → LLM → True/False
+              ↓              ↓ (investigation)        ↓          ↓
+        Binary Qs      Probabilities (logits)    Per-subQ   Binary
 ```
 
-**Key Principle**: Break complex questions into binary subquestions, collect visual evidence through agentic VLM interaction, compose results through probabilistic logic, and synthesize binary answer via LLM.
+**Key Principle**: Break complex questions into binary subquestions, collect visual evidence through agentic VLM interaction (investigation + verification), compose results through probabilistic logic, and synthesize binary answer via LLM.
 
 ---
 
@@ -46,12 +48,16 @@ Question → Subquestions → Evidence → ProbLog → LLM Composition → True/
 
 ### Step 2: Object Detection
 
-**Purpose**: Identify all visual entities with spatial grounding
+**Purpose**: Detect only entities mentioned in the ultimate question (eliminates noise + synonym mismatches)
 
 **Process**:
-1. **Entity Extraction**: GPT-4o extracts nouns from caption → `["buffalo", "egret", "field"]`
+1. **Entity Extraction**: Llama 3.3 70B extracts nouns from **ultimate question** → `["bird", "buffalo"]`
+   - Uses question-specific prompt with 5 diverse in-context examples from dev set
+   - Avoids synonyms: question says "mitten" → detects "mitten" (not "glove")
 2. **Open Vocabulary Detection**: Florence-2 detects each entity → bounding boxes + confidences
 3. **Calibration**: Anchored sigmoid transforms raw scores (0.1-0.6) → operational probabilities (0.7-0.95)
+
+**Key Innovation**: Uses question instead of caption → only relevant objects detected
 
 **Output**: `ObjectDetection(object_id, label, bbox, confidence)` per entity
 
@@ -61,7 +67,7 @@ Question → Subquestions → Evidence → ProbLog → LLM Composition → True/
 
 **Purpose**: Decompose complex question into verifiable binary subquestions
 
-**Model**: GPT-4o with structured output
+**Model**: Llama 3.3 70B with structured output
 
 **Input**: Ultimate question + captions + detected object lists
 
@@ -85,8 +91,13 @@ Subquestions:
 **Architecture**: ReAct agent loop (max 20 iterations per subquestion)
 
 **Agent Actions**:
-- **Perceive**: Ask VLM open-ended questions to gather information
-- **Verify**: Generate binary Yes/No questions and extract probabilities
+- **Perceive**: Ask VLM open-ended investigation questions (e.g., "What color is this hat?")
+  - Stores response in QA history for context
+  - NO probability extraction
+- **Verify**: Generate binary Yes/No verification questions (e.g., "Is this hat solid-colored?")
+  - LLM generates grammatically correct questions (no f-string templates)
+  - Always adds "Answer Yes or No" instruction
+  - Extracts probability from Yes/No token logits
 - **Done**: Evidence collection complete
 
 **Agent Decision Flow**:
@@ -117,13 +128,14 @@ Subquestions:
 
 1. **Attributes** (object properties):
    - VLM verification on cropped image (15% margin)
-   - Binary question: `"Is this buffalo large?"`
+   - **LLM-generated verification question**: `"Is this hat solid-colored?"`
+   - Natural language, grammatically correct
    - Probability via logit summing: `P(yes) = softmax([z_yes, z_no])[0]`
 
 2. **Relationships** (spatial/interaction):
    - Crop to union of both objects + colored boxes (RED=subject, BLUE=object)
-   - Binary question: `"Is the bird (RED) on_top_of the buffalo (BLUE)?"`
-   - Probability via logit summing
+   - **LLM-generated verification question**: `"Is the mitten pointing towards the face?"`
+   - Natural phrasing, probability via logit summing
 
 3. **Counts** (quantity distributions):
    - Poisson-Binomial distribution from detection confidences
@@ -148,7 +160,7 @@ Subquestions:
 
 #### Phase A: ProbLog Execution (per subquestion)
 
-**Model**: GPT-4o generates ProbLog rules from evidence
+**Model**: Llama 3.3 70B generates ProbLog rules from evidence
 
 **Process**:
 1. Build scoped facts (only entities referenced in evidence)
@@ -179,7 +191,7 @@ query(white_bird_on_animal(image_a)).
 
 #### Phase B: LLM Ultimate Composition
 
-**Model**: GPT-4o synthesizes final answer
+**Model**: Llama 3.3 70B synthesizes final answer
 
 **Process**:
 1. Convert subquestion probabilities to binary (≥0.5 = TRUE, <0.5 = FALSE)
@@ -213,7 +225,7 @@ Answer with ONLY 'True' or 'False', nothing else.
 | Model | Purpose | Loading | Quantization |
 |-------|---------|---------|--------------|
 | **Florence-2-large** | Captioning, object detection | Auto device map | BF16 |
-| **GPT-4o** (via Forge API) | Subquestion generation, agent reasoning, rule generation, ultimate composition | API call | N/A |
+| **Llama 3.3 70B Instruct** (via AWS Bedrock) | Subquestion generation, agent reasoning, rule generation, ultimate composition | API call | N/A |
 | **Qwen-2.5-VL-7B-Instruct** | Binary verification, open-ended VQA | Auto device map | BF16 |
 
 **Memory Efficiency**: ModelManager singleton with lazy loading
@@ -289,7 +301,7 @@ src/
 │   ├── probability.py          # Calibration, verifier functions
 │   └── image_utils.py          # Image loading utilities
 ├── language/
-│   ├── llm_client.py           # GPT-4o client
+│   ├── llm_client.py           # Llama 3.3 client (AWS Bedrock)
 │   └── output_models.py        # Pydantic models
 ├── pipeline/
 │   ├── detector.py             # Caption-based detection
@@ -303,6 +315,8 @@ src/
     └── qwen_vl.py              # Qwen VL wrapper
 
 run_prove.py                    # Test script
+evaluate_nlvr2.py              # NLVR2 evaluation
+detailed_evaluation.py         # Detailed per-example logging
 ```
 
 ---
@@ -314,7 +328,7 @@ run_prove.py                    # Test script
 ```python
 from src import PROVE
 
-model = PROVE(verbose=True)
+model = PROVE()
 answer = model.predict(
     image_a_path="img1.jpg",
     image_b_path="img2.jpg",
@@ -355,7 +369,6 @@ IMAGE_A = "test_images/image1.png"
 IMAGE_B = "test_images/image2.png"
 QUESTION = "Your question here"
 SAVE_LOGS = True
-VERBOSE = True
 ```
 
 ---
@@ -365,16 +378,6 @@ VERBOSE = True
 ### Binary Verification Strategy
 
 **Method**: All verification via binary Yes/No questions with direct cropping
-
-**For Attributes**:
-- Crop to object bbox with 15% margin
-- Question: `"Is this {label} {attribute}?"`
-- No coordinate text - VLM sees cropped region
-
-**For Relationships**:
-- Crop to union of both bboxes with 15% margin
-- Draw colored boxes: RED (subject), BLUE (object)
-- Question: `"Is the {subject} (RED) {relation} the {object} (BLUE)?"`
 
 **Probability Extraction**:
 ```python

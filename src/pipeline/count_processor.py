@@ -35,14 +35,6 @@ class CountResult:
         }
 
 
-class CountProcessorError(RuntimeError):
-    """Custom exception for count processing failures."""
-    def __init__(self, message: str):
-        super().__init__(message)
-        self.message = message
-
-    def __str__(self):
-        return self.message
 
 
 class CountProcessor:
@@ -113,7 +105,7 @@ class CountProcessor:
             return counts_per_image
 
         except Exception as e:
-            raise CountProcessorError(f"Failed to process count subquestions: {str(e)}")
+            raise RuntimeError(f"Failed to process count subquestions: {str(e)}")
 
     def _determine_count_requirements(
         self,
@@ -227,8 +219,7 @@ Generate count requirements for: "{subquestion.question}"."""
 
             return requirements
 
-        except Exception as e:
-            print(f"    Warning: Failed to analyze count subquery '{subquestion.question}': {e}")
+        except Exception:
             return []
 
     def _compute_poisson_binomial_count(
@@ -287,8 +278,7 @@ Generate count requirements for: "{subquestion.question}"."""
                 distribution=distribution
             )
 
-        except Exception as e:
-            print(f"    Warning: Failed to compute count for {requirement.object_class} in {requirement.image_id}: {e}")
+        except Exception:
             return None
 
     def _compute_poisson_binomial_distribution(self, probabilities: List[float]) -> Dict[int, float]:
@@ -351,8 +341,8 @@ Generate count requirements for: "{subquestion.question}"."""
                     "distribution": distribution_str_keys
                 }
 
-        except Exception as e:
-            print(f"    Warning: Failed to store count result: {e}")
+        except Exception:
+            pass
 
 
 # Example usage and testing

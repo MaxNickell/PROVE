@@ -13,14 +13,6 @@ from src.core.model_manager import ModelManager
 from src.core.types import BinarySubquestion, ProbLogFact, SubquestionResult
 
 
-class ProbLogExecutorError(RuntimeError):
-    """Custom exception for ProbLog execution failures."""
-    def __init__(self, message: str):
-        super().__init__(message)
-        self.message = message
-
-    def __str__(self):
-        return self.message
 
 
 class ProbLogExecutor:
@@ -69,17 +61,17 @@ has_relationship(I,A,B,R) :- relation(I,A,B,R)."""
             ultimate_question: Original ultimate question (optional)
 
         Returns:
-            Tuple[List[SubquestionResult], str]: (subquestion results, natural language answer)
+            Tuple[List[SubquestionResult], str, str]: (subquestion results, natural language answer, unified problog program)
 
         Raises:
             ProbLogExecutorError: If execution fails
         """
         try:
             if not subquestions:
-                return [], "No subquestions provided."
+                return [], "No subquestions provided.", ""
 
             if not evidence_collections or len(evidence_collections) != len(subquestions):
-                raise ProbLogExecutorError(f"Evidence collections mismatch: {len(evidence_collections)} vs {len(subquestions)} subquestions")
+                raise RuntimeError(f"Evidence collections mismatch: {len(evidence_collections)} vs {len(subquestions)} subquestions")
 
             # Import ProbLogFactBuilder here to avoid circular import
             from src.pipeline.problog_builder import ProbLogFactBuilder
@@ -141,18 +133,15 @@ has_relationship(I,A,B,R) :- relation(I,A,B,R)."""
                     ultimate_question, all_predicates, results, llm_client
                 )
 
-            # Step 3: Save unified program for debugging
+            # Step 3: Build unified program for logging/debugging
             unified_program = self._build_unified_debug_program(results, ultimate_question, ultimate_answer)
-            with open('knowledge_base.pl', 'w') as f:
-                f.write(unified_program)
 
             print(f"\n✓ Completed {total} subquestions")
-            print(f"  Saved unified program to: knowledge_base.pl")
 
-            return results, ultimate_answer
+            return results, ultimate_answer, unified_program
 
         except Exception as err:
-            raise ProbLogExecutorError(f"ProbLog execution failed: {err}")
+            raise RuntimeError(f"ProbLog execution failed: {err}")
 
     def _execute_ultimate_composition_with_predicates(
         self,
@@ -375,9 +364,6 @@ has_relationship(I,A,B,R) :- relation(I,A,B,R)."""
             return 0.0  # If not found, assume false
 
         except Exception as e:
-            print(f"⚠ Warning: ProbLog execution failed: {e}")
-            import traceback
-            traceback.print_exc()
             return 0.5
 
     def _generate_rules_for_subquestion(
@@ -419,13 +405,11 @@ has_relationship(I,A,B,R) :- relation(I,A,B,R)."""
 
             # Validate basic syntax
             if not self._validate_problog_syntax(rules_string, query_string):
-                print(f"⚠ Warning: Generated invalid ProbLog syntax, using fallback")
                 return self._generate_fallback_rule(subquestion)
 
             return rules_string, query_string
 
-        except Exception as e:
-            print(f"⚠ Warning: Rule generation failed: {e}")
+        except Exception:
             return self._generate_fallback_rule(subquestion)
 
     def _create_rule_generation_prompt(
@@ -780,8 +764,7 @@ Output ONLY valid ProbLog syntax (the rule and query), nothing else.
 
             return composition_rule, query_line
 
-        except Exception as e:
-            print(f"⚠ Warning: Ultimate composition rule generation failed: {e}")
+        except Exception:
             # Fallback: simple conjunction of all subquestions
             fallback_rule = "ultimate_answer :- true."  # Always true as fallback
             fallback_query = "query(ultimate_answer)."

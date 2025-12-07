@@ -15,6 +15,9 @@ from datetime import datetime
 from pathlib import Path
 from typing import List, Dict, Any, Optional
 
+# Suppress transformers warnings
+os.environ['TRANSFORMERS_VERBOSITY'] = 'error'
+
 # Add project root to path
 project_root = Path(__file__).parent.resolve()
 sys.path.insert(0, str(project_root))
@@ -345,12 +348,6 @@ def main():
         default='nlvr2_results',
         help='Output directory for results (default: nlvr2_results)'
     )
-    parser.add_argument(
-        '--verbose',
-        action='store_true',
-        default=True,
-        help='Print verbose output from PROVE (default: True)'
-    )
 
     args = parser.parse_args()
 
@@ -414,9 +411,7 @@ def main():
     print()
 
     # Initialize PROVE model
-    print("Initializing PROVE model...")
-    model = PROVE(verbose=args.verbose)
-    print("Model ready!\n")
+    model = PROVE()
 
     # Process examples
     start_time = time.time()

@@ -11,7 +11,6 @@ Key Design Principles:
 4. Stores all facts (even low probability) for complete knowledge
 """
 
-import os
 from typing import List, Dict, Tuple, Any, Optional
 from dataclasses import dataclass, field
 from PIL import Image
@@ -19,6 +18,7 @@ from PIL import Image
 from src.core.model_manager import ModelManager
 from src.core.types import BinarySubquestion, ImageData, ObjectDetection
 from src.core.probability import get_verifier_probability
+from src.language.output_models import PerceiveDecision, VerifyDecision, DoneDecision
 
 
 @dataclass
@@ -56,6 +56,11 @@ class EvidenceCollection:
     #   ("image_a", "bird", "count"): count verification
     verifications_completed: Dict[Tuple, bool] = field(default_factory=dict)
 
+    # Perceive tracking to prevent duplicate questions
+    # Key: tuple (entity_id, question) representing what was asked
+    # Examples: ("dog_a_1", "What color is this dog?")
+    perceive_completed: Dict[Tuple[str, str], str] = field(default_factory=dict)
+
     def add_attribute(self, entity_id: str, attribute_class: str, value: str, probability: float):
         """Add attribute evidence and track verification."""
         self.attributes.append((entity_id, attribute_class, value, probability))
@@ -78,6 +83,18 @@ class EvidenceCollection:
     def add_reasoning(self, step: str):
         """Add reasoning step to trace."""
         self.reasoning_trace.append(step)
+
+    def add_perceive_result(self, entity_id: str, question: str, answer: str):
+        """Track that we asked a perceive question and store the answer."""
+        self.perceive_completed[(entity_id, question)] = answer
+
+    def has_been_perceived(self, entity_id: str, question: str) -> bool:
+        """Check if this exact perceive question was already asked."""
+        return (entity_id, question) in self.perceive_completed
+
+    def get_perceive_result(self, entity_id: str, question: str) -> str:
+        """Get previous perceive result if available."""
+        return self.perceive_completed.get((entity_id, question), "")
 
 
 @dataclass
@@ -116,14 +133,6 @@ class UnifiedAgentState:
         self.evidence.add_reasoning(step)
 
 
-class UnifiedAgentError(RuntimeError):
-    """Custom exception for unified agent failures."""
-    def __init__(self, message: str):
-        super().__init__(message)
-        self.message = message
-
-    def __str__(self):
-        return self.message
 
 
 class UnifiedAgent:
@@ -143,20 +152,10 @@ class UnifiedAgent:
     Architecture: Reasoner → Planner → Perceiver → Verifier (iterative loop)
     """
 
-    def __init__(self, max_iterations: int = 20, debug: bool = False):
-        """
-        Initialize unified agent.
-
-        Args:
-            max_iterations: Maximum agent loop iterations per subquestion (prevents infinite loops)
-            debug: If True, saves debug artifacts (cropped images, reasoning logs)
-        """
+    def __init__(self, max_iterations: int = 20):
+        """Initialize unified agent."""
         self.model_manager = ModelManager()
         self.max_iterations = max_iterations
-        self.debug = debug
-
-        if self.debug:
-            os.makedirs("debug_unified_agent", exist_ok=True)
 
     def collect_evidence(
         self,
@@ -179,10 +178,8 @@ class UnifiedAgent:
             EvidenceCollection with all probabilistic facts
 
         Raises:
-            UnifiedAgentError: If evidence collection fails critically
+            RuntimeError: If evidence collection fails critically
         """
-        print(f"\n  Collecting evidence for: {subquestion.question}")
-
         # Initialize agent state with candidates from detected objects
         state = self._initialize_state(subquestion, images)
 
@@ -190,7 +187,6 @@ class UnifiedAgent:
         done = False
         while state.iteration < self.max_iterations and not done:
             state.iteration += 1
-            print(f"    Iteration {state.iteration}")
 
             # Agent reasoner & planner: decide next action
             decision = self._agent_reasoner_and_planner(state, images)
@@ -206,9 +202,6 @@ class UnifiedAgent:
                 # Evidence collection complete
                 done = True
                 state.add_reasoning("Evidence collection complete")
-
-        print(f"    ✓ Collected evidence: {len(state.evidence.attributes)} attributes, "
-              f"{len(state.evidence.relationships)} relationships")
 
         return state.evidence
 
@@ -260,7 +253,7 @@ class UnifiedAgent:
         self,
         state: UnifiedAgentState,
         images: Dict[str, ImageData]
-    ) -> 'UnifiedAgentDecision':
+    ):
         """
         Agent analyzes current state and decides next action.
 
@@ -277,7 +270,7 @@ class UnifiedAgent:
             images: ImageData for context
 
         Returns:
-            UnifiedAgentDecision with next action
+            Decision with next action
         """
         from src.language.output_models import UnifiedAgentDecision
 
@@ -285,127 +278,131 @@ class UnifiedAgent:
 
         # Build context for LLM decision
         candidates_text = self._format_candidates(state.candidate_entities)
-        recent_reasoning = "\n".join(state.reasoning_trace[-5:]) if state.reasoning_trace else "None yet"
 
-        system_prompt = """SYSTEM INSTRUCTIONS — EVIDENCE COLLECTION AGENT (ReAct)
+        system_prompt = """You collect minimal evidence to answer questions probabilistically.
 
-Your role: Collect all visual evidence needed to answer the question probabilistically.
-You DO NOT compute the final answer.
+ACTIONS (all require "action" and "reasoning" fields):
+- perceive: Ask VLM open-ended questions about entities
+- verify: Get binary evidence (attribute/relationship/count)
+- done: When evidence is sufficient
 
-You operate using the ReAct pattern:
-- reasoning: decide what evidence is still missing
-- action: choose one tool
-- (later) observation: you will receive tool output and continue
+COMPLETE JSON EXAMPLES:
 
-Every step must output ONE JSON object describing the next action.
+PERCEIVE:
+{"action": "perceive", "reasoning": "Need to understand what material this furniture is made of", "target": "chair_a_2", "question": "What material is this chair made of?"}
 
-TOOLS
-------
+VERIFY ATTRIBUTE:
+{"action": "verify", "reasoning": "Need to check if this laptop is silver colored", "verify_type": "attribute", "targets": ["laptop_b_1"], "property": "color", "value": "silver", "verification_question": "Is this laptop silver?"}
 
-1. perceive
-   Ask the VLM an open-ended question about a single entity.
-   Use when you need conceptual info before verification.
+VERIFY RELATIONSHIP:
+{"action": "verify", "reasoning": "Need to check if the phone is positioned on the desk", "verify_type": "relationship", "targets": ["phone_a_3", "desk_a_1"], "property": "on_top_of", "verification_question": "Is the phone on top of the desk?"}
 
-   {
-     "action": "perceive",
-     "reasoning": "...",
-     "target": "<entity_id>",
-     "question": "<open-ended question>"
-   }
+VERIFY COUNT:
+{"action": "verify", "reasoning": "Need to count cars in this parking scene", "verify_type": "count", "targets": ["image_b"], "property": "car", "verification_question": null}
 
-2. verify (attribute | relationship | count)
-   Collect probabilistic evidence.
+DONE:
+{"action": "done", "reasoning": "All necessary evidence has been collected to answer the question"}
 
-   ATTRIBUTE: Verify a property of specific entities (color, size, material…)
-   {
-     "action": "verify",
-     "reasoning": "...",
-     "verify_type": "attribute",
-     "targets": ["entity1", "entity2", ...],
-     "property": "<property>",
-     "value": "<value or null>"
-   }
+EDGE CASE EXAMPLES:
 
-   RELATIONSHIP: Verify relations between entity pairs (left_of, on_top_of…)
-   {
-     "action": "verify",
-     "reasoning": "...",
-     "verify_type": "relationship",
-     "targets": ["subject_id", "object_id"],
-     "property": "<relation>",
-     "value": null
-   }
+MULTIPLE ATTRIBUTES:
+{"action": "verify", "reasoning": "Need to verify both material and color properties", "verify_type": "attribute", "targets": ["pot_a_1"], "property": "material", "value": "stainless_steel", "verification_question": "Is this pot made of stainless steel?"}
 
-   COUNT: Get count distributions for an object class in an image
-   {
-     "action": "verify",
-     "reasoning": "...",
-     "verify_type": "count",
-     "targets": ["image_a"],
-     "property": "<object_class>",
-     "value": null
-   }
+COMPLEX SPATIAL:
+{"action": "verify", "reasoning": "Need to check containment relationship", "verify_type": "relationship", "targets": ["plant_b_2", "vase_b_4"], "property": "inside", "verification_question": "Is the plant inside the vase?"}
 
-3. done
-   Use ONLY when all required evidence is collected.
+CONDITIONAL VERIFICATION:
+{"action": "perceive", "reasoning": "Need to determine screen condition before checking if phone is functional", "target": "phone_a_1", "question": "What is the condition of this phone screen?"}
 
-   {
-     "action": "done",
-     "reasoning": "..."
-   }
+STATE VERIFICATION:
+{"action": "verify", "reasoning": "Need to check if appliance is currently active", "verify_type": "attribute", "targets": ["oven_a_3"], "property": "state", "value": "on", "verification_question": "Is this oven turned on?"}
 
-RULES
-------
+COMPARATIVE SIZE:
+{"action": "verify", "reasoning": "Need to compare relative sizes of furniture pieces", "verify_type": "relationship", "targets": ["chair_b_1", "sofa_b_3"], "property": "smaller_than", "verification_question": "Is the chair smaller than the sofa?"}
 
-1. **No redundant checks**
-   You will see "Verifications Completed" showing exactly which
-   (entity, property) or (entity1, entity2, relation) or (image, class, count)
-   have already been verified.
+TARGET STRUCTURE EXAMPLES:
 
-   Rule: If (entity, property) is listed → DO NOT verify it again.
-         If (entity, property) is NOT listed → You can verify it.
+✓ CORRECT ATTRIBUTE (1 target, 1 property, 1 value):
+{"verify_type": "attribute", "targets": ["chair_a_2"], "property": "material", "value": "wood", "verification_question": "Is this chair made of wood?"}
 
-2. **Collect complete evidence**
-   - Attribute questions: verify property for ALL relevant entities
-   - Relationship questions: verify ALL required pairs
-   - Count questions: collect ALL required distributions
-   - Comparison questions: collect evidence for BOTH sides
+✗ WRONG ATTRIBUTE (multiple targets):
+{"verify_type": "attribute", "targets": ["chair_a_2", "chair_a_3"], "property": "material", "value": "wood"}
+// INSTEAD: Create 2 separate verify actions
 
-3. **Entity scope - match question's image reference**
-   Question: "bird in image A" → Only verify entities from Image A
-   Candidate Entities shows which image each entity is in.
+✓ CORRECT RELATIONSHIP (exactly 2 targets):
+{"verify_type": "relationship", "targets": ["laptop_b_1", "desk_b_2"], "property": "on_top_of", "verification_question": "Is the laptop on top of the desk?"}
 
-4. **Use perceive sparingly**
-   Only when verification requires prior conceptual understanding.
+✗ WRONG RELATIONSHIP (1 or 3+ targets):
+{"verify_type": "relationship", "targets": ["laptop_b_1"], "property": "on_top_of"}
+{"verify_type": "relationship", "targets": ["laptop_b_1", "desk_b_2", "mouse_b_3"], "property": "near"}
+// INSTEAD: Exactly 2 targets for each relationship
 
-5. **One action per iteration**
-   Output exactly one JSON dictionary, nothing else.
+✓ CORRECT COUNT (1 image target):
+{"verify_type": "count", "targets": ["image_a"], "property": "car"}
 
-WHEN TO USE "done"
-------------------
-Check if ALL required evidence is collected:
+MULTI-STEP VERIFICATION APPROACH:
 
-✓ Attribute questions: Verified property for ALL relevant entities?
-✓ Relationship questions: Verified ALL relevant pairs?
-✓ Count questions: Collected count distributions for ALL relevant classes?
-✓ Comparison questions: Collected evidence for BOTH sides?
+For complex questions requiring multiple checks, break into separate actions:
 
-If ANY required evidence is missing → Continue collecting
-If ALL required evidence is present → action = "done"
+EXAMPLE: "Are both chairs red and made of wood?"
+// WRONG - trying to check multiple properties at once
+{"verify_type": "attribute", "targets": ["chair_a_1"], "property": "color_and_material", "value": "red_wood"}
 
-COMMON MISTAKES TO AVOID
--------------------------
+// CORRECT - separate verification for each property and each chair
+Action 1: {"verify_type": "attribute", "targets": ["chair_a_1"], "property": "color", "value": "red"}
+Action 2: {"verify_type": "attribute", "targets": ["chair_a_1"], "property": "material", "value": "wood"}
+Action 3: {"verify_type": "attribute", "targets": ["chair_a_2"], "property": "color", "value": "red"}
+Action 4: {"verify_type": "attribute", "targets": ["chair_a_2"], "property": "material", "value": "wood"}
 
-❌ DON'T verify the same (entity, property) twice
-   Check "Verifications Completed" before every action.
+VERIFICATION QUESTION EXAMPLES:
+✓ CORRECT (Binary Yes/No):
+- "Is this laptop silver?"
+- "Are the chair and desk made of the same material?"
+- "Is the plant inside the pot?"
+- "Does this car have four doors?"
+- "Is this screen cracked?"
 
-❌ DON'T stop before collecting ALL evidence
-   Count: verified / total candidates. If < 100% → keep going.
+✗ WRONG (Open-ended):
+- "What material is this chair made of?" (use "Is this chair made of wood?" instead)
+- "How many cars are in the parking lot?" (count verification handles this automatically)
+- "Which appliance is larger?" (break into "Is the refrigerator larger than the stove?")
+- "What condition is this phone in?" (use "Is this phone damaged?" instead)
 
-❌ DON'T verify entities from wrong image
-   Match entity's image letter to question's image reference.
+PERCEIVE QUESTION EXAMPLES:
+✓ CORRECT (Generic):
+- "What material is this furniture made of?"
+- "What is the condition of this screen?"
+- "How are these kitchen appliances arranged?"
+- "What type of plant is this?"
 
-OUTPUT FORMAT: JSON only, no preamble or explanation."""
+✗ WRONG (Image references):
+- "What material is the chair in image A made of?" (VLM doesn't know what "image A" means)
+- "How are the cars arranged in image B?" (use "How are these cars arranged?")
+- "What color is the laptop in the right image?" (use "What color is this laptop?")
+
+RULES:
+- Count targets: Use "image_a"/"image_b" (pure image IDs)
+- Other targets: Use entity IDs like "chair_a_2", "laptop_b_1", "car_a_0"
+- CRITICAL: verification_question MUST be answerable with YES or NO only
+- NEVER use open-ended questions like "What material is...", "How many...", "Which..."
+- Verification questions MUST be binary: "Is this metal?", "Are they matching?", "Is X inside Y?"
+- PERCEIVE questions must be generic - do NOT reference "image A" or "image B" in question text
+- VLM only sees cropped regions, not full labeled images
+
+TARGET CONSTRAINTS (CRITICAL):
+- ATTRIBUTE verification: EXACTLY 1 target, 1 property, 1 value
+- RELATIONSHIP verification: EXACTLY 2 targets, 1 relationship property
+- COUNT verification: EXACTLY 1 image target, 1 object class
+- For multiple checks: Create separate verify actions, do NOT combine targets
+
+- Stop when answer is clear (don't over-collect)
+- Check completed verifications to avoid duplicates
+- ALL actions MUST include "action" and "reasoning" fields
+
+Output JSON only."""
+
+        # Build context with available object classes
+        available_classes = self._format_available_object_classes(state.candidate_entities)
 
         user_prompt = f"""Question: "{state.original_question}"
 
@@ -413,9 +410,17 @@ CANDIDATE ENTITIES
 ------------------
 {candidates_text}
 
+AVAILABLE OBJECT CLASSES
+------------------------
+{available_classes}
+
 VERIFICATIONS COMPLETED
 -----------------------
-{self._format_verifications_completed(state.evidence.verifications_completed)}
+{self._format_verifications_completed(state.evidence.verifications_completed, state.evidence)}
+
+PERCEIVE QUESTIONS ASKED
+------------------------
+{self._format_perceive_completed(state.evidence.perceive_completed)}
 
 EVIDENCE SUMMARY
 ----------------
@@ -482,7 +487,7 @@ RESPOND WITH JSON ONLY:"""
                     reasoning="Fallback: max iterations approaching"
                 )
             else:
-                raise UnifiedAgentError(f"Agent reasoning failed: {e}")
+                raise RuntimeError(f"Agent reasoning failed: {e}")
 
     def _format_candidates(self, candidate_entities: Dict[str, List[str]]) -> str:
         """Format candidate entities for LLM prompt, grouped by image for clarity."""
@@ -527,15 +532,15 @@ RESPOND WITH JSON ONLY:"""
 
         return "\n".join(lines)
 
-    def _format_verifications_completed(self, verifications_completed: Dict[Tuple, bool]) -> str:
+    def _format_verifications_completed(self, verifications_completed: Dict[Tuple, bool], evidence: 'EvidenceCollection') -> str:
         """
-        Format completed verifications in property-granular format.
-        Shows exactly what has been verified to prevent duplicates.
+        Format completed verifications showing actual results, not just completion.
+        Shows what evidence was collected to help agent avoid repetition.
         """
         if not verifications_completed:
             return "None yet"
 
-        # Group by type
+        # Group by type with results
         attributes = []
         relationships = []
         counts = []
@@ -543,14 +548,23 @@ RESPOND WITH JSON ONLY:"""
         for key in verifications_completed.keys():
             if len(key) == 2:
                 # Attribute: (entity_id, property)
-                attributes.append(f"    - ({key[0]}, {key[1]}): ✓")
+                entity_id, property = key
+                # Find the actual attribute result
+                result_text = self._get_attribute_result_summary(entity_id, property, evidence)
+                attributes.append(f"    - ({entity_id}, {property}): {result_text}")
             elif len(key) == 3:
                 if key[2] == "count":
                     # Count: (image_id, class, "count")
-                    counts.append(f"    - ({key[0]}, {key[1]}): ✓")
+                    image_id, object_class = key[0], key[1]
+                    # Find the actual count result
+                    result_text = self._get_count_result_summary(image_id, object_class, evidence)
+                    counts.append(f"    - ({image_id}, {object_class}): {result_text}")
                 else:
                     # Relationship: (subject, object, relation)
-                    relationships.append(f"    - ({key[0]}, {key[1]}, {key[2]}): ✓")
+                    subject_id, object_id, relation = key
+                    # Find the actual relationship result
+                    result_text = self._get_relationship_result_summary(subject_id, object_id, relation, evidence)
+                    relationships.append(f"    - ({subject_id}, {object_id}, {relation}): {result_text}")
 
         lines = []
         if attributes:
@@ -571,6 +585,66 @@ RESPOND WITH JSON ONLY:"""
 
         return "\n".join(lines) if lines else "None yet"
 
+    def _format_perceive_completed(self, perceive_completed: Dict[Tuple[str, str], str]) -> str:
+        """
+        Format completed perceive questions with their answers.
+        Shows what information was already gathered via VLM.
+        """
+        if not perceive_completed:
+            return "None yet"
+
+        lines = []
+        for i, ((entity_id, question), answer) in enumerate(perceive_completed.items(), 1):
+            # Truncate long answers for readability
+            short_answer = answer[:100] + "..." if len(answer) > 100 else answer
+            lines.append(f"  {i}. {entity_id}: \"{question}\" → \"{short_answer}\"")
+
+            # Limit to 10 most recent
+            if i >= 10:
+                remaining = len(perceive_completed) - 10
+                if remaining > 0:
+                    lines.append(f"  ... and {remaining} more")
+                break
+
+        return "\n".join(lines)
+
+    def _get_attribute_result_summary(self, entity_id: str, property: str, evidence: 'EvidenceCollection') -> str:
+        """Get summary of attribute verification result."""
+        for attr_entity_id, attr_property, value, probability in evidence.attributes:
+            if attr_entity_id == entity_id and attr_property == property:
+                return f"{value} (p={probability:.3f})"
+        return "verified"
+
+    def _get_relationship_result_summary(self, subject_id: str, object_id: str, relation: str, evidence: 'EvidenceCollection') -> str:
+        """Get summary of relationship verification result."""
+        for rel_subject_id, rel_object_id, rel_relation, probability in evidence.relationships:
+            if rel_subject_id == subject_id and rel_object_id == object_id and rel_relation == relation:
+                return f"p={probability:.3f}"
+        return "verified"
+
+    def _get_count_result_summary(self, image_id: str, object_class: str, evidence: 'EvidenceCollection') -> str:
+        """Get summary of count verification result."""
+        key = f"{image_id}_{object_class}"
+        if key in evidence.counts:
+            distribution = evidence.counts[key]
+            # Find the most likely count value
+            max_prob = 0.0
+            most_likely_count = 0
+            for count_val, prob in distribution.items():
+                if prob > max_prob:
+                    max_prob = prob
+                    most_likely_count = count_val
+            return f"most likely {most_likely_count} (p={max_prob:.3f})"
+        return "verified"
+
+    def _format_available_object_classes(self, candidate_entities: Dict[str, List[str]]) -> str:
+        """Format available object classes that agent can choose from for count verification."""
+        if not candidate_entities:
+            return "None available"
+
+        classes = list(candidate_entities.keys())
+        return ", ".join(sorted(classes))
+
     def _format_recent_actions(self, state: UnifiedAgentState, max_actions: int = 3) -> str:
         """
         Format last N actions with their results for LLM context.
@@ -589,6 +663,50 @@ RESPOND WITH JSON ONLY:"""
             lines.append(f"Iteration {iter_num}: {step}")
 
         return "\n".join(lines)
+
+    def _normalize_count_target(self, target: str) -> Optional[str]:
+        """
+        Normalize malformed count targets to proper image IDs.
+
+        Examples:
+            "image_a" → "image_a" (already correct)
+            "image_b_3" → "image_b" (remove extra suffix)
+            "bottle_a_2" → "image_a" (extract image from entity ID)
+            "a" → "image_a" (add image_ prefix)
+
+        Args:
+            target: Raw target string from LLM
+
+        Returns:
+            Normalized image ID (e.g., "image_a") or None if unparseable
+        """
+        target = target.strip()
+
+        # Already correct format
+        if target.startswith("image_") and len(target.split("_")) == 2:
+            return target
+
+        # Handle malformed image IDs: "image_b_3" → "image_b"
+        if target.startswith("image_"):
+            parts = target.split("_")
+            if len(parts) >= 2:
+                return f"image_{parts[1]}"
+
+        # Handle entity IDs: "bottle_a_2" → "image_a"
+        if "_" in target:
+            parts = target.split("_")
+            if len(parts) >= 2:
+                # Look for image letter (usually second-to-last part)
+                for i in range(1, len(parts)):
+                    letter = parts[i]
+                    if len(letter) == 1 and letter.isalpha():
+                        return f"image_{letter}"
+
+        # Handle bare letters: "a" → "image_a", "b" → "image_b"
+        if len(target) == 1 and target.isalpha():
+            return f"image_{target}"
+
+        return None
 
     def _resolve_entity(
         self,
@@ -766,6 +884,17 @@ RESPOND WITH JSON ONLY:"""
 
         return annotated
 
+    def _check_if_already_perceived(
+        self,
+        decision: 'PerceiveDecision',
+        state: UnifiedAgentState
+    ) -> str:
+        """
+        Check if this perceive question was already asked.
+        Returns previous answer if found, empty string if not asked yet.
+        """
+        return state.evidence.get_perceive_result(decision.target, decision.question)
+
     def _execute_perceive_action(
         self,
         decision: 'PerceiveDecision',
@@ -785,8 +914,13 @@ RESPOND WITH JSON ONLY:"""
             images: ImageData for entity lookup
             image_paths: Paths to image files
         """
-        print(f"      → Asking VLM: {decision.question}")
-        print(f"        Target: {decision.target}")
+        # Check if we already asked this exact question
+        previous_answer = self._check_if_already_perceived(decision, state)
+        if previous_answer:
+            print(f"  [Perceive] {decision.question} (already asked)")
+            print(f"    → {previous_answer} (cached)")
+            state.add_reasoning(f"Skipped duplicate perceive: already asked '{decision.question}' about {decision.target}")
+            return
 
         # Resolve entity
         image_id, entity = self._resolve_entity(decision.target, images)
@@ -803,16 +937,19 @@ RESPOND WITH JSON ONLY:"""
         qwen_client = self.model_manager.get_qwen_vl()
         response = qwen_client.run_inference(cropped, decision.question)
 
-        # Store in history
+        # Store in history and track as completed
         qa_entry = {
             "entity": decision.target,
             "question": decision.question,
             "answer": response
         }
         state.qwen_qa_history.append(qa_entry)
+        state.evidence.add_perceive_result(decision.target, decision.question, response)
         state.add_reasoning(f"VLM: {response[:80]}...")
 
-        print(f"        Answer: {response[:80]}...")
+        # Always print VLM Q&A
+        print(f"  [Perceive] {decision.question}")
+        print(f"    → {response}")
 
     def _check_if_already_verified(
         self,
@@ -869,14 +1006,35 @@ RESPOND WITH JSON ONLY:"""
         # Check for duplicates
         already_done = self._check_if_already_verified(decision, state)
         if already_done:
-            print(f"      ⚠️  WARNING: Already verified: {already_done}")
-            print(f"      Skipping duplicate verification")
             state.add_reasoning(f"Skipped duplicate verification: {already_done}")
             return
 
-        print(f"      → Verifying: {decision.verify_type}")
-        print(f"        Property: {decision.property}")
-        print(f"        Targets: {len(decision.targets)} entities")
+        # Validate count verification uses available object classes
+        if decision.verify_type == "count":
+            # Validate object class exists
+            if decision.property not in state.candidate_entities:
+                print(f"  ⚠ Warning: Invalid object class '{decision.property}' for count verification")
+                print(f"    Available classes: {list(state.candidate_entities.keys())}")
+                state.add_reasoning(f"Failed: Invalid object class '{decision.property}' not in detected objects")
+                return
+
+            # Auto-correct malformed count targets
+            corrected_targets = []
+            for target in decision.targets:
+                corrected_target = self._normalize_count_target(target)
+                if corrected_target:
+                    if corrected_target != target:
+                        print(f"  → Auto-corrected count target: '{target}' → '{corrected_target}'")
+                    corrected_targets.append(corrected_target)
+                else:
+                    print(f"  ⚠ Warning: Cannot parse count target '{target}' - skipping")
+
+            if not corrected_targets:
+                state.add_reasoning("Failed: No valid count targets after correction")
+                return
+
+            # Update decision with corrected targets
+            decision.targets = corrected_targets
 
         if decision.verify_type == "attribute":
             self._verify_attributes(decision, state, images, image_paths)
@@ -893,7 +1051,7 @@ RESPOND WITH JSON ONLY:"""
         image_paths: Dict[str, str]
     ):
         """
-        Verify attributes for ALL target entities.
+        Verify attributes using LLM-generated binary questions.
 
         Key: Check every entity, store all probabilities (even low ones).
 
@@ -917,34 +1075,43 @@ RESPOND WITH JSON ONLY:"""
             image = Image.open(image_paths[image_id])
             cropped = self._crop_to_entity(image, entity.bbox)
 
-            # Generate binary question
-            if decision.value:
-                # Specific value check: "Is this dog orange?"
-                question = f"Is this {entity.label} {decision.value}?"
+            # Get verification question
+            if decision.verification_question:
+                # Use LLM-generated question (preferred)
+                question = decision.verification_question
             else:
-                # Property check: "What {property} is this {entity}?"
-                question = f"What {decision.property} is this {entity.label}?"
+                # Fallback: construct simple binary question
+                if decision.value:
+                    question = f"Is this {entity.label} {decision.value}?"
+                else:
+                    # Default to existence check
+                    property_phrase = decision.property.replace('_', ' ')
+                    question = f"Does this {entity.label} have {property_phrase}?"
+
+            # Always add binary instruction
+            prompt = f"""{question}
+
+Answer Yes or No.
+
+Answer:"""
 
             # Run verification with logits for probability extraction
-            response, logits = qwen_client.run_inference_with_logits(cropped, question + "\n\nAnswer:")
+            response, logits = qwen_client.run_inference_with_logits(cropped, prompt)
 
-            # Extract probability
+            # Extract probability from Yes/No tokens
             probability = get_verifier_probability(logits, response, qwen_client.processor.tokenizer)
 
             # Store in evidence
             state.evidence.add_attribute(
                 entity_id,
-                decision.property or "attribute",
+                decision.property,
                 decision.value or response.strip(),
                 probability
             )
 
-            if self.debug:
-                debug_path = f"debug_unified_agent/{entity_id}_{decision.property}_{decision.value}.png"
-                cropped.save(debug_path)
-                print(f"      ✓ {entity_id}: {probability:.3f} (saved to {debug_path})")
-            else:
-                print(f"      ✓ {entity_id}: {probability:.3f}")
+            # Always print verification Q&A
+            print(f"  [Verify] {question}")
+            print(f"    → {response.strip()} (p={probability:.3f})")
 
         state.add_reasoning(f"Verified {len(decision.targets)} attributes")
 
@@ -1005,13 +1172,17 @@ RESPOND WITH JSON ONLY:"""
                 # Draw colored boxes
                 annotated = self._draw_colored_boxes(cropped, adj_subj_bbox, adj_obj_bbox)
 
-                # Generate binary question
-                if decision.property:
-                    # Specific relation check
-                    question = f"Is the {subject_entity.label} (RED) {decision.property} the {object_entity.label} (BLUE)?"
+                # Get verification question
+                if decision.verification_question:
+                    # Use LLM-generated question
+                    question = decision.verification_question
                 else:
-                    # General spatial relationship
-                    question = f"Describe the spatial relationship between the {subject_entity.label} (RED) and the {object_entity.label} (BLUE)."
+                    # Fallback: construct from property
+                    if decision.property:
+                        relation_phrase = decision.property.replace('_', ' ')
+                        question = f"Is the {subject_entity.label} {relation_phrase} the {object_entity.label}?"
+                    else:
+                        question = f"Describe the spatial relationship between the {subject_entity.label} and the {object_entity.label}."
 
                 prompt = f"""The {subject_entity.label} is marked in RED and the {object_entity.label} is marked in BLUE.
 
@@ -1035,12 +1206,9 @@ Answer:"""
                     probability
                 )
 
-                if self.debug:
-                    debug_path = f"debug_unified_agent/{subject_id}__{object_id}__{decision.property}.png"
-                    annotated.save(debug_path)
-                    print(f"      ✓ {subject_id} → {object_id}: {probability:.3f} (saved to {debug_path})")
-                else:
-                    print(f"      ✓ {subject_id} → {object_id}: {probability:.3f}")
+                # Always print verification Q&A
+                print(f"  [Verify] {question}")
+                print(f"    → {response.strip()} (p={probability:.3f})")
 
         state.add_reasoning(f"Verified relationships for {len(decision.targets)} entities")
 
@@ -1068,9 +1236,6 @@ Answer:"""
         count_processor = CountProcessor()
         object_class = decision.property
 
-        print(f"      → Counting: {object_class}")
-        print(f"        Images: {len(decision.targets)} images")
-
         for target in decision.targets:
             # Parse target - could be image_id or entity_id
             if target.startswith("image_"):
@@ -1082,11 +1247,9 @@ Answer:"""
                     image_letter = parts[-2]
                     image_id = f"image_{image_letter}"
                 else:
-                    print(f"      ⚠ Could not parse target: {target}")
                     continue
 
             if image_id not in images:
-                print(f"      ⚠ Image not found: {image_id}")
                 continue
 
             # Create count requirement
@@ -1117,10 +1280,9 @@ Answer:"""
                         "distribution": count_result.distribution
                     }
 
-                # Show distribution summary
-                expected_count = sum(k * p for k, p in count_result.distribution.items())
-                print(f"      ✓ {image_id}.{object_class}: E[count]={expected_count:.2f}, "
-                      f"support=[{min(count_result.distribution.keys())}, "
-                      f"{max(count_result.distribution.keys())}]")
+                # Always print count verification with most likely count
+                most_likely_count = max(count_result.distribution.items(), key=lambda x: x[1])
+                print(f"  [Verify] Count of {object_class} in {image_id}")
+                print(f"    → {most_likely_count[0]} (p={most_likely_count[1]:.3f})")
 
         state.add_reasoning(f"Computed count distributions for {object_class}")

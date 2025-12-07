@@ -14,11 +14,11 @@ from src.language.llm_client import LLMClient
 
 class ModelManager:
     """Singleton class for managing all model instances across the pipeline."""
-    
+
     _instance: Optional['ModelManager'] = None
     _lock = threading.Lock()
     _models: Dict[str, Any] = {}
-    
+
     def __new__(cls) -> 'ModelManager':
         """Ensure only one instance exists (thread-safe singleton pattern)."""
         if cls._instance is None:
@@ -27,7 +27,7 @@ class ModelManager:
                 if cls._instance is None:
                     cls._instance = super().__new__(cls)
         return cls._instance
-    
+
     def __init__(self):
         """Initialize the ModelManager (only called once)."""
         # Prevent re-initialization of singleton
@@ -43,9 +43,7 @@ class ModelManager:
             Florence2: The Florence-2 model instance
         """
         if 'florence2' not in self._models:
-            print("Loading Florence-2 model with auto device allocation...")
             self._models['florence2'] = Florence2(device="auto")
-            print("Florence-2 model loaded successfully with auto device allocation.")
         return self._models['florence2']
     
     def get_qwen_vl(self) -> QwenVL:
@@ -56,14 +54,12 @@ class ModelManager:
             QwenVL: The Qwen 2.5-VL-7B model instance
         """
         if 'qwen_vl' not in self._models:
-            print("Loading Qwen 2.5-VL-7B model with auto device allocation...")
             self._models['qwen_vl'] = QwenVL(device="auto")
-            print("Qwen VL model loaded successfully with auto device allocation.")
         return self._models['qwen_vl']
         
     def get_llm_client(self) -> LLMClient:
         """
-        Get LLM client instance (GPT-4o via Forge API).
+        Get LLM client instance (Llama 3.3 70B via AWS Bedrock).
 
         Returns:
             LLMClient: The LLM client instance
@@ -71,33 +67,7 @@ class ModelManager:
         if 'llm_client' not in self._models:
             self._models['llm_client'] = LLMClient()
         return self._models['llm_client']
-    
-    # Preserved for easy reversion to custom GPU mapping
-    # def _create_llama_device_map(self) -> dict:
-    #     """
-    #     Create device map for distributing Llama-3.3-70B across GPUs 0-5.
-    #
-    #     Returns:
-    #         dict: Device mapping for model layers
-    #     """
-    #     # Llama-3.3-70B has 80 layers, distribute across 6 GPUs (0-5)
-    #     layers_per_gpu = 80 // 6  # ~13 layers per GPU
-    #     device_map = {}
-    #
-    #     # Embedding and initial layers
-    #     device_map["model.embed_tokens"] = "cuda:0"
-    #
-    #     # Distribute transformer layers
-    #     for i in range(80):
-    #         gpu_id = min(i // layers_per_gpu, 5)  # Ensure we don't exceed GPU 5
-    #         device_map[f"model.layers.{i}"] = f"cuda:{gpu_id}"
-    #
-    #     # Final layers
-    #     device_map["model.norm"] = "cuda:5"
-    #     device_map["lm_head"] = "cuda:5"
-    #
-    #     return device_map
-    
+
     def is_model_loaded(self, model_name: str) -> bool:
         """
         Check if a specific model is loaded.

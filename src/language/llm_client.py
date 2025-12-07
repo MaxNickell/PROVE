@@ -3,49 +3,38 @@ import os
 import json
 from typing import Any, List, Dict, Type, TypeVar
 from dotenv import load_dotenv
-from openai import OpenAI
+import boto3
 from pydantic import BaseModel, ValidationError
 
 from .output_models import (
     SubquestionResponse,
-    AttributePlanningResponse,
-    CandidateResponse,
     CountRequirementResponse,
-    EntityExtractionResponse,
-    ObjectDiscoveryResponse,
-    ImageDiscoveryResponse,
-    ObjectPairDiscoveryResponse
+    EntityExtractionResponse
 )
 
 T = TypeVar('T', bound=BaseModel)
 
 
 class LLMClient:
-    """GPT-4o client via Forge API (OpenAI-compatible)."""
+    """Llama 3.3 70B Instruct client via AWS Bedrock."""
 
-    def __init__(self, model: str | None = None) -> None:
-        """Initialize the GPT-4o client via Forge."""
+    def __init__(self, model_id: str | None = None) -> None:
+        """Initialize the Llama 3.3 client via AWS Bedrock."""
         load_dotenv()
 
-        # Model configuration from environment or defaults
-        self.model_name = model or os.getenv("FORGE_MODEL_NAME", "Azure/gpt-4o")
-        self.base_url = os.getenv("FORGE_BASE_URL", "https://api.forge.tensorblock.co/v1")
-        self.api_key = os.getenv("FORGE_API_KEY")
+        # AWS Bedrock configuration
+        self.region = os.getenv("AWS_REGION", "us-east-1")
+        self.model_id = model_id or os.getenv("LLAMA33_MODEL_ID")
 
-        if not self.api_key:
-            raise ValueError("FORGE_API_KEY not found in environment variables")
-
-        # Initialize OpenAI client pointing to Forge
-        print(f"Initializing GPT-4o via Forge API...")
-        self.client = OpenAI(
-            api_key=self.api_key,
-            base_url=self.base_url
+        # Initialize Bedrock client
+        self.client = boto3.client(
+            service_name='bedrock-runtime',
+            region_name=self.region
         )
-        print(f"✓ GPT-4o client initialized successfully (model: {self.model_name})")
 
     def chat(self, messages: List[Dict[str, str]], **kwargs: Any) -> str:
         """
-        Generate a response using GPT-4o via Forge.
+        Generate a response using Llama 3.3 via AWS Bedrock.
 
         Args:
             messages: List of message dicts with 'role' and 'content' keys
@@ -59,20 +48,45 @@ class LLMClient:
             temperature = kwargs.get("temperature", 0.7)
             max_tokens = kwargs.get("max_tokens", kwargs.get("max_new_tokens", 2048))
 
-            # Call Forge API
-            response = self.client.chat.completions.create(
-                model=self.model_name,
-                messages=messages,
-                temperature=temperature,
-                max_tokens=max_tokens
-            )
+            # Separate system messages from conversation messages
+            system_messages = []
+            bedrock_messages = []
+
+            for msg in messages:
+                role = msg["role"]
+                if role == "system":
+                    # System messages go in separate parameter
+                    system_messages.append({"text": msg["content"]})
+                else:
+                    # User and assistant messages go in messages array
+                    bedrock_messages.append({
+                        "role": role,
+                        "content": [{"text": msg["content"]}]
+                    })
+
+            # Build converse API parameters
+            converse_params = {
+                "modelId": self.model_id,
+                "messages": bedrock_messages,
+                "inferenceConfig": {
+                    "temperature": temperature,
+                    "maxTokens": max_tokens
+                }
+            }
+
+            # Add system messages if present
+            if system_messages:
+                converse_params["system"] = system_messages
+
+            # Call AWS Bedrock Converse API
+            response = self.client.converse(**converse_params)
 
             # Extract the generated text
-            generated_text = response.choices[0].message.content
+            generated_text = response['output']['message']['content'][0]['text']
             return generated_text
 
         except Exception as e:
-            raise RuntimeError(f"GPT-4o generation via Forge failed: {e}")
+            raise RuntimeError(f"Llama 3.3 generation via AWS Bedrock failed: {e}")
 
     def chat_with_validation(
         self,
@@ -103,17 +117,25 @@ class LLMClient:
 
                 # Parse and validate with Pydantic
                 parsed_json = json.loads(json_str)
+
+                # Handle array format for SubquestionResponse (Llama may return array instead of object)
+                if isinstance(parsed_json, list) and output_model.__name__ == 'SubquestionResponse':
+                    parsed_json = {"subquestions": parsed_json}
+
                 validated_output = output_model(**parsed_json)
 
                 return validated_output
 
-            except (json.JSONDecodeError, ValidationError) as e:
+            except (json.JSONDecodeError, ValidationError, TypeError) as e:
                 if attempt == max_retries - 1:
                     raise RuntimeError(f"Failed to get valid JSON after {max_retries} attempts. Last error: {e}")
 
-                # Add JSON format instruction for retry
+                # Add JSON format instruction for retry (Llama 3.3 may need stronger hints)
                 if messages[-1]["role"] == "user":
-                    messages[-1]["content"] += f"\n\nPlease respond with valid JSON only. Format: {output_model.schema()}"
+                    messages[-1]["content"] += (
+                        "\n\nIMPORTANT: Respond with ONLY valid JSON, no other text. "
+                        "Required format: " + str(output_model.model_json_schema())
+                    )
 
         raise RuntimeError("Unexpected error in chat_with_validation")
 
@@ -165,14 +187,6 @@ class LLMClient:
         """Generate subquestions with validation."""
         return self.chat_with_validation(messages, SubquestionResponse, **kwargs)
 
-    def plan_attributes(self, messages: List[Dict[str, str]], **kwargs) -> AttributePlanningResponse:
-        """Plan attribute extraction requirements with validation."""
-        return self.chat_with_validation(messages, AttributePlanningResponse, **kwargs)
-
-    def generate_candidates(self, messages: List[Dict[str, str]], **kwargs) -> CandidateResponse:
-        """Generate attribute value candidates with validation."""
-        return self.chat_with_validation(messages, CandidateResponse, **kwargs)
-
     def analyze_count_requirements(self, messages: List[Dict[str, str]], **kwargs) -> CountRequirementResponse:
         """Analyze count requirements with validation."""
         return self.chat_with_validation(messages, CountRequirementResponse, **kwargs)
@@ -180,15 +194,3 @@ class LLMClient:
     def extract_entities(self, messages: List[Dict[str, str]], **kwargs) -> EntityExtractionResponse:
         """Extract entities from image captions with validation."""
         return self.chat_with_validation(messages, EntityExtractionResponse, **kwargs)
-
-    def discover_objects(self, messages: List[Dict[str, str]], **kwargs) -> ObjectDiscoveryResponse:
-        """Discover relevant object IDs from natural language question."""
-        return self.chat_with_validation(messages, ObjectDiscoveryResponse, temperature=0.2, **kwargs)
-
-    def discover_images(self, messages: List[Dict[str, str]], **kwargs) -> ImageDiscoveryResponse:
-        """Discover relevant image IDs from natural language question."""
-        return self.chat_with_validation(messages, ImageDiscoveryResponse, temperature=0.2, **kwargs)
-
-    def discover_object_pairs(self, messages: List[Dict[str, str]], **kwargs) -> ObjectPairDiscoveryResponse:
-        """Discover relevant object pairs from natural language question."""
-        return self.chat_with_validation(messages, ObjectPairDiscoveryResponse, temperature=0.2, **kwargs)
