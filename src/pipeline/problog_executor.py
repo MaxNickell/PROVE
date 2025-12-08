@@ -458,6 +458,9 @@ INSTRUCTIONS
 - Create a query(...) statement for the specific image mentioned
 - Use proper ProbLog syntax: predicates end with '.', rules use ':-'
 - CRITICAL: Only use exact categories from the Available Facts (e.g., if facts show 'buffalo' and 'cow', use those specific categories - NOT abstract terms like 'animal')
+- EVIDENCE-DRIVEN: Generate rules using ONLY the provided Available Facts
+- DO NOT assume any additional relationships, attributes, or counts exist beyond what's listed
+- Work with available evidence - if subquestion expects missing evidence, create rules that work with what you have
 - DO NOT use markdown code blocks or backticks in your output
 - Output ONLY the rule definitions and query, nothing else
 
@@ -517,6 +520,24 @@ white_bird_on_animal(I) :-
     has_attribute(I,B,white).
 
 query(white_bird_on_animal(image_a)).
+
+---
+
+EXAMPLE 4 (PARTIAL EVIDENCE)
+Subquestion: Is the girl in image A wearing a solid-colored hat?
+
+Available Facts:
+0.924::entity(image_a, girl_a_1, girl, 120,80,300,450).
+0.887::entity(image_a, hat_a_2, hat, 140,80,280,120).
+0.903::attribute(image_a, hat_a_2, solid-colored).
+
+Expected Output (work with available evidence):
+girl_wearing_solid_hat(I) :-
+    is_category(I,G,girl),
+    is_category(I,H,hat),
+    has_attribute(I,H,solid-colored).
+
+query(girl_wearing_solid_hat(image_a)).
 
 ---
 

@@ -1088,10 +1088,10 @@ RESPOND WITH JSON ONLY:"""
                     property_phrase = decision.property.replace('_', ' ')
                     question = f"Does this {entity.label} have {property_phrase}?"
 
-            # Always add binary instruction
+            # Always add binary instruction with strict formatting
             prompt = f"""{question}
 
-Answer Yes or No.
+Respond with ONLY "Yes" or "No". Do not add punctuation or explanation.
 
 Answer:"""
 
@@ -1188,7 +1188,7 @@ Answer:"""
 
 {question}
 
-Answer Yes or No.
+Respond with ONLY "Yes" or "No". Do not add punctuation or explanation.
 
 Answer:"""
 

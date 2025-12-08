@@ -47,8 +47,9 @@ def get_verifier_probability(
         return 0.5  # Neutral probability for empty logits
 
     try:
-        # Get final generation step logits (where Yes/No token is produced)
-        final_logits = logits_sequence[-1][0]  # Shape: [vocab_size]
+        # Get FIRST generation step logits (where Yes/No token is produced)
+        # The VLM generates ["Yes"/"No", "."] so the decision happens in step 0, not -1
+        first_logits = logits_sequence[0][0]  # Shape: [vocab_size]
 
         # Define verbalizer variants for robustness
         yes_verbalizers = ["Yes", "yes", "YES"]
@@ -67,8 +68,8 @@ def get_verifier_probability(
 
                 # Sum logits for all tokens of this verbalizer
                 for token_id in token_ids:
-                    if token_id < len(final_logits):
-                        logit_value = final_logits[token_id].item()
+                    if token_id < len(first_logits):
+                        logit_value = first_logits[token_id].item()
 
                         # Track for debugging
                         yes_token_details.append((verbalizer, token_id, logit_value))
@@ -95,8 +96,8 @@ def get_verifier_probability(
 
                 # Sum logits for all tokens of this verbalizer
                 for token_id in token_ids:
-                    if token_id < len(final_logits):
-                        logit_value = final_logits[token_id].item()
+                    if token_id < len(first_logits):
+                        logit_value = first_logits[token_id].item()
 
                         # Track for debugging
                         no_token_details.append((verbalizer, token_id, logit_value))

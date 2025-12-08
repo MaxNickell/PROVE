@@ -121,11 +121,12 @@ class QwenVL:
                 if hasattr(value, 'to') and hasattr(value, 'device'):
                     inputs[key] = value.to(self.model.device)
             
-            # Generate with logit tracking
+            # Generate with logit tracking - fully deterministic
             with torch.no_grad():
                 outputs = self.model.generate(
                     **inputs,
                     max_new_tokens=100,
+                    temperature=0.0,  # Completely deterministic temperature
                     do_sample=False,  # Deterministic for consistent probabilities
                     return_dict_in_generate=True,
                     output_scores=True,  # This gives us the logits
