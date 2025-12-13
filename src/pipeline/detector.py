@@ -21,10 +21,15 @@ class Detector:
     Produces ObjectDetection instances with exact schema compliance.
     """
 
-    def __init__(self):
-        """Initialize detector with ModelManager singleton."""
+    def __init__(self, mode: str = "probabilistic"):
+        """Initialize detector with ModelManager singleton.
+
+        Args:
+            mode: Execution mode - "probabilistic" or "deterministic"
+        """
         # Use ModelManager singleton instead of creating Florence2 directly
         self.model_manager = ModelManager()
+        self.mode = mode
 
     def _normalize_label_to_singular(self, label: str) -> str:
         """Normalize plural labels to singular forms."""
@@ -43,6 +48,22 @@ class Detector:
         if label.endswith('es'): return label[:-2]
         if label.endswith('s') and not label.endswith('ss'): return label[:-1]
         return label
+
+    def _apply_mode_mapping(self, confidence: float) -> float:
+        """Apply mode-specific confidence mapping.
+
+        Args:
+            confidence: Raw detection confidence (0.0 to 1.0)
+
+        Returns:
+            float: Mapped confidence based on execution mode
+        """
+        if self.mode == "deterministic":
+            # In deterministic mode, set all detected objects to 100% confidence
+            return 1.0
+        else:
+            # Probabilistic mode: return as-is
+            return confidence
 
     def detect(self, image_path: str, visualize: bool = False) -> List[ObjectDetection]:
         """
@@ -314,7 +335,10 @@ Question: {question}"""
                 
                 # Validate confidence is between 0 and 1
                 confidence = max(0.0, min(1.0, float(confidence)))
-                
+
+                # Apply mode-specific confidence mapping
+                confidence = self._apply_mode_mapping(confidence)
+
                 # Create ObjectDetection instance
                 obj = ObjectDetection(
                     object_id=int(object_id),
@@ -328,11 +352,12 @@ Question: {question}"""
             except Exception as e:
                 print(f"Warning: Failed to convert detection {i}: {e}")
                 # Create a fallback object
+                fallback_confidence = self._apply_mode_mapping(0.1)
                 fallback_obj = ObjectDetection(
                     object_id=i,
                     label="unknown",
                     bbox=[0.0, 0.0, 10.0, 10.0],
-                    confidence=0.1
+                    confidence=fallback_confidence
                 )
                 objects.append(fallback_obj)
         

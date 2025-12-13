@@ -24,8 +24,14 @@ class PROVE:
         answer = model.predict("img1.jpg", "img2.jpg", "Is there a cat in both images?")
     """
 
-    def __init__(self):
-        """Initialize PROVE model."""
+    def __init__(self, mode: str = "probabilistic"):
+        """Initialize PROVE model.
+
+        Args:
+            mode: Execution mode - "probabilistic" (use actual probabilities) or
+                  "deterministic" (map probabilities to 0%/100%)
+        """
+        self.mode = mode
         # Components initialized lazily on first use
         self._model_manager = None
         self._detector = None
@@ -38,11 +44,11 @@ class PROVE:
         if self._model_manager is None:
             self._model_manager = ModelManager()
         if self._detector is None:
-            self._detector = Detector()
+            self._detector = Detector(mode=self.mode)
         if self._subquestion_generator is None:
             self._subquestion_generator = SubquestionGenerator()
         if self._unified_agent is None:
-            self._unified_agent = UnifiedAgent(max_iterations=20)
+            self._unified_agent = UnifiedAgent(max_iterations=20, mode=self.mode)
         if self._problog_executor is None:
             self._problog_executor = ProbLogExecutor()
 

@@ -1,6 +1,32 @@
 # PROVE: Probabilistic Reasoning Over Visual Evidence
 
-**Neuro-symbolic visual question answering using subquestion decomposition, agentic evidence collection, and probabilistic logic programming.**
+Neuro-symbolic visual question answering using subquestion decomposition, agentic evidence collection, and probabilistic logic programming.
+
+---
+
+## Installation
+
+### Requirements
+
+- Python 3.9+
+- CUDA-compatible GPU (recommended: 24GB+ VRAM)
+- AWS Bedrock access for Llama 3.3 70B
+
+### Setup
+
+```bash
+# Clone repository
+git clone https://github.com/your-repo/PROVE.git
+cd PROVE
+
+# Install dependencies
+pip install -r requirements.txt
+
+# Configure AWS credentials for Bedrock
+export AWS_ACCESS_KEY_ID=your_access_key
+export AWS_SECRET_ACCESS_KEY=your_secret_key
+export AWS_DEFAULT_REGION=us-west-2
+```
 
 ---
 
@@ -9,7 +35,10 @@
 ```python
 from src import PROVE
 
-model = PROVE()
+# Initialize model (probabilistic mode by default)
+model = PROVE(mode="probabilistic")
+
+# Run inference
 answer = model.predict(
     "image_a.jpg",
     "image_b.jpg",
@@ -143,10 +172,10 @@ Subquestions:
    - Output: full distribution `{0: p0, 1: p1, 2: p2, ...}`
 
 **Key Features**:
-- ✅ Checks ALL candidates (no early filtering)
-- ✅ Stores all probabilities (even low ones)
-- ✅ General: works with ANY subquestion type
-- ✅ Efficient: reuses captions, lazy model loading
+- Checks ALL candidates (no early filtering)
+- Stores all probabilities (even low ones)
+- General: works with ANY subquestion type
+- Efficient: reuses captions, lazy model loading
 
 **Output**: `EvidenceCollection(attributes, relationships, counts)` per subquestion
 
@@ -220,6 +249,30 @@ Answer with ONLY 'True' or 'False', nothing else.
 
 ---
 
+## Execution Modes
+
+PROVE supports two execution modes for handling probabilistic evidence:
+
+### Probabilistic Mode (Default)
+Uses actual probabilities throughout the pipeline. Object detection confidences and verification probabilities are preserved as continuous values (e.g., 0.874, 0.623).
+
+```python
+model = PROVE(mode="probabilistic")
+```
+
+### Deterministic Mode
+Maps all probabilities to binary values (0% or 100%) for symbolic reasoning:
+- Object detection confidences: All detected objects mapped to 100%
+- Verification probabilities: <50% maps to 0%, >=50% maps to 100%
+
+```python
+model = PROVE(mode="deterministic")
+```
+
+Both modes achieve similar accuracy (~64% on NLVR2), with deterministic mode showing slightly higher recall.
+
+---
+
 ## Models & Quantization
 
 | Model | Purpose | Loading | Quantization |
@@ -288,7 +341,7 @@ LLM Composition
 
 ---
 
-## File Structure
+## Repository Structure
 
 ```
 src/
@@ -308,15 +361,14 @@ src/
 │   ├── subquestion_generator.py  # Subquestion generation
 │   ├── unified_agent.py        # Agentic evidence collection
 │   ├── count_processor.py      # Poisson-Binomial counting
-│   ├── problog_builder.py      # Evidence → ProbLog facts
-│   └── problog_executor.py     # ProbLog execution + composition
+│   ├── problog_builder.py      # Evidence to ProbLog facts
+│   └── problog_executor.py     # ProbLog execution and composition
 └── vision/
     ├── florence2.py            # Florence-2 wrapper
     └── qwen_vl.py              # Qwen VL wrapper
 
-run_prove.py                    # Test script
-evaluate_nlvr2.py              # NLVR2 evaluation
-detailed_evaluation.py         # Detailed per-example logging
+eval/                           # Evaluation results (gitignored)
+requirements.txt                # Python dependencies
 ```
 
 ---
@@ -328,7 +380,10 @@ detailed_evaluation.py         # Detailed per-example logging
 ```python
 from src import PROVE
 
-model = PROVE()
+# Initialize model
+model = PROVE(mode="probabilistic")  # or mode="deterministic"
+
+# Run inference
 answer = model.predict(
     image_a_path="img1.jpg",
     image_b_path="img2.jpg",
@@ -337,9 +392,14 @@ answer = model.predict(
 print(answer)  # "True" or "False"
 ```
 
-### Detailed Results
+### Detailed Results with Logging
 
 ```python
+from src import PROVE
+
+model = PROVE(mode="probabilistic")
+
+# Get detailed results with intermediate outputs
 result = model.predict_with_details(
     image_a_path="img1.jpg",
     image_b_path="img2.jpg",
@@ -349,26 +409,21 @@ result = model.predict_with_details(
 )
 
 # Access results
-print(result['answer'])  # "True" or "False"
-print(result['subquestions'])  # List of subquestions with probabilities
+print(result['answer'])           # Final binary answer
+print(result['subquestions'])     # Subquestions with probabilities
 print(result['problog_program'])  # Generated ProbLog program
-print(result['metadata'])  # Evidence statistics
-print(result['log_path'])  # Path to saved logs
+print(result['metadata'])         # Evidence statistics
+print(result['log_path'])         # Path to saved logs
 ```
 
-### Test Script
-
-```bash
-# Edit configuration in run_prove.py
-python run_prove.py
+**Log Directory Structure**:
 ```
-
-**Configuration**:
-```python
-IMAGE_A = "test_images/image1.png"
-IMAGE_B = "test_images/image2.png"
-QUESTION = "Your question here"
-SAVE_LOGS = True
+logs/20250112_143022_abc123/
+├── images/
+│   ├── image_a.jpg
+│   └── image_b.jpg
+├── knowledge_base.pl          # Full ProbLog program
+└── results.json              # Structured results
 ```
 
 ---
@@ -485,15 +540,15 @@ LLM sees binary subquestion answers → reasons about ultimate question → bina
 
 ```
 Step 1: Image Context Generation...
-  ✓ Captions generated
+  [DONE] Captions generated
 Step 2: Object Detection...
-  ✓ Detected 18 objects
+  [DONE] Detected 18 objects
 Step 3: Subquestion Generation...
-  ✓ Generated 2 subquestions
+  [DONE] Generated 2 subquestions
 Step 4: Evidence Collection...
-  ✓ Collected 8 attributes, 4 relationships, 0 counts
+  [DONE] Collected 8 attributes, 4 relationships, 0 counts
 Step 5: ProbLog Reasoning...
-  ✓ Reasoning complete
+  [DONE] Reasoning complete
 
 Answer: False
 
@@ -501,17 +556,7 @@ Subquestions:
 1. In image A, is there a white bird on top of another animal? (P=0.5847)
 2. In image B, is there a white bird on top of another animal? (P=0.2463)
 
-Logs saved to: logs/20250129_123456_abc123de/
-```
-
-**Log Directory Structure**:
-```
-logs/20250129_123456_abc123de/
-├── images/
-│   ├── image_a.jpg
-│   └── image_b.jpg
-├── knowledge_base.pl          # Full ProbLog program
-└── results.json              # Structured results
+Logs saved to: logs/20250112_143022_abc123/
 ```
 
 ---
@@ -523,6 +568,19 @@ PROVE transforms complex visual questions into probabilistic answers through:
 1. **Decomposition**: Binary subquestions that break down complexity
 2. **Agentic Collection**: Autonomous evidence gathering through VLM interaction
 3. **Probabilistic Logic**: ProbLog composes evidence mathematically
-4. **LLM Synthesis**: Binary answer ("True"/"False") from subquestion results
+4. **LLM Synthesis**: Binary answer from subquestion results
 
 **Key Innovation**: Neuro-symbolic architecture combining neural perception (VLMs) with symbolic reasoning (ProbLog) via agentic orchestration.
+
+---
+
+## Performance
+
+Evaluated on NLVR2 test set (1,388 examples with complete predictions):
+
+| Mode | Accuracy | Precision | Recall | F1-Score |
+|------|----------|-----------|--------|----------|
+| Probabilistic | 63.47% | 0.678 | 0.504 | 0.579 |
+| Deterministic | 63.83% | 0.669 | 0.541 | 0.598 |
+
+Both modes show high agreement (87.8%) with no statistically significant difference (McNemar's test, p >= 0.05).

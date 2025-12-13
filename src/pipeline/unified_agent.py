@@ -152,10 +152,16 @@ class UnifiedAgent:
     Architecture: Reasoner → Planner → Perceiver → Verifier (iterative loop)
     """
 
-    def __init__(self, max_iterations: int = 20):
-        """Initialize unified agent."""
+    def __init__(self, max_iterations: int = 20, mode: str = "probabilistic"):
+        """Initialize unified agent.
+
+        Args:
+            max_iterations: Maximum iterations for evidence collection
+            mode: Execution mode - "probabilistic" or "deterministic"
+        """
         self.model_manager = ModelManager()
         self.max_iterations = max_iterations
+        self.mode = mode
 
     def collect_evidence(
         self,
@@ -204,6 +210,22 @@ class UnifiedAgent:
                 state.add_reasoning("Evidence collection complete")
 
         return state.evidence
+
+    def _apply_mode_mapping(self, probability: float) -> float:
+        """Apply mode-specific probability mapping.
+
+        Args:
+            probability: Raw probability from VLM (0.0 to 1.0)
+
+        Returns:
+            float: Mapped probability based on execution mode
+        """
+        if self.mode == "deterministic":
+            # Map to binary: <50% → 0%, ≥50% → 100%
+            return 1.0 if probability >= 0.5 else 0.0
+        else:
+            # Probabilistic mode: return as-is
+            return probability
 
     def _initialize_state(
         self,
@@ -1099,7 +1121,10 @@ Answer:"""
             response, logits = qwen_client.run_inference_with_logits(cropped, prompt)
 
             # Extract probability from Yes/No tokens
-            probability = get_verifier_probability(logits, response, qwen_client.processor.tokenizer)
+            raw_probability = get_verifier_probability(logits, response, qwen_client.processor.tokenizer)
+
+            # Apply mode-specific mapping
+            probability = self._apply_mode_mapping(raw_probability)
 
             # Store in evidence
             state.evidence.add_attribute(
@@ -1196,7 +1221,10 @@ Answer:"""
                 response, logits = qwen_client.run_inference_with_logits(annotated, prompt)
 
                 # Extract probability
-                probability = get_verifier_probability(logits, response, qwen_client.processor.tokenizer)
+                raw_probability = get_verifier_probability(logits, response, qwen_client.processor.tokenizer)
+
+                # Apply mode-specific mapping
+                probability = self._apply_mode_mapping(raw_probability)
 
                 # Store in evidence
                 state.evidence.add_relationship(
