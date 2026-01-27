@@ -66,8 +66,12 @@ class ImageData:
     objects: List[ObjectDetection]
     attributes: Dict[int, AttributeData]  # {object_id: AttributeData}
     relationships: List[IntraRelation]
-    scene_context: Dict[str, Any]  # Processing aids like captions
     counts: Dict[str, Any]  # Probabilistic count distributions {"class": {"distribution": {count: prob}}}
+    scene_context: Dict[str, Any] = None  # Processing aids like captions
+
+    def __post_init__(self):
+        if self.scene_context is None:
+            self.scene_context = {}
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary with explicit serialization for complex fields."""
@@ -75,7 +79,6 @@ class ImageData:
             'objects': [obj.to_dict() for obj in self.objects],
             'attributes': {k: v.to_dict() for k, v in self.attributes.items()},
             'relationships': [rel.to_dict() for rel in self.relationships],
-            'scene_context': dict(self.scene_context) if self.scene_context else {},
             'counts': dict(self.counts) if self.counts else {}
         }
 
@@ -191,6 +194,60 @@ ATTRIBUTE_CATEGORIES = [
     "condition",  # new, worn, damaged, clean
     "function"    # carrying, supporting, decorative
 ]
+
+
+@dataclass
+class ModeResult:
+    """Results for a single execution mode (probabilistic or deterministic)."""
+    subquestion_results: List['SubquestionResult']
+    final_answer: str  # "True" or "False"
+    problog_program: str  # Complete ProbLog program for this mode
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            'subquestion_results': [r.to_dict() for r in self.subquestion_results],
+            'final_answer': self.final_answer,
+            'problog_program': self.problog_program
+        }
+
+
+@dataclass
+class SharedEvidence:
+    """Evidence shared between probabilistic and deterministic modes."""
+    subquestions: List['BinarySubquestion']
+    evidence_collections: List[Any]  # List of EvidenceCollection (avoid circular import)
+    detected_objects: Dict[str, List['ObjectDetection']]  # {image_id: [objects]}
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            'subquestions': [sq.to_dict() for sq in self.subquestions],
+            'detected_objects': {
+                img_id: [obj.to_dict() for obj in objs]
+                for img_id, objs in self.detected_objects.items()
+            }
+        }
+
+
+@dataclass
+class UnifiedResult:
+    """
+    Combined result from unified pipeline execution.
+
+    Contains shared evidence (same for both modes) and separate results
+    for probabilistic and deterministic execution.
+    """
+    threshold: float  # Threshold used for deterministic mapping
+    shared: SharedEvidence
+    probabilistic: ModeResult
+    deterministic: ModeResult
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            'threshold': self.threshold,
+            'shared': self.shared.to_dict(),
+            'probabilistic': self.probabilistic.to_dict(),
+            'deterministic': self.deterministic.to_dict()
+        }
 
 
 # Type aliases for convenience

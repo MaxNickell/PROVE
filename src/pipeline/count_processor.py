@@ -320,6 +320,36 @@ Generate count requirements for: "{subquestion.question}"."""
 
         return distribution
 
+    @staticmethod
+    def compute_deterministic_distribution(
+        probabilities: List[float],
+        threshold: float = 0.5
+    ) -> Dict[int, float]:
+        """
+        Compute deterministic count distribution by thresholding detection confidences.
+
+        First thresholds each detection confidence (< threshold → 0, >= threshold → 1),
+        then computes Poisson-Binomial with binary confidences.
+
+        With binary confidences, the result is a deterministic count:
+        count = number of detections with confidence >= threshold
+
+        Args:
+            probabilities: List of detection probabilities [p1, p2, ..., pn]
+            threshold: Threshold for binarization (default 0.5)
+
+        Returns:
+            Dict[int, float]: Deterministic distribution {count: 1.0}
+        """
+        # Threshold each probability
+        thresholded = [1.0 if p >= threshold else 0.0 for p in probabilities]
+
+        # Count how many are "detected" (confidence = 1.0)
+        count = sum(1 for p in thresholded if p >= 0.5)
+
+        # Return deterministic distribution
+        return {count: 1.0}
+
     def _store_count_result(
         self,
         images: Dict[str, ImageData],

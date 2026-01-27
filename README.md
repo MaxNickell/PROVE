@@ -35,16 +35,20 @@ export AWS_DEFAULT_REGION=us-west-2
 ```python
 from src import PROVE
 
-# Initialize model (probabilistic mode by default)
-model = PROVE(mode="probabilistic")
+# Initialize model (threshold=0.5 by default)
+model = PROVE(threshold=0.5)
 
-# Run inference
-answer = model.predict(
+# Run inference - returns both probabilistic and deterministic results
+result = model.predict(
     "image_a.jpg",
     "image_b.jpg",
     "Is there a white bird on top of another animal in both images?"
 )
-print(answer)  # "True" or "False"
+
+# Access results
+print(result.probabilistic.final_answer)  # "True" or "False"
+print(result.deterministic.final_answer)  # "True" or "False"
+print(f"Modes agree: {result.probabilistic.final_answer == result.deterministic.final_answer}")
 ```
 
 ---
@@ -100,13 +104,24 @@ Question → Subquestions → Agent (Perceive/Verify) → ProbLog → LLM → Tr
 
 **Input**: Ultimate question + captions + detected object lists
 
+**Subquestion Types**:
+- **Count (single image)**: "Are there exactly 2 dogs in image A?"
+- **Count comparison**: "Are there more dogs in image A than in image B?"
+- **Count equality**: "Are there the same number of dogs in image A as in image B?"
+- **Attribute**: "Is the dog in image A orange?"
+- **Universal attribute**: "Is every dog in image A orange?"
+- **Relationship**: "Is the bird sitting on the buffalo in image A?"
+- **Universal relationship**: "Is every bird sitting on a buffalo in image A?"
+- **Cross-image attribute**: "Are the dogs in image A the same color as the dogs in image B?"
+- **Cross-image relationship**: "Is there a person wearing a hat in both images?"
+
 **Example**:
 ```
-Question: "Is there a white bird on top of another animal in both images?"
+Ultimate: "Is there a white bird sitting on a buffalo?"
 
 Subquestions:
-1. "In image A, is there a white bird on top of another animal?"
-2. "In image B, is there a white bird on top of another animal?"
+1. "Is there a white bird sitting on a buffalo in image A?"
+2. "Is there a white bird sitting on a buffalo in image B?"
 ```
 
 **Output**: `List[BinarySubquestion(question)]` (pure natural language)
@@ -117,67 +132,56 @@ Subquestions:
 
 **Purpose**: Collect probabilistic evidence through agentic VLM reasoning
 
-**Architecture**: ReAct agent loop (max 20 iterations per subquestion)
+**Architecture**: ReAct agent loop (max 10 iterations per subquestion)
 
-**Agent Actions**:
-- **Perceive**: Ask VLM open-ended investigation questions (e.g., "What color is this hat?")
-  - Stores response in QA history for context
+**Agent Actions** (Pydantic-validated):
+- **perceive**: Ask VLM open-ended question about an entity
+  - Requires: `image_id`, `entity_id`, `question`
+  - Stores response in perceive history for context
   - NO probability extraction
-- **Verify**: Generate binary Yes/No verification questions (e.g., "Is this hat solid-colored?")
-  - LLM generates grammatically correct questions (no f-string templates)
-  - Always adds "Answer Yes or No" instruction
+- **verify_attribute**: Check if entity has specific attribute (Yes/No)
+  - Requires: `image_id`, `entity_id`, `attribute`, `value`
   - Extracts probability from Yes/No token logits
-- **Done**: Evidence collection complete
+- **verify_relationship**: Check spatial relationship between two entities
+  - Requires: `image_id`, `subject_id`, `object_id`, `relation`
+  - Both entities must be in the same image
+- **verify_count**: Count objects of a class in an image
+  - Requires: `image_id`, `object_class`
+  - Returns Poisson-Binomial distribution from detection confidences
+- **done**: Evidence collection complete
 
-**Agent Decision Flow**:
+**Agent Prompt Structure**:
 ```
-┌─────────────────────────────────────────┐
-│ LLM Reasoner & Planner                  │
-│ Analyzes: question, candidates,         │
-│ evidence so far, what's missing         │
-└──────────────┬──────────────────────────┘
-               │
-      ┌────────┴────────┐
-      ▼                 ▼
-┌──────────┐      ┌──────────┐      ┌──────┐
-│ Perceive │      │  Verify  │      │ Done │
-│ (gather) │      │ (check)  │      └──────┘
-└──────────┘      └──────────┘
-      │                 │
-      └────────┬────────┘
-               ▼
-         Update State
-               │
-         ┌─────┴─────┐
-         │ Continue? │
-         └───────────┘
+IMAGES:
+- Image A, image_id: image_a
+- Image B, image_id: image_b
+
+DETECTED OBJECTS:
+Image A, image_id: image_a
+  - object_id: dog_a_0, object_class: dog
+  - object_id: cat_a_1, object_class: cat
+
+Image B, image_id: image_b
+  - object_id: bird_b_0, object_class: bird
 ```
 
 **Evidence Types**:
 
 1. **Attributes** (object properties):
-   - VLM verification on cropped image (15% margin)
-   - **LLM-generated verification question**: `"Is this hat solid-colored?"`
-   - Natural language, grammatically correct
+   - VLM verification on cropped image
+   - Binary question: `"Is this dog orange? Answer with only Yes or No."`
    - Probability via logit summing: `P(yes) = softmax([z_yes, z_no])[0]`
 
 2. **Relationships** (spatial/interaction):
-   - Crop to union of both objects + colored boxes (RED=subject, BLUE=object)
-   - **LLM-generated verification question**: `"Is the mitten pointing towards the face?"`
-   - Natural phrasing, probability via logit summing
+   - Crop to union of both objects with padding
+   - Binary question: `"Is the bird on top of the buffalo? Answer with only Yes or No."`
 
 3. **Counts** (quantity distributions):
    - Poisson-Binomial distribution from detection confidences
    - Dynamic programming: convolve [1-p, p] for each detection
    - Output: full distribution `{0: p0, 1: p1, 2: p2, ...}`
 
-**Key Features**:
-- Checks ALL candidates (no early filtering)
-- Stores all probabilities (even low ones)
-- General: works with ANY subquestion type
-- Efficient: reuses captions, lazy model loading
-
-**Output**: `EvidenceCollection(attributes, relationships, counts)` per subquestion
+**Output**: `EvidenceCollection(attributes, relationships, counts, perceive_history)` per subquestion
 
 ---
 
@@ -199,10 +203,15 @@ Subquestions:
 **Example**:
 ```prolog
 % Facts (scoped to this subquestion)
-0.874::entity(image_a, buffalo_a_0, buffalo, 93,182,402,597).
-0.938::entity(image_a, bird_a_7, bird, 196,96,270,202).
+0.874::entity(image_a, buffalo_a_0, buffalo).
+0.938::entity(image_a, bird_a_7, bird).
 0.906::relation(image_a, bird_a_7, buffalo_a_0, on_top_of).
 0.787::attribute(image_a, bird_a_7, white).
+
+% Sugar rules (always available)
+has_attribute(I,E,A) :- attribute(I,E,A).
+is_category(I,E,C) :- entity(I,E,C).
+has_relationship(I,A,B,R) :- relation(I,A,B,R).
 
 % Rule (generated by LLM)
 white_bird_on_animal(I) :-
@@ -249,27 +258,39 @@ Answer with ONLY 'True' or 'False', nothing else.
 
 ---
 
-## Execution Modes
+## Unified Execution Mode
 
-PROVE supports two execution modes for handling probabilistic evidence:
+PROVE uses a unified pipeline that runs **both** probabilistic and deterministic modes with shared evidence to isolate the effect of perception uncertainty.
 
-### Probabilistic Mode (Default)
-Uses actual probabilities throughout the pipeline. Object detection confidences and verification probabilities are preserved as continuous values (e.g., 0.874, 0.623).
+### How It Works
+
+1. **Shared Evidence Collection**: Object detection and verification run ONCE with probabilistic confidences
+2. **Dual Fact Generation**: Same evidence generates two fact sets:
+   - **Probabilistic facts**: Original probabilities preserved (e.g., 0.874, 0.623)
+   - **Deterministic facts**: Thresholded (p < t → 0.0, p >= t → 1.0)
+3. **Dual ProbLog Execution**: Same queries run against both fact sets
+4. **Two Answers**: Returns both probabilistic and deterministic final answers
+
+### Threshold Parameter
 
 ```python
-model = PROVE(mode="probabilistic")
+model = PROVE(threshold=0.5)  # Default threshold
+model = PROVE(threshold=0.7)  # Higher threshold = more conservative
 ```
 
-### Deterministic Mode
-Maps all probabilities to binary values (0% or 100%) for symbolic reasoning:
-- Object detection confidences: All detected objects mapped to 100%
-- Verification probabilities: <50% maps to 0%, >=50% maps to 100%
+The threshold determines how probabilities map to binary values in deterministic mode:
+- `p < threshold` → 0.0 (false)
+- `p >= threshold` → 1.0 (true)
 
-```python
-model = PROVE(mode="deterministic")
-```
+### Why Unified Pipeline?
 
-Both modes achieve similar accuracy (~64% on NLVR2), with deterministic mode showing slightly higher recall.
+The previous separate-mode approach had a flaw: different modes could collect different evidence, making it impossible to isolate uncertainty's effect. The unified pipeline ensures:
+- **Same objects detected** in both modes
+- **Same evidence collected** in both modes
+- **Same ProbLog queries** in both modes
+- **Only probability values differ** between modes
+
+This allows true isolation of perception uncertainty's impact on reasoning.
 
 ---
 
@@ -292,20 +313,27 @@ Both modes achieve similar accuracy (~64% on NLVR2), with deterministic mode sho
 KnowledgeBase
 └── images: Dict[str, ImageData]
     ├── objects: List[ObjectDetection]
-    ├── attributes: Dict[int, AttributeData]
-    ├── relationships: List[IntraRelation]
-    ├── scene_context: Dict[str, Any]
+    ├── scene_context: Dict[str, Any]  # Contains caption
     └── counts: Dict[str, Dict[int, float]]
 ```
 
 **Evidence Collection** (per subquestion):
 ```python
 EvidenceCollection
+├── subquestion: str
 ├── attributes: List[(entity_id, attr_class, value, prob)]
 ├── relationships: List[(subj_id, obj_id, relation, prob)]
 ├── counts: Dict[str, Dict[int, float]]
 ├── reasoning_trace: List[str]
-└── verifications_completed: Dict[Tuple, bool]
+└── perceive_history: List[Dict[str, str]]
+```
+
+**ProbLog Predicates**:
+```prolog
+entity(image_id, entity_id, category)
+attribute(image_id, entity_id, value)
+relation(image_id, subject_id, object_id, relation_type)
+count(image_id, category, count_value)
 ```
 
 ---
@@ -381,15 +409,30 @@ requirements.txt                # Python dependencies
 from src import PROVE
 
 # Initialize model
-model = PROVE(mode="probabilistic")  # or mode="deterministic"
+model = PROVE(threshold=0.5)
 
-# Run inference
-answer = model.predict(
+# Run inference - returns UnifiedResult with both modes
+result = model.predict(
     image_a_path="img1.jpg",
     image_b_path="img2.jpg",
     question="Are there more birds in image A than image B?"
 )
-print(answer)  # "True" or "False"
+
+# Access probabilistic results
+print(result.probabilistic.final_answer)  # "True" or "False"
+for sq in result.probabilistic.subquestion_results:
+    print(f"  {sq.subquestion}: p={sq.probability:.3f}")
+
+# Access deterministic results
+print(result.deterministic.final_answer)  # "True" or "False"
+for sq in result.deterministic.subquestion_results:
+    print(f"  {sq.subquestion}: p={sq.probability:.3f}")
+
+# Check agreement
+if result.probabilistic.final_answer == result.deterministic.final_answer:
+    print("Modes agree!")
+else:
+    print("Modes disagree - perception uncertainty affected the outcome")
 ```
 
 ### Detailed Results with Logging
@@ -397,9 +440,9 @@ print(answer)  # "True" or "False"
 ```python
 from src import PROVE
 
-model = PROVE(mode="probabilistic")
+model = PROVE(threshold=0.5)
 
-# Get detailed results with intermediate outputs
+# Get detailed results with logging
 result = model.predict_with_details(
     image_a_path="img1.jpg",
     image_b_path="img2.jpg",
@@ -408,12 +451,17 @@ result = model.predict_with_details(
     log_dir="logs"
 )
 
-# Access results
-print(result['answer'])           # Final binary answer
-print(result['subquestions'])     # Subquestions with probabilities
-print(result['problog_program'])  # Generated ProbLog program
-print(result['metadata'])         # Evidence statistics
-print(result['log_path'])         # Path to saved logs
+# Access shared evidence (same for both modes)
+print(f"Subquestions: {len(result.shared.subquestions)}")
+print(f"Detected objects: {sum(len(objs) for objs in result.shared.detected_objects.values())}")
+
+# Access mode-specific results
+print(f"Probabilistic answer: {result.probabilistic.final_answer}")
+print(f"Deterministic answer: {result.deterministic.final_answer}")
+
+# Access ProbLog programs
+print(result.probabilistic.problog_program)  # Probabilistic facts + rules
+print(result.deterministic.problog_program)  # Deterministic facts + same rules
 ```
 
 **Log Directory Structure**:
@@ -422,8 +470,9 @@ logs/20250112_143022_abc123/
 ├── images/
 │   ├── image_a.jpg
 │   └── image_b.jpg
-├── knowledge_base.pl          # Full ProbLog program
-└── results.json              # Structured results
+├── probabilistic.pl          # ProbLog program with probabilistic facts
+├── deterministic.pl          # ProbLog program with deterministic facts
+└── results.json              # Unified results (both modes)
 ```
 
 ---
@@ -466,26 +515,25 @@ Expected count: 2.4
 
 ### Unified Agent Loop
 
-**ReAct Pattern**: Reasoning + Acting
+**ReAct Pattern**: Think → Act → Observe
 
 **State Tracking**:
-- Candidate entities (from detection)
-- Evidence collected so far
-- QA history with VLM
+- Entity candidates (from detection, grouped by image)
+- Evidence collected so far (attributes, relationships, counts)
+- Perceive history (QA pairs from investigation)
 - Reasoning trace
-- Verifications completed (prevents duplicates)
 
 **Decision Logic** (every iteration):
-1. Analyze what evidence is missing
-2. Choose action: perceive, verify, or done
-3. Execute action
-4. Update state
-5. Continue or stop (max 20 iterations)
+1. LLM sees: subquestion, candidates, evidence, perceive history
+2. LLM outputs: thought + action (Pydantic-validated)
+3. Execute action (perceive/verify_attribute/verify_relationship/verify_count)
+4. Update evidence
+5. Continue or stop (max 10 iterations or "done" action)
 
-**Efficiency**:
-- Tracks `verifications_completed` to prevent duplicate checks
-- Property-granular: `(entity_id, property)` for attributes
-- Relation-specific: `(subj_id, obj_id, relation)` for relationships
+**Action Validation**:
+- All actions require explicit `image_id` (image_a or image_b)
+- Entity IDs must match candidates from detection
+- Pydantic validates all fields before execution
 
 ---
 
@@ -499,13 +547,13 @@ Complex questions contain multiple requirements that can't be verified atomicall
 "Is there a white bird on top of another animal in both images?"
 
 Contains:
-- Existence check: white bird
+- Attribute check: white bird
 - Spatial relationship: on top of another animal
-- Comparison: in BOTH images
+- Scope: in BOTH images
 
 Decompose to:
-1. "In image A, is there a white bird on top of another animal?"
-2. "In image B, is there a white bird on top of another animal?"
+1. "Is there a white bird on top of another animal in image A?"
+2. "Is there a white bird on top of another animal in image B?"
 ```
 
 ### Why Agentic Evidence Collection?
@@ -539,24 +587,36 @@ LLM sees binary subquestion answers → reasons about ultimate question → bina
 ## Example Output
 
 ```
-Step 1: Image Context Generation...
-  [DONE] Captions generated
+Step 1: Caption Generation...
+  Image A: "A black buffalo standing in a grassy field with a white bird on its back"
+  Image B: "Two cows grazing in a meadow"
+
 Step 2: Object Detection...
-  [DONE] Detected 18 objects
+  Image A: buffalo (1), bird (1)
+  Image B: cow (2)
+
 Step 3: Subquestion Generation...
-  [DONE] Generated 2 subquestions
+  1. "Is there a white bird on top of another animal in image A?"
+  2. "Is there a white bird on top of another animal in image B?"
+
 Step 4: Evidence Collection...
-  [DONE] Collected 8 attributes, 4 relationships, 0 counts
-Step 5: ProbLog Reasoning...
-  [DONE] Reasoning complete
+  [1/2] Is there a white bird on top of another animal in image A?
+    [Verify Attribute] bird_a_0.color=white → Yes (p=0.787)
+    [Verify Relationship] bird_a_0 on_top_of buffalo_a_0 → Yes (p=0.906)
+  [2/2] Is there a white bird on top of another animal in image B?
+    [Verify Attribute] No birds detected in image B
 
-Answer: False
+Step 5: ProbLog Reasoning (dual mode)...
+  [1/2] Is there a white bird on top of another animal in image A?
+    Probabilistic: 0.5847
+    Deterministic: 1.0000
+  [2/2] Is there a white bird on top of another animal in image B?
+    Probabilistic: 0.0000
+    Deterministic: 0.0000
 
-Subquestions:
-1. In image A, is there a white bird on top of another animal? (P=0.5847)
-2. In image B, is there a white bird on top of another animal? (P=0.2463)
-
-Logs saved to: logs/20250112_143022_abc123/
+Ultimate Composition:
+  Probabilistic: False
+  Deterministic: False
 ```
 
 ---
@@ -584,3 +644,5 @@ Evaluated on NLVR2 test set (1,388 examples with complete predictions):
 | Deterministic | 63.83% | 0.669 | 0.541 | 0.598 |
 
 Both modes show high agreement (87.8%) with no statistically significant difference (McNemar's test, p >= 0.05).
+
+**Note**: With the unified pipeline, these metrics can now be computed on identical evidence, providing a cleaner ablation study on the effect of perception uncertainty.
