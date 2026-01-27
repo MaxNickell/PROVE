@@ -3,10 +3,10 @@ Contextual subquestion generator for PROVE pipeline.
 Generates binary subquestions using visual context and detected objects to resolve ultimate question ambiguity.
 """
 
-from typing import List, Dict, Any
+from typing import List, Dict
 
 from src.core.model_manager import ModelManager
-from src.core.types import ObjectDetection, BinarySubquestion, ImageData
+from src.core.types import BinarySubquestion, ImageData
 
 
 
@@ -14,7 +14,7 @@ from src.core.types import ObjectDetection, BinarySubquestion, ImageData
 class SubquestionGenerator:
     """
     Generate contextual binary subquestions that resolve ultimate question ambiguity.
-    Uses detailed image captions + detected objects + ultimate question to create specific reasoning questions.
+    Uses image captions + detected objects + ultimate question to create specific reasoning questions.
     """
 
     def __init__(self):
@@ -34,7 +34,7 @@ class SubquestionGenerator:
             images: ImageData structure containing objects, captions, and context per image
 
         Returns:
-            List[BinarySubquestion]: Binary questions with object references and types
+            List[BinarySubquestion]: Binary questions with object references
 
         Raises:
             RuntimeError: If generation fails
@@ -63,11 +63,8 @@ class SubquestionGenerator:
                 temperature=0.3
             )
 
-            # Extract objects from ImageData for conversion
-            all_objects = {image_id: image_data.objects for image_id, image_data in images.items()}
-
             # Convert Pydantic response to BinarySubquestion objects
-            subquestions = self._convert_to_binary_subquestions(response.subquestions, all_objects)
+            subquestions = self._convert_to_binary_subquestions(response.subquestions)
 
             return subquestions
 
@@ -76,7 +73,7 @@ class SubquestionGenerator:
     
     
     def _create_subquestion_prompt(self, ultimate_question: str, images: Dict[str, ImageData]) -> str:
-        """Create simplified prompt for binary subquestion generation."""
+        """Create prompt for binary subquestion generation using captions and objects."""
         image_ids = sorted(images.keys())
         if len(image_ids) < 2:
             raise ValueError("Expected at least 2 images for subquestion generation")
@@ -96,43 +93,62 @@ class SubquestionGenerator:
         objects_a = format_object_list(images[image_ids[0]])
         objects_b = format_object_list(images[image_ids[1]])
 
-        prompt = f"""Break down the ultimate question into binary (Yes/No) subquestions using the visual context.
+        prompt = f"""TASK
+Decompose the ultimate question into simpler binary (Yes/No) subquestions
+about attributes, relationships, or counts of the detected objects.
 
-RULES:
-- Each subquestion must be answerable with Yes or No
-- Use object classes from the object lists
-- Generate minimal subquestions needed to answer ultimate question
-- Output strict JSON format
+RULES
+1. Every subquestion must be answerable with Yes or No
+2. Always specify the image: "in image A", "in image B", or "in both images"
+3. Only reference objects from the DETECTED OBJECTS lists
+4. Generate the minimal set needed to answer the ultimate question
 
-EXAMPLE:
-Ultimate Question: Are there more people wearing blue shirts in image A than image B?
-Output: {{"subquestions": ["In image A, how many people are wearing blue shirts?", "In image B, how many people are wearing blue shirts?"]}}
+EXAMPLES
 
-IMAGE A
-Caption: {caption_a}
-Objects: {objects_a}
+Ultimate: "Are there more birds in one image than the other?"
+Output: {{"subquestions": ["Are there more birds in image A than in image B?"]}}
 
-IMAGE B
-Caption: {caption_b}
-Objects: {objects_b}
+Ultimate: "Is there a white bird sitting on a buffalo?"
+Output: {{"subquestions": ["Is there a white bird sitting on a buffalo in image A?", "Is there a white bird sitting on a buffalo in image B?"]}}
 
-Ultimate Question: {ultimate_question}
+Ultimate: "Do both images show a person wearing a hat?"
+Output: {{"subquestions": ["Is there a person wearing a hat in image A?", "Is there a person wearing a hat in image B?"]}}
 
-Generate subquestions:"""
+Ultimate: "Are all the cats sleeping?"
+Output: {{"subquestions": ["Is every cat in image A sleeping?", "Is every cat in image B sleeping?"]}}
+
+Ultimate: "Are the cars the same color?"
+Output: {{"subquestions": ["Are the cars in image A the same color as the cars in image B?"]}}
+
+Ultimate: "Do both images have the same number of dogs?"
+Output: {{"subquestions": ["Are there the same number of dogs in image A as in image B?"]}}
+
+Ultimate: "Is every child holding a balloon?"
+Output: {{"subquestions": ["Is every child in image A holding a balloon?", "Is every child in image B holding a balloon?"]}}
+
+DETECTED OBJECTS
+Image A: {objects_a}
+Image B: {objects_b}
+
+IMAGE CAPTIONS
+Image A: {caption_a}
+Image B: {caption_b}
+
+ULTIMATE QUESTION: {ultimate_question}
+
+Output JSON:"""
 
         return prompt
     
     def _convert_to_binary_subquestions(
         self,
-        subquestions: List[str],
-        all_objects: Dict[str, List[ObjectDetection]]
+        subquestions: List[str]
     ) -> List[BinarySubquestion]:
         """
         Convert list of question strings to BinarySubquestion objects.
 
         Args:
             subquestions: List of question strings from Pydantic validation
-            all_objects: Original objects (unused now, but kept for compatibility)
 
         Returns:
             List[BinarySubquestion]: BinarySubquestion instances
@@ -153,68 +169,6 @@ Generate subquestions:"""
                 continue
 
         return binary_subquestions
-    
-    def validate_subquestions(self, subquestions: List[BinarySubquestion]) -> bool:
-        """
-        Validate that generated subquestions have basic required structure.
-        Pydantic handles type validation, we just check basic content.
-
-        Args:
-            subquestions: List of BinarySubquestion instances
-
-        Returns:
-            bool: True if all subquestions are valid
-        """
-        try:
-            for subquestion in subquestions:
-                # Check required attributes exist
-                assert hasattr(subquestion, 'question')
-
-                # Validate basic content (non-empty)
-                assert subquestion.question.strip()
-
-            return True
-
-        except (AssertionError, AttributeError):
-            return False
-    
-    def get_subquestions_summary(
-        self,
-        subquestions: List[BinarySubquestion]
-    ) -> Dict[str, Any]:
-        """
-        Get summary statistics for generated subquestions.
-
-        Args:
-            subquestions: List of BinarySubquestion instances
-
-        Returns:
-            Dict[str, Any]: Summary information
-        """
-        if not subquestions:
-            return {"count": 0, "types": {}, "avg_question_length": 0}
-
-        # Count by type
-        type_counts = {}
-        question_lengths = []
-        unique_objects = set()
-
-        for subquestion in subquestions:
-            # Count types
-            subquestion_type = subquestion.subquestion_type
-            type_counts[subquestion_type] = type_counts.get(subquestion_type, 0) + 1
-
-            # Track question lengths
-            question_lengths.append(len(subquestion.question.split()))
-
-        return {
-            "count": len(subquestions),
-            "types": type_counts,
-            "avg_question_length": sum(question_lengths) / len(question_lengths) if question_lengths else 0,
-            "sample_questions": [sq.question for sq in subquestions[:3]]
-        }
-    
-    
 
 
 if __name__ == "__main__":

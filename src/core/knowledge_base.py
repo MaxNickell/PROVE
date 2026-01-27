@@ -47,7 +47,6 @@ class KnowledgeBase:
                 objects=[],
                 attributes={},
                 relationships=[],
-                scene_context={},
                 counts={}
             )
 
@@ -186,7 +185,6 @@ class KnowledgeBase:
     def add_scene_context(self, image_id: str, context: Dict[str, Any]) -> None:
         """
         Add scene context (processing aids like captions) for an image.
-        Note: scene_context is stripped from JSON output via to_dict() for ProbLog.
 
         Args:
             image_id: Image identifier
@@ -214,18 +212,9 @@ class KnowledgeBase:
         Returns:
             Dict representation of the knowledge base
         """
-        # Create clean image data without scene_context (processing aids only)
-        clean_images = {}
-        for image_id, image_data in self.images.items():
-            image_dict = image_data.to_dict()
-            # Remove scene_context as it's only for processing, not final knowledge base
-            if "scene_context" in image_dict:
-                del image_dict["scene_context"]
-            clean_images[image_id] = image_dict
-
         return {
             "ultimate_question": self.ultimate_question,
-            "images": clean_images,
+            "images": {image_id: image_data.to_dict() for image_id, image_data in self.images.items()},
             "subquestions": [sq.to_dict() for sq in self.subquestions],
             "problog_facts": [fact.to_dict() for fact in self.problog_facts],
             "subquestion_results": [result.to_dict() for result in self.subquestion_results]

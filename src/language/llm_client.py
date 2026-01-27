@@ -9,7 +9,13 @@ from pydantic import BaseModel, ValidationError
 from .output_models import (
     SubquestionResponse,
     CountRequirementResponse,
-    EntityExtractionResponse
+    EntityExtractionResponse,
+    AgentAction,
+    PerceiveAction,
+    VerifyAttributeAction,
+    VerifyRelationshipAction,
+    VerifyCountAction,
+    DoneAction
 )
 
 T = TypeVar('T', bound=BaseModel)
@@ -192,5 +198,72 @@ class LLMClient:
         return self.chat_with_validation(messages, CountRequirementResponse, **kwargs)
 
     def extract_entities(self, messages: List[Dict[str, str]], **kwargs) -> EntityExtractionResponse:
-        """Extract entities from image captions with validation."""
+        """Extract entities from questions with validation."""
         return self.chat_with_validation(messages, EntityExtractionResponse, **kwargs)
+
+    def parse_agent_action(
+        self,
+        messages: List[Dict[str, str]],
+        max_retries: int = 3,
+        **kwargs: Any
+    ) -> AgentAction:
+        """
+        Parse agent action from LLM response using discriminated union.
+
+        Determines action type from 'action' field and validates with appropriate model.
+
+        Args:
+            messages: List of message dicts with 'role' and 'content' keys
+            max_retries: Number of retries for malformed JSON
+            **kwargs: Additional generation parameters
+
+        Returns:
+            Validated action (PerceiveAction, VerifyAttributeAction, etc.)
+
+        Raises:
+            RuntimeError: If parsing fails after max_retries
+        """
+        action_models = {
+            "perceive": PerceiveAction,
+            "verify_attribute": VerifyAttributeAction,
+            "verify_relationship": VerifyRelationshipAction,
+            "verify_count": VerifyCountAction,
+            "done": DoneAction
+        }
+
+        last_error = None
+        for attempt in range(max_retries):
+            try:
+                # Generate response
+                response = self.chat(messages, **kwargs)
+
+                # Extract JSON from response
+                json_str = self._extract_json(response)
+
+                # Parse JSON
+                parsed_json = json.loads(json_str)
+
+                # Determine action type
+                action_type = parsed_json.get("action")
+                if action_type not in action_models:
+                    raise ValueError(f"Unknown action type: {action_type}. Must be one of: {list(action_models.keys())}")
+
+                # Validate with appropriate model
+                model_class = action_models[action_type]
+                validated_action = model_class(**parsed_json)
+
+                return validated_action
+
+            except (json.JSONDecodeError, ValidationError, ValueError, TypeError) as e:
+                last_error = e
+                if attempt == max_retries - 1:
+                    break
+
+                # Add format hint for retry
+                if messages[-1]["role"] == "user":
+                    messages[-1]["content"] += (
+                        "\n\nIMPORTANT: Respond with ONLY valid JSON. "
+                        "The 'action' field must be one of: perceive, verify_attribute, verify_relationship, verify_count, done"
+                    )
+
+        raise RuntimeError(f"Failed to parse agent action after {max_retries} attempts. Last error: {last_error}")

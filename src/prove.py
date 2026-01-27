@@ -1,6 +1,9 @@
 """
 PROVE: Probabilistic Reasoning Over Visual Evidence
 Main model class encapsulating the entire pipeline.
+
+Unified pipeline that runs both probabilistic and deterministic modes
+with shared evidence collection to isolate the effect of perception uncertainty.
 """
 
 from typing import Dict, Any
@@ -9,6 +12,7 @@ from PIL import Image
 
 from .core.knowledge_base import KnowledgeBase
 from .core.model_manager import ModelManager
+from .core.types import UnifiedResult, SharedEvidence, ModeResult
 from .pipeline.detector import Detector
 from .pipeline.subquestion_generator import SubquestionGenerator
 from .pipeline.unified_agent import UnifiedAgent
@@ -19,19 +23,24 @@ class PROVE:
     """
     PROVE model for visual reasoning over image pairs.
 
+    Unified pipeline that always runs both probabilistic and deterministic modes
+    with shared evidence to isolate the effect of perception uncertainty.
+
     Usage:
         model = PROVE()
-        answer = model.predict("img1.jpg", "img2.jpg", "Is there a cat in both images?")
+        result = model.predict("img1.jpg", "img2.jpg", "Is there a cat in both images?")
+        # result contains both probabilistic and deterministic answers
     """
 
-    def __init__(self, mode: str = "probabilistic"):
+    def __init__(self, threshold: float = 0.5):
         """Initialize PROVE model.
 
         Args:
-            mode: Execution mode - "probabilistic" (use actual probabilities) or
-                  "deterministic" (map probabilities to 0%/100%)
+            threshold: Threshold for deterministic mode mapping (default 0.5)
+                - p < threshold → 0.0 (false)
+                - p >= threshold → 1.0 (true)
         """
-        self.mode = mode
+        self.threshold = threshold
         # Components initialized lazily on first use
         self._model_manager = None
         self._detector = None
@@ -44,11 +53,11 @@ class PROVE:
         if self._model_manager is None:
             self._model_manager = ModelManager()
         if self._detector is None:
-            self._detector = Detector(mode=self.mode)
+            self._detector = Detector()
         if self._subquestion_generator is None:
             self._subquestion_generator = SubquestionGenerator()
         if self._unified_agent is None:
-            self._unified_agent = UnifiedAgent(max_iterations=20, mode=self.mode)
+            self._unified_agent = UnifiedAgent(max_iterations=20)
         if self._problog_executor is None:
             self._problog_executor = ProbLogExecutor()
 
@@ -57,9 +66,9 @@ class PROVE:
         image_a_path: str,
         image_b_path: str,
         question: str
-    ) -> str:
+    ) -> UnifiedResult:
         """
-        Run PROVE inference on image pair.
+        Run PROVE inference on image pair (unified pipeline).
 
         Args:
             image_a_path: Path to first image
@@ -67,14 +76,13 @@ class PROVE:
             question: Ultimate question to answer
 
         Returns:
-            Binary answer ("True" or "False")
+            UnifiedResult containing both probabilistic and deterministic results
 
         Raises:
             FileNotFoundError: If image paths don't exist
             RuntimeError: If pipeline execution fails
         """
-        result = self.predict_with_details(image_a_path, image_b_path, question)
-        return result['answer']
+        return self.predict_with_details(image_a_path, image_b_path, question)
 
     def predict_with_details(
         self,
@@ -83,9 +91,12 @@ class PROVE:
         question: str,
         save_logs: bool = False,
         log_dir: str = "logs"
-    ) -> Dict[str, Any]:
+    ) -> UnifiedResult:
         """
-        Run PROVE inference with detailed outputs.
+        Run PROVE unified inference with detailed outputs.
+
+        Runs both probabilistic and deterministic modes with shared evidence
+        to isolate the effect of perception uncertainty.
 
         Args:
             image_a_path: Path to first image
@@ -95,12 +106,11 @@ class PROVE:
             log_dir: Base directory for logs (default: "logs")
 
         Returns:
-            Dict with keys:
-                - answer: Binary answer ("True" or "False")
-                - subquestions: List of subquestions with probabilities
-                - problog_program: Generated ProbLog program (str)
-                - metadata: Object counts, evidence stats, etc.
-                - log_path: Path to saved logs (if save_logs=True)
+            UnifiedResult with:
+                - threshold: Threshold used for deterministic mapping
+                - shared: SharedEvidence (subquestions, evidence, detected objects)
+                - probabilistic: ModeResult (subquestion results, final answer, problog program)
+                - deterministic: ModeResult (subquestion results, final answer, problog program)
 
         Raises:
             FileNotFoundError: If image paths don't exist
@@ -121,21 +131,27 @@ class PROVE:
 
         try:
             # Print question
-            print(f"\nQuestion: \"{question}\"\n")
+            print(f"\nQuestion: \"{question}\"")
+            print(f"Threshold: {self.threshold}\n")
 
-            # Step 1: Image Context Generation
+            # Step 1: Caption Generation (for subquestion context)
+            print("Step 1: Caption Generation...")
             florence2 = self._model_manager.get_florence2()
             for image_id, image_path in image_paths.items():
                 image = Image.open(image_path)
                 caption = florence2.describe_region(image, task="<MORE_DETAILED_CAPTION>")
-                kb.add_scene_context(image_id, {"caption": caption, "image_path": image_path})
+                kb.add_scene_context(image_id, {"caption": caption})
+                print(f"  {image_id}: caption generated")
 
-            # Step 2: Object Detection
+            # Step 2: Object Detection (always probabilistic)
+            print("\nStep 2: Object Detection...")
             for image_id, image_path in image_paths.items():
                 detections = self._detector.detect_from_question(image_path, question)
                 kb.add_objects(image_id, detections)
+                print(f"  {image_id}: {len(detections)} objects detected")
 
             # Step 3: Subquestion Generation
+            print("\nStep 3: Subquestion Generation...")
             subquestions = self._subquestion_generator.generate_binary_subquestions(
                 question, kb.images
             )
@@ -144,10 +160,9 @@ class PROVE:
             print("Subquestions:")
             for i, sq in enumerate(subquestions, 1):
                 print(f"  {i}. {sq.question}")
-            print()
 
-            # Step 4: Evidence Collection
-            print("Agent:\n")
+            # Step 4: Evidence Collection (always probabilistic)
+            print("\nStep 4: Evidence Collection...")
 
             evidence_by_subquestion = []
             for subquestion in kb.subquestions:
@@ -158,44 +173,58 @@ class PROVE:
                 )
                 evidence_by_subquestion.append(evidence)
 
-            # Step 5: ProbLog Reasoning
-            subquestion_results, ultimate_answer, problog_program = self._problog_executor.execute_subquestions(
+            # Step 5: Dual ProbLog Execution
+            print("\nStep 5: ProbLog Reasoning (dual mode)...")
+            prob_result, det_result = self._problog_executor.execute_dual(
                 subquestions=kb.subquestions,
                 evidence_collections=evidence_by_subquestion,
                 images=kb.images,
-                ultimate_question=question
+                ultimate_question=question,
+                threshold=self.threshold
             )
-            kb.add_subquestion_results(subquestion_results)
 
-            # Build result
-            result = {
-                'answer': ultimate_answer,
-                'subquestions': [
-                    {
-                        'question': sq_result.subquestion,
-                        'probability': sq_result.probability
-                    }
-                    for sq_result in subquestion_results
-                ],
-                'problog_program': problog_program,
-                'metadata': {
-                    'total_objects': sum(len(img.objects) for img in kb.images.values()),
-                    'num_subquestions': len(subquestions),
-                    'total_attributes': sum(len(e.attributes) for e in evidence_by_subquestion),
-                    'total_relationships': sum(len(e.relationships) for e in evidence_by_subquestion),
-                    'total_counts': sum(len(e.counts) for e in evidence_by_subquestion)
-                }
+            # Build shared evidence
+            detected_objects = {
+                image_id: list(image_data.objects)
+                for image_id, image_data in kb.images.items()
             }
+            shared = SharedEvidence(
+                subquestions=subquestions,
+                evidence_collections=evidence_by_subquestion,
+                detected_objects=detected_objects
+            )
 
-            print("\nSubquestion Results:")
-            for i, sq_result in enumerate(subquestion_results, 1):
+            # Build unified result
+            result = UnifiedResult(
+                threshold=self.threshold,
+                shared=shared,
+                probabilistic=prob_result,
+                deterministic=det_result
+            )
+
+            # Print summary
+            print("\n" + "=" * 60)
+            print("RESULTS SUMMARY")
+            print("=" * 60)
+            print(f"\nProbabilistic Mode:")
+            for i, sq_result in enumerate(prob_result.subquestion_results, 1):
                 print(f"  {i}. {sq_result.subquestion} (p={sq_result.probability:.3f})")
-            print(f"\nAnswer: {ultimate_answer}\n")
+            print(f"  → Final Answer: {prob_result.final_answer}")
+
+            print(f"\nDeterministic Mode (threshold={self.threshold}):")
+            for i, sq_result in enumerate(det_result.subquestion_results, 1):
+                print(f"  {i}. {sq_result.subquestion} (p={sq_result.probability:.3f})")
+            print(f"  → Final Answer: {det_result.final_answer}")
+
+            agreement = "AGREE" if prob_result.final_answer == det_result.final_answer else "DISAGREE"
+            print(f"\nModes {agreement}")
+            print("=" * 60)
 
             # Save logs if requested
             if save_logs:
                 from datetime import datetime
                 import shutil
+                import json
 
                 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
                 question_hash = str(hash(question))[:8]
@@ -208,21 +237,19 @@ class PROVE:
                 shutil.copy(image_a_path, images_dir / "image_a.jpg")
                 shutil.copy(image_b_path, images_dir / "image_b.jpg")
 
-                # Save ProbLog program
-                with open(example_dir / "knowledge_base.pl", 'w') as f:
-                    f.write(problog_program)
+                # Save probabilistic ProbLog program
+                with open(example_dir / "probabilistic.pl", 'w') as f:
+                    f.write(prob_result.problog_program)
 
-                # Save results JSON
-                import json
+                # Save deterministic ProbLog program
+                with open(example_dir / "deterministic.pl", 'w') as f:
+                    f.write(det_result.problog_program)
+
+                # Save unified results JSON
                 with open(example_dir / "results.json", 'w') as f:
-                    json.dump({
-                        'question': question,
-                        'answer': ultimate_answer,
-                        'subquestions': result['subquestions'],
-                        'metadata': result['metadata']
-                    }, f, indent=2)
+                    json.dump(result.to_dict(), f, indent=2)
 
-                result['log_path'] = str(example_dir)
+                print(f"\nLogs saved to: {example_dir}")
 
             return result
 
