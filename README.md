@@ -32,6 +32,21 @@ export AWS_DEFAULT_REGION=us-west-2
 
 ## Quick Start
 
+### Run on NLVR2 Example
+
+```bash
+# Random example
+python run_example.py
+
+# Specific example
+python run_example.py --identifier test1-366-0-0
+
+# With logging
+python run_example.py --save-logs
+```
+
+### Programmatic Usage
+
 ```python
 from src import PROVE
 
@@ -183,7 +198,23 @@ Image B, image_id: image_b
    - Dynamic programming: convolve [1-p, p] for each detection
    - Output: full distribution `{0: p0, 1: p1, 2: p2, ...}`
 
-**Output**: `EvidenceCollection(attributes, relationships, counts, perceive_history)` per subquestion
+**Action History Format** (shown to LLM each iteration):
+```
+ACTION HISTORY:
+[Turn 1]
+Thought: I need to find out what color the dog in image A is
+Action: perceive(image_id=image_a, entity_id=dog_a_0, question="What color is this dog?")
+Result: "The dog appears to be orange or golden in color"
+
+[Turn 2]
+Thought: The perceive result suggests orange, now I should verify this with a probability score
+Action: verify_attribute(image_id=image_a, entity_id=dog_a_0, attribute=color, value=orange)
+Result: p=0.85
+```
+
+This turn-by-turn history prevents the agent from repeating actions and provides full context of its reasoning.
+
+**Output**: `EvidenceCollection(attributes, relationships, counts, action_history)` per subquestion
 
 ---
 
@@ -327,8 +358,7 @@ EvidenceCollection
 ├── attributes: List[(entity_id, attr_class, value, prob)]
 ├── relationships: List[(subj_id, obj_id, relation, prob)]
 ├── counts: Dict[str, Dict[int, float]]
-├── reasoning_trace: List[str]
-└── perceive_history: List[Dict[str, str]]
+└── action_history: List[{thought, action, result}]  # Turn-by-turn history
 ```
 
 **ProbLog Predicates**:
@@ -537,16 +567,14 @@ Expected count: 2.4
 
 **State Tracking**:
 - Entity candidates (from detection, grouped by image)
-- Evidence collected so far (attributes, relationships, counts)
-- Perceive history (QA pairs from investigation)
-- Reasoning trace
+- Action history (turn-by-turn record of thought, action, result)
 
 **Decision Logic** (every iteration):
-1. LLM sees: subquestion, candidates, evidence, perceive history
+1. LLM sees: subquestion, candidates, action history
 2. LLM outputs: thought + action (Pydantic-validated)
 3. Execute action (perceive/verify_attribute/verify_relationship/verify_count)
-4. Update evidence
-5. Continue or stop (max 10 iterations or "done" action)
+4. Record turn in action history (thought, action, result)
+5. Continue or stop (max 15 iterations or "done" action)
 
 **Action Validation**:
 - All actions require explicit `image_id` (image_a or image_b)

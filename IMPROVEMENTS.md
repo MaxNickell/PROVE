@@ -1,34 +1,50 @@
-# Goal
-- Isolate perception level confidence
-- How do results differ when propagating perception confidence 
+# RESEARCH GOALS
+- Isolate effect of perception level confidence with deterministic and probabilistic versions
+- How do results differ when propagating perception confidence?
+    - METHOD 1 (Loss) 
+        - Deterministic = 1.0, Probabilistic = 1 - p 
+    - METHOD 2 (Thresholding)
+        - Final Answer Threshold for Probabilistic
+        - Rounding Threshold for Deterministic
 
+## IMPROVEMENTS NEEDED
+### Single Image Support
+- Support both single and dual images
 
-## Single Image Support
-- Need to support single and dual images
+## OBJECT DETECTION CALIBRATION
+- Current calibration is a fixed monotone transform from logits to probability (not well suited)
+- Findings:
+    - Florence 2 is by far the best open vocab object detector but no confidences
+    - OWL VIT, GroundingDino do not work well for detecting or calibrating
+    - BLIP ITM, CLIP, and SIGLIP Calibration after Florence detection not working either
 
+### SUBQUESTION GENERATION
+- Still not generating the correct subquestions to answer the question
+- ISSUES: missing an attribute or relationship or overly complex or repeated
 
-# How do we combine problog results so we can preserve probability
-- If we enforce the subquestions needing to be true?
-- Some how creating one problog that answers the ultimate question?
+### UNIFIED AGENT
+- Perception is currently tied to a single object so it will always crop to that object
+- What if the agent wants to percieve a relationship or entire image?
+- Need to make spatial relationships a seperate action from relationships
 
+### COUNTING CALIBRATION
+- Need a clean way to calculate probability of existing objects
+- Are there an equal number of objects in both images?
+- Are there at least k objects across both images?
+- How many objects are in image A?
+- Are there less objects in image A than image B?
+- etc.
 
-## CALIBRATION
-- COUNTING: we keep the probability of k out of n existing is the min of the top k
-- OBJECT DETECTION: Using weird math right now that is not well suited
+### SPATIAL CALIBRATION
+- Need to ensure probabilites are well calibrated
 
+### ATTR/REL VERIFICATION CALIBRATION
+- Calibration is working very well with BLIP ITM
+- Question format is not good and forming illogical grammar for BLIP ITM
 
 # PROBLOG GENERATION
-- Pass only the facts for that subquestion to the problog generator
-- LLM generating problog is fragile
-- LLM comparing counts is a mess right now
-    - more, less, equal, 2 more, etc.
-
-## UNIFIED AGENT
-- Getting stuck in a loop again fuhhhk
-- The perception is asking questions with cropped images which is causing the VLM to return answers that dont make sense
-    - Are there multiple dogs together in this part of the image
-- Need a better strategy for percieving and verification because the current strategy is ass
-    - is dog_a_0 chasing dog_a_1: it clearly is but we are getting probability like 0.1
-
-## SUBQUESTION GENERATION
-- Still not generating the correct subquestions to answer the question
+- Need to get a final probability
+    - Cannot force subquestions to be true (Ultimate question: is there at least 1 dog?)
+- LLM Problog generation is fragile
+    - Pass only the facts for that subquestion to the problog generator?
+    - Maybe structured outputs?

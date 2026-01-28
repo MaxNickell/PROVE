@@ -45,11 +45,8 @@ class EvidenceCollection:
     # Count distributions: {"image_a_dog": {0: 0.1, 1: 0.3, 2: 0.6}}
     counts: Dict[str, Dict[int, float]] = field(default_factory=dict)
 
-    # Agent's reasoning trace
-    reasoning_trace: List[str] = field(default_factory=list)
-
-    # Perceive Q&A history: [{"entity_id": "...", "question": "...", "answer": "..."}]
-    perceive_history: List[Dict[str, str]] = field(default_factory=list)
+    # Turn-by-turn action history: [{"thought": "...", "action": "...", "result": "..."}]
+    action_history: List[Dict[str, str]] = field(default_factory=list)
 
     def add_attribute(self, entity_id: str, attribute: str, value: str, probability: float):
         self.attributes.append((entity_id, attribute, value, probability))
@@ -61,11 +58,11 @@ class EvidenceCollection:
         key = f"{image_id}_{object_class}"
         self.counts[key] = distribution
 
-    def add_perceive(self, entity_id: str, question: str, answer: str):
-        self.perceive_history.append({
-            "entity_id": entity_id,
-            "question": question,
-            "answer": answer
+    def add_action(self, thought: str, action: str, result: str):
+        self.action_history.append({
+            "thought": thought,
+            "action": action,
+            "result": result
         })
 
 
@@ -103,8 +100,6 @@ class UnifiedAgent:
 
         # Initialize evidence collection
         evidence = EvidenceCollection(subquestion=subquestion.question)
-        evidence.reasoning_trace.append(f"Starting evidence collection for: {subquestion.question}")
-        evidence.reasoning_trace.append(f"Available candidates: {len(candidates)} entities")
 
         # ReAct loop
         for iteration in range(self.max_iterations):
@@ -112,18 +107,14 @@ class UnifiedAgent:
             action = self._get_llm_decision(subquestion.question, candidates, evidence, iteration)
 
             if action is None:
-                evidence.reasoning_trace.append("Decision failed, stopping")
                 break
-
-            # Log the thought
-            evidence.reasoning_trace.append(f"[{iteration+1}] {action.thought}")
 
             # Check for done
             if isinstance(action, DoneAction):
-                evidence.reasoning_trace.append("Agent decided evidence is sufficient")
+                evidence.add_action(action.thought, "done", "Agent stopped")
                 break
 
-            # Act & Observe
+            # Act & Observe (execute_action records the turn)
             self._execute_action(action, candidates, images, image_paths, evidence)
 
         return evidence
@@ -188,8 +179,9 @@ ACTIONS (output ONE as JSON):
 
 RULES:
 - Use perceive to investigate BEFORE knowing what to verify
-- Use verify actions to collect evidence
+- Use verify actions to collect evidence with probability scores
 - Stop (done) as soon as you have sufficient evidence to confidently answer the question
+- Do NOT repeat actions you have already taken - check ACTION HISTORY
 - Output valid JSON only
 - entity_id must match exactly from the DETECTED OBJECTS list
 - image_id must be "image_a" or "image_b" """
@@ -197,22 +189,16 @@ RULES:
         # Format candidates grouped by image
         candidates_text = self._format_candidates(candidates)
 
-        # Format evidence collected so far
-        evidence_text = self._format_evidence(evidence)
-
-        # Format perceive history
-        perceive_text = self._format_perceive_history(evidence.perceive_history)
+        # Format action history
+        action_history_text = self._format_action_history(evidence)
 
         user_prompt = f"""QUESTION: "{subquestion}"
 
 DETECTED OBJECTS:
 {candidates_text}
 
-EVIDENCE COLLECTED SO FAR:
-{evidence_text}
-
-PERCEIVE HISTORY:
-{perceive_text}
+ACTION HISTORY:
+{action_history_text}
 
 Iteration: {iteration + 1}/{self.max_iterations}
 
@@ -230,7 +216,7 @@ What is your next action? Output JSON only:"""
         except Exception as e:
             print(f"  Warning: LLM decision failed: {e}")
             # Fallback to done if we've collected some evidence
-            if evidence.attributes or evidence.relationships or evidence.counts:
+            if evidence.action_history:
                 return DoneAction(thought="Fallback: stopping due to error", action="done")
             return None
 
@@ -264,22 +250,23 @@ What is your next action? Output JSON only:"""
         evidence: EvidenceCollection
     ):
         """Ask VLM an open-ended question about an entity."""
+        action_str = f'perceive(image_id={action.image_id}, entity_id={action.entity_id}, question="{action.question}")'
 
         # Find the entity
         entity = self._find_entity(action.entity_id, candidates)
         if not entity:
-            evidence.reasoning_trace.append(f"Perceive failed: entity {action.entity_id} not found")
+            evidence.add_action(action.thought, action_str, f"Failed: entity {action.entity_id} not found")
             return
 
         # Validate image_id matches entity
         if entity.image_id != action.image_id:
-            evidence.reasoning_trace.append(f"Perceive failed: entity {action.entity_id} is in {entity.image_id}, not {action.image_id}")
+            evidence.add_action(action.thought, action_str, f"Failed: entity is in {entity.image_id}, not {action.image_id}")
             return
 
         # Get cropped image
         image_path = image_paths.get(action.image_id)
         if not image_path:
-            evidence.reasoning_trace.append(f"Perceive failed: image path not found for {action.image_id}")
+            evidence.add_action(action.thought, action_str, f"Failed: image path not found")
             return
 
         try:
@@ -289,15 +276,15 @@ What is your next action? Output JSON only:"""
 
             # Ask VLM
             qwen = self.model_manager.get_qwen_vl()
-            answer = qwen.run_inference(cropped, action.question)
+            answer = qwen.run_inference(cropped, action.question).strip()
 
-            # Store result
-            evidence.add_perceive(action.entity_id, action.question, answer.strip())
+            # Record action with result
+            evidence.add_action(action.thought, action_str, f'"{answer}"')
             print(f"  [Perceive] {action.entity_id}: {action.question}")
-            print(f"    → {answer.strip()}")
+            print(f"    → {answer}")
 
         except Exception as e:
-            evidence.reasoning_trace.append(f"Perceive failed: {e}")
+            evidence.add_action(action.thought, action_str, f"Failed: {e}")
 
     def _execute_verify_attribute(
         self,
@@ -307,22 +294,23 @@ What is your next action? Output JSON only:"""
         evidence: EvidenceCollection
     ):
         """Verify if an entity has a specific attribute using BLIP-ITM."""
+        action_str = f'verify_attribute(image_id={action.image_id}, entity_id={action.entity_id}, attribute={action.attribute}, value={action.value})'
 
         # Find the entity
         entity = self._find_entity(action.entity_id, candidates)
         if not entity:
-            evidence.reasoning_trace.append(f"Verify attribute failed: entity {action.entity_id} not found")
+            evidence.add_action(action.thought, action_str, f"Failed: entity {action.entity_id} not found")
             return
 
         # Validate image_id matches entity
         if entity.image_id != action.image_id:
-            evidence.reasoning_trace.append(f"Verify attribute failed: entity {action.entity_id} is in {entity.image_id}, not {action.image_id}")
+            evidence.add_action(action.thought, action_str, f"Failed: entity is in {entity.image_id}, not {action.image_id}")
             return
 
         # Get image path
         image_path = image_paths.get(action.image_id)
         if not image_path:
-            evidence.reasoning_trace.append(f"Verify attribute failed: image path not found for {action.image_id}")
+            evidence.add_action(action.thought, action_str, f"Failed: image path not found")
             return
 
         try:
@@ -335,13 +323,16 @@ What is your next action? Output JSON only:"""
                 attr_value=action.value
             )
 
-            # Store evidence
+            # Store evidence for probability computation
             evidence.add_attribute(action.entity_id, action.attribute, action.value, probability)
+
+            # Record action with result
+            evidence.add_action(action.thought, action_str, f"p={probability:.3f}")
             print(f"  [Verify Attribute] {action.entity_id}.{action.attribute}={action.value}")
             print(f"    → p={probability:.3f}")
 
         except Exception as e:
-            evidence.reasoning_trace.append(f"Verify attribute failed: {e}")
+            evidence.add_action(action.thought, action_str, f"Failed: {e}")
 
     def _execute_verify_relationship(
         self,
@@ -351,27 +342,28 @@ What is your next action? Output JSON only:"""
         evidence: EvidenceCollection
     ):
         """Verify if two entities have a relationship using BLIP-ITM."""
+        action_str = f'verify_relationship(image_id={action.image_id}, subject_id={action.subject_id}, object_id={action.object_id}, relation={action.relation})'
 
         # Find both entities
         subject = self._find_entity(action.subject_id, candidates)
         obj = self._find_entity(action.object_id, candidates)
 
         if not subject or not obj:
-            evidence.reasoning_trace.append(f"Verify relationship failed: entity not found")
+            evidence.add_action(action.thought, action_str, "Failed: entity not found")
             return
 
         # Validate both entities are in the specified image
         if subject.image_id != action.image_id:
-            evidence.reasoning_trace.append(f"Verify relationship failed: subject {action.subject_id} is in {subject.image_id}, not {action.image_id}")
+            evidence.add_action(action.thought, action_str, f"Failed: subject is in {subject.image_id}, not {action.image_id}")
             return
 
         if obj.image_id != action.image_id:
-            evidence.reasoning_trace.append(f"Verify relationship failed: object {action.object_id} is in {obj.image_id}, not {action.image_id}")
+            evidence.add_action(action.thought, action_str, f"Failed: object is in {obj.image_id}, not {action.image_id}")
             return
 
         image_path = image_paths.get(action.image_id)
         if not image_path:
-            evidence.reasoning_trace.append(f"Verify relationship failed: image path not found for {action.image_id}")
+            evidence.add_action(action.thought, action_str, "Failed: image path not found")
             return
 
         try:
@@ -386,13 +378,16 @@ What is your next action? Output JSON only:"""
                 relation=action.relation
             )
 
-            # Store evidence
+            # Store evidence for probability computation
             evidence.add_relationship(action.subject_id, action.object_id, action.relation, probability)
+
+            # Record action with result
+            evidence.add_action(action.thought, action_str, f"p={probability:.3f}")
             print(f"  [Verify Relationship] {action.subject_id} {action.relation} {action.object_id}")
             print(f"    → p={probability:.3f}")
 
         except Exception as e:
-            evidence.reasoning_trace.append(f"Verify relationship failed: {e}")
+            evidence.add_action(action.thought, action_str, f"Failed: {e}")
 
     def _execute_verify_count(
         self,
@@ -402,6 +397,7 @@ What is your next action? Output JSON only:"""
         evidence: EvidenceCollection
     ):
         """Compute count distribution for an object class using Poisson-Binomial."""
+        action_str = f'verify_count(image_id={action.image_id}, object_class={action.object_class})'
 
         # Find all candidates of this class in the specified image
         matching = [c for c in candidates
@@ -410,6 +406,7 @@ What is your next action? Output JSON only:"""
         if not matching:
             # No detections = count is 0 with certainty
             evidence.add_count(action.image_id, action.object_class, {0: 1.0})
+            evidence.add_action(action.thought, action_str, "count=0 (no detections)")
             print(f"  [Verify Count] {action.object_class} in {action.image_id}: 0 (no detections)")
             return
 
@@ -419,11 +416,15 @@ What is your next action? Output JSON only:"""
         # Compute Poisson-Binomial distribution
         distribution = self._compute_poisson_binomial(probabilities)
 
-        # Store evidence
+        # Store evidence for probability computation
         evidence.add_count(action.image_id, action.object_class, distribution)
 
-        # Find most likely count
+        # Find most likely count and format result
         most_likely = max(distribution, key=distribution.get)
+        result_str = f"most_likely={most_likely} (p={distribution[most_likely]:.3f})"
+
+        # Record action with result
+        evidence.add_action(action.thought, action_str, result_str)
         print(f"  [Verify Count] {action.object_class} in {action.image_id}")
         print(f"    → Most likely: {most_likely} (p={distribution[most_likely]:.3f})")
 
@@ -472,39 +473,17 @@ What is your next action? Output JSON only:"""
 
         return "\n".join(lines).rstrip()
 
-    def _format_evidence(self, evidence: EvidenceCollection) -> str:
-        """Format collected evidence for LLM prompt."""
-        parts = []
-
-        if evidence.attributes:
-            parts.append("Attributes:")
-            for entity_id, attr, value, prob in evidence.attributes:
-                parts.append(f"  - {entity_id}.{attr}={value} (p={prob:.2f})")
-
-        if evidence.relationships:
-            parts.append("Relationships:")
-            for subj, obj, rel, prob in evidence.relationships:
-                parts.append(f"  - {subj} {rel} {obj} (p={prob:.2f})")
-
-        if evidence.counts:
-            parts.append("Counts:")
-            for key, dist in evidence.counts.items():
-                most_likely = max(dist, key=dist.get)
-                parts.append(f"  - {key}: most likely {most_likely} (p={dist[most_likely]:.2f})")
-
-        if not parts:
-            return "None collected yet"
-
-        return "\n".join(parts)
-
-    def _format_perceive_history(self, history: List[Dict[str, str]]) -> str:
-        """Format perceive Q&A history for LLM prompt."""
-        if not history:
-            return "None"
+    def _format_action_history(self, evidence: EvidenceCollection) -> str:
+        """Format turn-by-turn action history for LLM prompt."""
+        if not evidence.action_history:
+            return "None yet"
 
         lines = []
-        for item in history:
-            lines.append(f"Q ({item['entity_id']}): {item['question']}")
-            lines.append(f"A: {item['answer']}")
+        for i, turn in enumerate(evidence.action_history, 1):
+            lines.append(f"[Turn {i}]")
+            lines.append(f"Thought: {turn['thought']}")
+            lines.append(f"Action: {turn['action']}")
+            lines.append(f"Result: {turn['result']}")
+            lines.append("")  # Empty line between turns
 
-        return "\n".join(lines)
+        return "\n".join(lines).rstrip()
