@@ -9,6 +9,7 @@ import torch
 
 from src.vision.florence2 import Florence2
 from src.vision.qwen_vl import QwenVL
+from src.vision.blip_verifier import BLIPVerifier
 from src.language.llm_client import LLMClient
 
 
@@ -56,7 +57,18 @@ class ModelManager:
         if 'qwen_vl' not in self._models:
             self._models['qwen_vl'] = QwenVL(device="auto")
         return self._models['qwen_vl']
-        
+
+    def get_blip_verifier(self) -> BLIPVerifier:
+        """
+        Get BLIP-ITM verifier instance (lazy loaded).
+
+        Returns:
+            BLIPVerifier: The BLIP-ITM verifier for attribute/relationship verification
+        """
+        if 'blip_verifier' not in self._models:
+            self._models['blip_verifier'] = BLIPVerifier(device="auto")
+        return self._models['blip_verifier']
+
     def get_llm_client(self) -> LLMClient:
         """
         Get LLM client instance (Llama 3.3 70B via AWS Bedrock).

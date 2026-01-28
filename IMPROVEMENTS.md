@@ -15,7 +15,7 @@
 ## CALIBRATION
 - COUNTING: we keep the probability of k out of n existing is the min of the top k
 - OBJECT DETECTION: Using weird math right now that is not well suited
-- VERIFICATION PROBABLITIES: Not well calibrated with log probs (SigLIP, XVLM, CLIP, etc.)
+
 
 # PROBLOG GENERATION
 - Pass only the facts for that subquestion to the problog generator
@@ -30,3 +30,5 @@
 - Need a better strategy for percieving and verification because the current strategy is ass
     - is dog_a_0 chasing dog_a_1: it clearly is but we are getting probability like 0.1
 
+## SUBQUESTION GENERATION
+- Still not generating the correct subquestions to answer the question

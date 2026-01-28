@@ -139,11 +139,13 @@ Subquestions:
   - Requires: `image_id`, `entity_id`, `question`
   - Stores response in perceive history for context
   - NO probability extraction
-- **verify_attribute**: Check if entity has specific attribute (Yes/No)
+- **verify_attribute**: Check if entity has specific attribute
   - Requires: `image_id`, `entity_id`, `attribute`, `value`
-  - Extracts probability from Yes/No token logits
+  - Uses BLIP-ITM with prompt: "a {value} {object}"
+  - Returns calibrated probability from ITM head
 - **verify_relationship**: Check spatial relationship between two entities
   - Requires: `image_id`, `subject_id`, `object_id`, `relation`
+  - Uses BLIP-ITM with prompt: "a {obj1} {relation} a {obj2}"
   - Both entities must be in the same image
 - **verify_count**: Count objects of a class in an image
   - Requires: `image_id`, `object_class`
@@ -168,13 +170,13 @@ Image B, image_id: image_b
 **Evidence Types**:
 
 1. **Attributes** (object properties):
-   - VLM verification on cropped image
-   - Binary question: `"Is this dog orange? Answer with only Yes or No."`
-   - Probability via logit summing: `P(yes) = softmax([z_yes, z_no])[0]`
+   - BLIP-ITM verification on cropped image (15% padding)
+   - Prompt: `"an orange dog"` (declarative, not question)
+   - Probability via ITM softmax: `P(match) = softmax(itm_score)[1]`
 
 2. **Relationships** (spatial/interaction):
-   - Crop to union of both objects with padding
-   - Binary question: `"Is the bird on top of the buffalo? Answer with only Yes or No."`
+   - BLIP-ITM on union bbox of both objects (15% padding)
+   - Prompt: `"a bird on top of a buffalo"` (declarative)
 
 3. **Counts** (quantity distributions):
    - Poisson-Binomial distribution from detection confidences
@@ -300,7 +302,8 @@ This allows true isolation of perception uncertainty's impact on reasoning.
 |-------|---------|---------|--------------|
 | **Florence-2-large** | Captioning, object detection | Auto device map | BF16 |
 | **Llama 3.3 70B Instruct** (via AWS Bedrock) | Subquestion generation, agent reasoning, rule generation, ultimate composition | API call | N/A |
-| **Qwen-2.5-VL-7B-Instruct** | Binary verification, open-ended VQA | Auto device map | BF16 |
+| **BLIP-ITM-large** | Attribute & relationship verification | Auto device map | FP32 |
+| **Qwen-2.5-VL-7B-Instruct** | Open-ended perception (perceive action) | Auto device map | BF16 |
 
 **Memory Efficiency**: ModelManager singleton with lazy loading
 
@@ -346,11 +349,11 @@ Florence-2 Detection
   │ Anchored sigmoid calibration
   ↓ 0.7-0.95 range
 
-Qwen VL Verification
-  │ Binary Yes/No question
-  │ Logit summing: sum(logits["Yes","yes","YES"]), sum(logits["No","no","NO"])
-  │ 2-token softmax
-  ↓ P(statement_true)
+BLIP-ITM Verification
+  │ Image-Text Matching head
+  │ Declarative prompts ("an orange cat", "a man riding a buffalo")
+  │ ITM softmax: P(match) = softmax(itm_score)[1]
+  ↓ Well-calibrated P(statement_true)
 
 ProbLog Facts
   │ Preserve ALL confidences
@@ -379,7 +382,7 @@ src/
 │   ├── knowledge_base.py       # KB management
 │   ├── model_manager.py        # Singleton model loading
 │   ├── types.py                # Data structures
-│   ├── probability.py          # Calibration, verifier functions
+│   ├── probability.py          # Detector confidence calibration
 │   └── image_utils.py          # Image loading utilities
 ├── language/
 │   ├── llm_client.py           # Llama 3.3 client (AWS Bedrock)
@@ -393,7 +396,8 @@ src/
 │   └── problog_executor.py     # ProbLog execution and composition
 └── vision/
     ├── florence2.py            # Florence-2 wrapper
-    └── qwen_vl.py              # Qwen VL wrapper
+    ├── blip_verifier.py        # BLIP-ITM verification
+    └── qwen_vl.py              # Qwen VL for perception
 
 eval/                           # Evaluation results (gitignored)
 requirements.txt                # Python dependencies
@@ -481,19 +485,33 @@ logs/20250112_143022_abc123/
 
 ### Binary Verification Strategy
 
-**Method**: All verification via binary Yes/No questions with direct cropping
+**Method**: BLIP-ITM Image-Text Matching with declarative prompts
 
-**Probability Extraction**:
+**Attribute Verification**:
 ```python
-# Sum logits for all variants of Yes/No
-z_yes = sum(logits["Yes"], logits["yes"], logits["YES"])
-z_no = sum(logits["No"], logits["no"], logits["NO"])
+# Crop entity bbox with 15% padding
+cropped = crop_with_padding(image, bbox, padding=0.15)
 
-# 2-token softmax
-P(statement_true) = exp(z_yes) / (exp(z_yes) + exp(z_no))
+# Declarative prompt (not a question)
+prompt = f"a {attr_value} {object_class}"  # e.g., "an orange cat"
+
+# Get ITM score
+itm_score = model(cropped, prompt).itm_score  # [not_match, match]
+probability = softmax(itm_score)[1]  # P(match)
 ```
 
-**Error Handling**: Return 0.5 (neutral) for failed extractions
+**Relationship Verification**:
+```python
+# Union bbox of both entities with 15% padding
+union_bbox = union(bbox1, bbox2)
+cropped = crop_with_padding(image, union_bbox, padding=0.15)
+
+# Declarative prompt
+prompt = f"a {obj1} {relation} a {obj2}"  # e.g., "a man riding a buffalo"
+probability = softmax(model(cropped, prompt).itm_score)[1]
+```
+
+**Why BLIP-ITM?**: Provides well-calibrated probabilities via cross-modal attention and ITM head trained for binary matching.
 
 ### Poisson-Binomial Counting
 
@@ -558,11 +576,11 @@ Decompose to:
 
 ### Why Agentic Evidence Collection?
 
-VLMs don't directly output probabilities. Agent:
-1. Identifies what needs verification
-2. Gathers context through open-ended questions
-3. Generates specific binary questions
-4. Extracts probabilities via logits
+Evidence collection requires strategic decisions. Agent:
+1. Identifies what needs verification based on subquestion
+2. Gathers context through open-ended questions (Qwen VL)
+3. Verifies attributes and relationships (BLIP-ITM)
+4. Collects counts from detection confidences
 5. Handles any subquestion type without hardcoding
 
 ### Why ProbLog?
@@ -601,8 +619,8 @@ Step 3: Subquestion Generation...
 
 Step 4: Evidence Collection...
   [1/2] Is there a white bird on top of another animal in image A?
-    [Verify Attribute] bird_a_0.color=white → Yes (p=0.787)
-    [Verify Relationship] bird_a_0 on_top_of buffalo_a_0 → Yes (p=0.906)
+    [Verify Attribute] bird_a_0.color=white → p=0.787
+    [Verify Relationship] bird_a_0 on_top_of buffalo_a_0 → p=0.906
   [2/2] Is there a white bird on top of another animal in image B?
     [Verify Attribute] No birds detected in image B
 
@@ -626,11 +644,11 @@ Ultimate Composition:
 PROVE transforms complex visual questions into probabilistic answers through:
 
 1. **Decomposition**: Binary subquestions that break down complexity
-2. **Agentic Collection**: Autonomous evidence gathering through VLM interaction
+2. **Agentic Collection**: Autonomous evidence gathering (BLIP-ITM for verification, Qwen VL for perception)
 3. **Probabilistic Logic**: ProbLog composes evidence mathematically
 4. **LLM Synthesis**: Binary answer from subquestion results
 
-**Key Innovation**: Neuro-symbolic architecture combining neural perception (VLMs) with symbolic reasoning (ProbLog) via agentic orchestration.
+**Key Innovation**: Neuro-symbolic architecture combining neural perception (BLIP-ITM, Qwen VL) with symbolic reasoning (ProbLog) via agentic orchestration.
 
 ---
 
