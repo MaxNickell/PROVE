@@ -11,7 +11,6 @@ from PIL import Image
 
 from src.core.model_manager import ModelManager
 from src.core.types import BinarySubquestion, ImageData
-from src.core.probability import get_verifier_probability
 from src.language.output_models import (
     AgentAction,
     PerceiveAction,
@@ -307,7 +306,7 @@ What is your next action? Output JSON only:"""
         image_paths: Dict[str, str],
         evidence: EvidenceCollection
     ):
-        """Verify if an entity has a specific attribute (binary with probability)."""
+        """Verify if an entity has a specific attribute using BLIP-ITM."""
 
         # Find the entity
         entity = self._find_entity(action.entity_id, candidates)
@@ -320,31 +319,26 @@ What is your next action? Output JSON only:"""
             evidence.reasoning_trace.append(f"Verify attribute failed: entity {action.entity_id} is in {entity.image_id}, not {action.image_id}")
             return
 
-        # Get cropped image
+        # Get image path
         image_path = image_paths.get(action.image_id)
         if not image_path:
             evidence.reasoning_trace.append(f"Verify attribute failed: image path not found for {action.image_id}")
             return
 
         try:
-            image = Image.open(image_path)
-            x1, y1, x2, y2 = [int(c) for c in entity.bbox]
-            cropped = image.crop((x1, y1, x2, y2))
-
-            # Binary verification question
-            prompt = f"Is this {entity.object_class} {action.value}? Answer with only Yes or No."
-
-            # Get VLM response with logits
-            qwen = self.model_manager.get_qwen_vl()
-            response, logits = qwen.run_inference_with_logits(cropped, prompt)
-
-            # Extract probability
-            probability = get_verifier_probability(logits, response, qwen.processor.tokenizer)
+            # Use BLIP-ITM verifier for attribute verification
+            blip_verifier = self.model_manager.get_blip_verifier()
+            probability = blip_verifier.verify_attribute(
+                image=image_path,
+                bbox=entity.bbox,
+                object_class=entity.object_class,
+                attr_value=action.value
+            )
 
             # Store evidence
             evidence.add_attribute(action.entity_id, action.attribute, action.value, probability)
             print(f"  [Verify Attribute] {action.entity_id}.{action.attribute}={action.value}")
-            print(f"    → {response.strip()} (p={probability:.3f})")
+            print(f"    → p={probability:.3f}")
 
         except Exception as e:
             evidence.reasoning_trace.append(f"Verify attribute failed: {e}")
@@ -356,7 +350,7 @@ What is your next action? Output JSON only:"""
         image_paths: Dict[str, str],
         evidence: EvidenceCollection
     ):
-        """Verify if two entities have a relationship (binary with probability)."""
+        """Verify if two entities have a relationship using BLIP-ITM."""
 
         # Find both entities
         subject = self._find_entity(action.subject_id, candidates)
@@ -381,38 +375,21 @@ What is your next action? Output JSON only:"""
             return
 
         try:
-            image = Image.open(image_path)
-
-            # Get combined bounding box region
-            x1 = min(subject.bbox[0], obj.bbox[0])
-            y1 = min(subject.bbox[1], obj.bbox[1])
-            x2 = max(subject.bbox[2], obj.bbox[2])
-            y2 = max(subject.bbox[3], obj.bbox[3])
-
-            # Add padding
-            padding = 20
-            x1 = max(0, int(x1) - padding)
-            y1 = max(0, int(y1) - padding)
-            x2 = min(image.width, int(x2) + padding)
-            y2 = min(image.height, int(y2) + padding)
-
-            cropped = image.crop((x1, y1, x2, y2))
-
-            # Format relation for question
-            relation_text = action.relation.replace("_", " ")
-            prompt = f"Is the {subject.object_class} {relation_text} the {obj.object_class}? Answer with only Yes or No."
-
-            # Get VLM response with logits
-            qwen = self.model_manager.get_qwen_vl()
-            response, logits = qwen.run_inference_with_logits(cropped, prompt)
-
-            # Extract probability
-            probability = get_verifier_probability(logits, response, qwen.processor.tokenizer)
+            # Use BLIP-ITM verifier for relationship verification
+            blip_verifier = self.model_manager.get_blip_verifier()
+            probability = blip_verifier.verify_relationship(
+                image=image_path,
+                bbox1=subject.bbox,
+                bbox2=obj.bbox,
+                obj1_class=subject.object_class,
+                obj2_class=obj.object_class,
+                relation=action.relation
+            )
 
             # Store evidence
             evidence.add_relationship(action.subject_id, action.object_id, action.relation, probability)
             print(f"  [Verify Relationship] {action.subject_id} {action.relation} {action.object_id}")
-            print(f"    → {response.strip()} (p={probability:.3f})")
+            print(f"    → p={probability:.3f}")
 
         except Exception as e:
             evidence.reasoning_trace.append(f"Verify relationship failed: {e}")
