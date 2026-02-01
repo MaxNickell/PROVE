@@ -1,8 +1,8 @@
 # RESEARCH GOALS
 - Isolate effect of perception level confidence with deterministic and probabilistic versions
 - How do results differ when propagating perception confidence?
-    - METHOD 1 (Loss) 
-        - Deterministic = 1.0, Probabilistic = 1 - p 
+    - METHOD 1 (Loss)
+        - Deterministic = 1.0, Probabilistic = 1 - p
     - METHOD 2 (Thresholding)
         - Final Answer Threshold for Probabilistic
         - Rounding Threshold for Deterministic
@@ -18,25 +18,11 @@
     - OWL VIT, GroundingDino do not work well for detecting or calibrating
     - BLIP ITM, CLIP, and SIGLIP Calibration after Florence detection not working either
 
-### SUBQUESTION GENERATION
-- Still not generating the correct subquestions to answer the question
-- ISSUES: missing an attribute or relationship or overly complex or repeated
 
 ### UNIFIED AGENT
 - Perception is currently tied to a single object so it will always crop to that object
-- What if the agent wants to percieve a relationship or entire image?
-- Need to make spatial relationships a seperate action from relationships
-
-### COUNTING CALIBRATION
-- Need a clean way to calculate probability of existing objects
-- Are there an equal number of objects in both images?
-- Are there at least k objects across both images?
-- How many objects are in image A?
-- Are there less objects in image A than image B?
-- etc.
-
-### SPATIAL CALIBRATION
-- Need to ensure probabilites are well calibrated
+- Make sure counts are only on object classes
+- Spatial Relationship Calibration?
 
 ### ATTR/REL VERIFICATION CALIBRATION
 - Calibration is working very well with BLIP ITM

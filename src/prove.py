@@ -8,14 +8,12 @@ with shared evidence collection to isolate the effect of perception uncertainty.
 
 from typing import Dict, Any
 from pathlib import Path
-from PIL import Image
 
 from .core.knowledge_base import KnowledgeBase
 from .core.model_manager import ModelManager
 from .core.types import UnifiedResult, SharedEvidence, ModeResult
 from .pipeline.detector import Detector
-from .pipeline.subquestion_generator import SubquestionGenerator
-from .pipeline.unified_agent import UnifiedAgent
+from .pipeline.unified_agent import UnifiedAgent, EvidenceCollection
 from .pipeline.problog_executor import ProbLogExecutor
 
 
@@ -44,7 +42,6 @@ class PROVE:
         # Components initialized lazily on first use
         self._model_manager = None
         self._detector = None
-        self._subquestion_generator = None
         self._unified_agent = None
         self._problog_executor = None
 
@@ -54,8 +51,6 @@ class PROVE:
             self._model_manager = ModelManager()
         if self._detector is None:
             self._detector = Detector()
-        if self._subquestion_generator is None:
-            self._subquestion_generator = SubquestionGenerator()
         if self._unified_agent is None:
             self._unified_agent = UnifiedAgent(max_iterations=20)
         if self._problog_executor is None:
@@ -134,52 +129,27 @@ class PROVE:
             print(f"\nQuestion: \"{question}\"")
             print(f"Threshold: {self.threshold}\n")
 
-            # Step 1: Caption Generation (for subquestion context)
-            print("Step 1: Caption Generation...")
-            florence2 = self._model_manager.get_florence2()
-            for image_id, image_path in image_paths.items():
-                image = Image.open(image_path)
-                caption = florence2.describe_region(image, task="<MORE_DETAILED_CAPTION>")
-                kb.add_scene_context(image_id, {"caption": caption})
-                print(f"  {image_id}: caption generated")
-
-            # Step 2: Object Detection (always probabilistic)
-            print("\nStep 2: Object Detection...")
+            # Step 1: Object Detection
+            print("Step 1: Object Detection...")
             for image_id, image_path in image_paths.items():
                 detections = self._detector.detect_from_question(image_path, question)
                 kb.add_objects(image_id, detections)
                 print(f"  {image_id}: {len(detections)} objects detected")
 
-            # Step 3: Subquestion Generation
-            print("\nStep 3: Subquestion Generation...")
-            subquestions = self._subquestion_generator.generate_binary_subquestions(
-                question, kb.images
-            )
-            kb.add_subquestions(subquestions)
-
-            print("Subquestions:")
-            for i, sq in enumerate(subquestions, 1):
-                print(f"  {i}. {sq.question}")
-
-            # Step 4: Evidence Collection (always probabilistic)
-            print("\nStep 4: Evidence Collection...")
-
-            evidence_by_subquestion = []
-            for subquestion in kb.subquestions:
-                evidence = self._unified_agent.collect_evidence(
-                    subquestion=subquestion,
-                    images=kb.images,
-                    image_paths=image_paths
-                )
-                evidence_by_subquestion.append(evidence)
-
-            # Step 5: Dual ProbLog Execution
-            print("\nStep 5: ProbLog Reasoning (dual mode)...")
-            prob_result, det_result = self._problog_executor.execute_dual(
-                subquestions=kb.subquestions,
-                evidence_collections=evidence_by_subquestion,
+            # Step 2: Evidence Collection
+            print("\nStep 2: Evidence Collection...")
+            evidence = self._unified_agent.collect_evidence(
+                question=question,
                 images=kb.images,
-                ultimate_question=question,
+                image_paths=image_paths
+            )
+
+            # Step 3: Dual ProbLog Execution
+            print("\nStep 3: ProbLog Reasoning (dual mode)...")
+            prob_result, det_result = self._problog_executor.execute_dual(
+                question=question,
+                evidence=evidence,
+                images=kb.images,
                 threshold=self.threshold
             )
 
@@ -189,8 +159,8 @@ class PROVE:
                 for image_id, image_data in kb.images.items()
             }
             shared = SharedEvidence(
-                subquestions=subquestions,
-                evidence_collections=evidence_by_subquestion,
+                question=question,
+                evidence_collection=evidence,
                 detected_objects=detected_objects
             )
 
@@ -207,13 +177,11 @@ class PROVE:
             print("RESULTS SUMMARY")
             print("=" * 60)
             print(f"\nProbabilistic Mode:")
-            for i, sq_result in enumerate(prob_result.subquestion_results, 1):
-                print(f"  {i}. {sq_result.subquestion} (p={sq_result.probability:.3f})")
+            print(f"  Probability: {prob_result.probability:.3f}")
             print(f"  → Final Answer: {prob_result.final_answer}")
 
             print(f"\nDeterministic Mode (threshold={self.threshold}):")
-            for i, sq_result in enumerate(det_result.subquestion_results, 1):
-                print(f"  {i}. {sq_result.subquestion} (p={sq_result.probability:.3f})")
+            print(f"  Probability: {det_result.probability:.3f}")
             print(f"  → Final Answer: {det_result.final_answer}")
 
             agreement = "AGREE" if prob_result.final_answer == det_result.final_answer else "DISAGREE"

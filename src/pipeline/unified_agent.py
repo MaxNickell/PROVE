@@ -1,7 +1,7 @@
 """
 Simplified ReAct Evidence Agent for PROVE pipeline.
 
-A ReAct-style agent that collects evidence to answer subquestions.
+A ReAct-style agent that collects evidence to answer questions.
 Uses Think → Act → Observe loop until sufficient evidence is gathered.
 """
 
@@ -10,7 +10,7 @@ from dataclasses import dataclass, field
 from PIL import Image
 
 from src.core.model_manager import ModelManager
-from src.core.types import BinarySubquestion, ImageData
+from src.core.types import ImageData
 from src.language.output_models import (
     AgentAction,
     PerceiveAction,
@@ -32,9 +32,21 @@ class EntityCandidate:
 
 
 @dataclass
+class CountEvidence:
+    """A single count query result."""
+    query_type: str  # "at_least", "at_most", "exactly", "more", "fewer", "equal", "total_*"
+    object_class: str
+    probability: float
+    image_id: str = None  # For single-image queries
+    image_id_a: str = None  # For comparison/total queries
+    image_id_b: str = None  # For comparison/total queries
+    value: int = None  # For queries with N
+
+
+@dataclass
 class EvidenceCollection:
-    """All evidence collected for one subquestion."""
-    subquestion: str
+    """All evidence collected for a question."""
+    question: str
 
     # Attribute evidence: (entity_id, attribute_class, value, probability)
     attributes: List[Tuple[str, str, str, float]] = field(default_factory=list)
@@ -42,8 +54,8 @@ class EvidenceCollection:
     # Relationship evidence: (subject_id, object_id, relation, probability)
     relationships: List[Tuple[str, str, str, float]] = field(default_factory=list)
 
-    # Count distributions: {"image_a_dog": {0: 0.1, 1: 0.3, 2: 0.6}}
-    counts: Dict[str, Dict[int, float]] = field(default_factory=dict)
+    # Count evidence: list of CountEvidence objects
+    counts: List[CountEvidence] = field(default_factory=list)
 
     # Turn-by-turn action history: [{"thought": "...", "action": "...", "result": "..."}]
     action_history: List[Dict[str, str]] = field(default_factory=list)
@@ -54,9 +66,8 @@ class EvidenceCollection:
     def add_relationship(self, subject_id: str, object_id: str, relation: str, probability: float):
         self.relationships.append((subject_id, object_id, relation, probability))
 
-    def add_count(self, image_id: str, object_class: str, distribution: Dict[int, float]):
-        key = f"{image_id}_{object_class}"
-        self.counts[key] = distribution
+    def add_count(self, count_evidence: CountEvidence):
+        self.counts.append(count_evidence)
 
     def add_action(self, thought: str, action: str, result: str):
         self.action_history.append({
@@ -70,7 +81,7 @@ class UnifiedAgent:
     """
     ReAct-style evidence collection agent.
 
-    Given a subquestion and detected entities, collects minimal evidence
+    Given a question and detected entities, collects minimal evidence
     needed to answer the question through an iterative Think → Act → Observe loop.
     """
 
@@ -80,15 +91,15 @@ class UnifiedAgent:
 
     def collect_evidence(
         self,
-        subquestion: BinarySubquestion,
+        question: str,
         images: Dict[str, ImageData],
         image_paths: Dict[str, str]
     ) -> EvidenceCollection:
         """
-        Main entry point: collect evidence needed for subquestion.
+        Main entry point: collect evidence needed for question.
 
         Args:
-            subquestion: The question to collect evidence for
+            question: The question to collect evidence for
             images: ImageData with detected objects
             image_paths: Paths to image files
 
@@ -99,12 +110,12 @@ class UnifiedAgent:
         candidates = self._build_candidates(images)
 
         # Initialize evidence collection
-        evidence = EvidenceCollection(subquestion=subquestion.question)
+        evidence = EvidenceCollection(question=question)
 
         # ReAct loop
         for iteration in range(self.max_iterations):
             # Think: Get LLM decision on next action
-            action = self._get_llm_decision(subquestion.question, candidates, evidence, iteration)
+            action = self._get_llm_decision(question, candidates, evidence, iteration)
 
             if action is None:
                 break
@@ -140,7 +151,7 @@ class UnifiedAgent:
 
     def _get_llm_decision(
         self,
-        subquestion: str,
+        question: str,
         candidates: List[EntityCandidate],
         evidence: EvidenceCollection,
         iteration: int
@@ -152,8 +163,8 @@ class UnifiedAgent:
         system_prompt = """You are a ReAct evidence agent collecting evidence to answer a visual question about TWO images.
 
 IMAGES:
-- Image A, image_id: image_a
-- Image B, image_id: image_b
+- Image A, image_id: image_a (the question may refer to Image A as the left or the first image)
+- Image B, image_id: image_b (the question may refer to Image B as the right or the second image)
 
 ACTIONS (output ONE as JSON):
 
@@ -161,27 +172,54 @@ ACTIONS (output ONE as JSON):
    Required fields: thought, action, image_id, entity_id, question
    Example: {"thought": "I need to know the dog's color", "action": "perceive", "image_id": "image_a", "entity_id": "dog_a_0", "question": "What color is this dog?"}
 
-2. verify_attribute - Check if entity has specific attribute (returns Yes/No probability)
+2. verify_attribute - Check if entity has specific attribute. Returns probability (0.0-1.0).
    Required fields: thought, action, image_id, entity_id, attribute, value
    Example: {"thought": "Verifying the dog is orange", "action": "verify_attribute", "image_id": "image_a", "entity_id": "dog_a_0", "attribute": "color", "value": "orange"}
 
-3. verify_relationship - Check spatial relationship between two entities in SAME image
+3. verify_relationship - Check spatial relationship between two entities in SAME image. Returns probability (0.0-1.0).
    Required fields: thought, action, image_id, subject_id, object_id, relation
    Example: {"thought": "Checking if bird is on buffalo", "action": "verify_relationship", "image_id": "image_a", "subject_id": "bird_a_0", "object_id": "buffalo_a_1", "relation": "on_top_of"}
 
-4. verify_count - Count objects of a class in an image
-   Required fields: thought, action, image_id, object_class
-   Example: {"thought": "Need to count dogs in image A", "action": "verify_count", "image_id": "image_a", "object_class": "dog"}
+4. verify_count - Verify count-related queries. Returns probability (0.0-1.0).
+   Required fields: thought, action, query_type, object_class
+
+   Single-image queries (also requires: image_id, value):
+   - "at_least": P(count >= N) - {"thought": "...", "action": "verify_count", "query_type": "at_least", "object_class": "dog", "image_id": "image_a", "value": 2}
+   - "at_most": P(count <= N) - {"thought": "...", "action": "verify_count", "query_type": "at_most", "object_class": "dog", "image_id": "image_a", "value": 2}
+   - "exactly": P(count == N) - {"thought": "...", "action": "verify_count", "query_type": "exactly", "object_class": "dog", "image_id": "image_a", "value": 2}
+
+   Cross-image comparison (also requires: image_id_a, image_id_b):
+   - "more": P(count_a > count_b) - {"thought": "...", "action": "verify_count", "query_type": "more", "object_class": "dog", "image_id_a": "image_a", "image_id_b": "image_b"}
+   - "fewer": P(count_a < count_b) - {"thought": "...", "action": "verify_count", "query_type": "fewer", "object_class": "dog", "image_id_a": "image_a", "image_id_b": "image_b"}
+   - "equal": P(count_a == count_b) - {"thought": "...", "action": "verify_count", "query_type": "equal", "object_class": "dog", "image_id_a": "image_a", "image_id_b": "image_b"}
+
+   Total across both images (also requires: image_id_a, image_id_b, value):
+   - "total_exactly": P(total == N) - {"thought": "...", "action": "verify_count", "query_type": "total_exactly", "object_class": "dog", "image_id_a": "image_a", "image_id_b": "image_b", "value": 5}
+   - "total_at_least": P(total >= N) - {"thought": "...", "action": "verify_count", "query_type": "total_at_least", "object_class": "dog", "image_id_a": "image_a", "image_id_b": "image_b", "value": 5}
+   - "total_at_most": P(total <= N) - {"thought": "...", "action": "verify_count", "query_type": "total_at_most", "object_class": "dog", "image_id_a": "image_a", "image_id_b": "image_b", "value": 5}
 
 5. done - Stop when sufficient evidence collected
    Required fields: thought, action
-   Example: {"thought": "I have verified the dog is orange with high probability", "action": "done"}
+   Example: {"thought": "I have collected evidence for all relevant entities", "action": "done"}
+
+PERCEPTION SEMANTICS:
+- Perceive gathers contextual information to help you decide what to verify
+- Perceive does NOT collect probabilistic evidence - it only provides textual context
+- Use perceive to investigate an image and not to gather evidence
+
+VERIFICATION SEMANTICS:
+- Verification returns a probability score (0.0-1.0) representing the model's confidence
+- This score is DETERMINISTIC - verifying the same thing again will return the same result
+- Low probability is valid evidence that something is likely FALSE
+- High probability is valid evidence that something is likely TRUE
+- Do NOT re-verify the same attribute or relationship - once you have the probability, that IS the evidence
 
 RULES:
-- Use perceive to investigate BEFORE knowing what to verify
-- Use verify actions to collect evidence with probability scores
-- Stop (done) as soon as you have sufficient evidence to confidently answer the question
-- Do NOT repeat actions you have already taken - check ACTION HISTORY
+- You MUST verify every attribute, relationship, and count mentioned in the question
+- Perceive alone is NOT sufficient - you must verify to collect evidence
+- Use perceive to investigate, then verify to collect probabilistic evidence
+- Stop (done) only after verifying all relevant attributes, relationships, and counts
+- Do NOT repeat actions - check ACTION HISTORY before each action
 - Output valid JSON only
 - entity_id must match exactly from the DETECTED OBJECTS list
 - image_id must be "image_a" or "image_b" """
@@ -192,7 +230,7 @@ RULES:
         # Format action history
         action_history_text = self._format_action_history(evidence)
 
-        user_prompt = f"""QUESTION: "{subquestion}"
+        user_prompt = f"""QUESTION: "{question}"
 
 DETECTED OBJECTS:
 {candidates_text}
@@ -396,37 +434,158 @@ What is your next action? Output JSON only:"""
         images: Dict[str, ImageData],
         evidence: EvidenceCollection
     ):
-        """Compute count distribution for an object class using Poisson-Binomial."""
-        action_str = f'verify_count(image_id={action.image_id}, object_class={action.object_class})'
+        """Execute count verification queries using Poisson-Binomial distributions."""
+        query_type = action.query_type
+        object_class = action.object_class
 
-        # Find all candidates of this class in the specified image
+        # Build action string for logging
+        if query_type in ["at_least", "at_most", "exactly"]:
+            action_str = f'verify_count(query_type={query_type}, object_class={object_class}, image_id={action.image_id}, value={action.value})'
+        elif query_type in ["more", "fewer", "equal"]:
+            action_str = f'verify_count(query_type={query_type}, object_class={object_class}, image_id_a={action.image_id_a}, image_id_b={action.image_id_b})'
+        else:  # total_*
+            action_str = f'verify_count(query_type={query_type}, object_class={object_class}, image_id_a={action.image_id_a}, image_id_b={action.image_id_b}, value={action.value})'
+
+        try:
+            # Compute the probability based on query type
+            if query_type in ["at_least", "at_most", "exactly"]:
+                probability = self._compute_single_image_count(
+                    query_type, object_class, action.image_id, action.value, candidates
+                )
+                count_ev = CountEvidence(
+                    query_type=query_type,
+                    object_class=object_class,
+                    probability=probability,
+                    image_id=action.image_id,
+                    value=action.value
+                )
+            elif query_type in ["more", "fewer", "equal"]:
+                probability = self._compute_comparison_count(
+                    query_type, object_class, action.image_id_a, action.image_id_b, candidates
+                )
+                count_ev = CountEvidence(
+                    query_type=query_type,
+                    object_class=object_class,
+                    probability=probability,
+                    image_id_a=action.image_id_a,
+                    image_id_b=action.image_id_b
+                )
+            else:  # total_*
+                probability = self._compute_total_count(
+                    query_type, object_class, action.image_id_a, action.image_id_b, action.value, candidates
+                )
+                count_ev = CountEvidence(
+                    query_type=query_type,
+                    object_class=object_class,
+                    probability=probability,
+                    image_id_a=action.image_id_a,
+                    image_id_b=action.image_id_b,
+                    value=action.value
+                )
+
+            # Store evidence
+            evidence.add_count(count_ev)
+
+            # Record action with result
+            evidence.add_action(action.thought, action_str, f"p={probability:.3f}")
+            print(f"  [Verify Count] {query_type}({object_class}) → p={probability:.3f}")
+
+        except Exception as e:
+            evidence.add_action(action.thought, action_str, f"Failed: {e}")
+            print(f"  [Verify Count] {query_type}({object_class}) → Failed: {e}")
+
+    def _compute_single_image_count(
+        self,
+        query_type: str,
+        object_class: str,
+        image_id: str,
+        value: int,
+        candidates: List[EntityCandidate]
+    ) -> float:
+        """Compute P(count >= N), P(count <= N), or P(count == N) for single image."""
+        # Get distribution for this image
+        dist = self._get_count_distribution(object_class, image_id, candidates)
+
+        if query_type == "at_least":
+            # P(count >= N) = sum of P(k) for k >= N
+            return sum(p for k, p in dist.items() if k >= value)
+        elif query_type == "at_most":
+            # P(count <= N) = sum of P(k) for k <= N
+            return sum(p for k, p in dist.items() if k <= value)
+        elif query_type == "exactly":
+            # P(count == N)
+            return dist.get(value, 0.0)
+        else:
+            raise ValueError(f"Unknown single-image query type: {query_type}")
+
+    def _compute_comparison_count(
+        self,
+        query_type: str,
+        object_class: str,
+        image_id_a: str,
+        image_id_b: str,
+        candidates: List[EntityCandidate]
+    ) -> float:
+        """Compute P(count_a > count_b), P(count_a < count_b), or P(count_a == count_b)."""
+        dist_a = self._get_count_distribution(object_class, image_id_a, candidates)
+        dist_b = self._get_count_distribution(object_class, image_id_b, candidates)
+
+        probability = 0.0
+        for count_a, prob_a in dist_a.items():
+            for count_b, prob_b in dist_b.items():
+                if query_type == "more" and count_a > count_b:
+                    probability += prob_a * prob_b
+                elif query_type == "fewer" and count_a < count_b:
+                    probability += prob_a * prob_b
+                elif query_type == "equal" and count_a == count_b:
+                    probability += prob_a * prob_b
+
+        return probability
+
+    def _compute_total_count(
+        self,
+        query_type: str,
+        object_class: str,
+        image_id_a: str,
+        image_id_b: str,
+        value: int,
+        candidates: List[EntityCandidate]
+    ) -> float:
+        """Compute P(total >= N), P(total <= N), or P(total == N) across both images."""
+        dist_a = self._get_count_distribution(object_class, image_id_a, candidates)
+        dist_b = self._get_count_distribution(object_class, image_id_b, candidates)
+
+        # Convolve distributions to get total distribution
+        total_dist = {}
+        for count_a, prob_a in dist_a.items():
+            for count_b, prob_b in dist_b.items():
+                total = count_a + count_b
+                total_dist[total] = total_dist.get(total, 0.0) + prob_a * prob_b
+
+        if query_type == "total_at_least":
+            return sum(p for k, p in total_dist.items() if k >= value)
+        elif query_type == "total_at_most":
+            return sum(p for k, p in total_dist.items() if k <= value)
+        elif query_type == "total_exactly":
+            return total_dist.get(value, 0.0)
+        else:
+            raise ValueError(f"Unknown total query type: {query_type}")
+
+    def _get_count_distribution(
+        self,
+        object_class: str,
+        image_id: str,
+        candidates: List[EntityCandidate]
+    ) -> Dict[int, float]:
+        """Get Poisson-Binomial distribution for object class in image."""
         matching = [c for c in candidates
-                   if c.image_id == action.image_id and c.object_class == action.object_class]
+                   if c.image_id == image_id and c.object_class == object_class]
 
         if not matching:
-            # No detections = count is 0 with certainty
-            evidence.add_count(action.image_id, action.object_class, {0: 1.0})
-            evidence.add_action(action.thought, action_str, "count=0 (no detections)")
-            print(f"  [Verify Count] {action.object_class} in {action.image_id}: 0 (no detections)")
-            return
+            return {0: 1.0}  # No detections = count is 0 with certainty
 
-        # Get detection confidences
         probabilities = [c.confidence for c in matching]
-
-        # Compute Poisson-Binomial distribution
-        distribution = self._compute_poisson_binomial(probabilities)
-
-        # Store evidence for probability computation
-        evidence.add_count(action.image_id, action.object_class, distribution)
-
-        # Find most likely count and format result
-        most_likely = max(distribution, key=distribution.get)
-        result_str = f"most_likely={most_likely} (p={distribution[most_likely]:.3f})"
-
-        # Record action with result
-        evidence.add_action(action.thought, action_str, result_str)
-        print(f"  [Verify Count] {action.object_class} in {action.image_id}")
-        print(f"    → Most likely: {most_likely} (p={distribution[most_likely]:.3f})")
+        return self._compute_poisson_binomial(probabilities)
 
     def _compute_poisson_binomial(self, probabilities: List[float]) -> Dict[int, float]:
         """Compute Poisson-Binomial distribution using DP."""

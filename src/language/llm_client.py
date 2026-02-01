@@ -7,8 +7,6 @@ import boto3
 from pydantic import BaseModel, ValidationError
 
 from .output_models import (
-    SubquestionResponse,
-    CountRequirementResponse,
     EntityExtractionResponse,
     AgentAction,
     PerceiveAction,
@@ -124,10 +122,6 @@ class LLMClient:
                 # Parse and validate with Pydantic
                 parsed_json = json.loads(json_str)
 
-                # Handle array format for SubquestionResponse (Llama may return array instead of object)
-                if isinstance(parsed_json, list) and output_model.__name__ == 'SubquestionResponse':
-                    parsed_json = {"subquestions": parsed_json}
-
                 validated_output = output_model(**parsed_json)
 
                 return validated_output
@@ -189,14 +183,6 @@ class LLMClient:
         return response
 
     # Convenience methods for specific pipeline components
-    def generate_subquestions(self, messages: List[Dict[str, str]], **kwargs) -> SubquestionResponse:
-        """Generate subquestions with validation."""
-        return self.chat_with_validation(messages, SubquestionResponse, **kwargs)
-
-    def analyze_count_requirements(self, messages: List[Dict[str, str]], **kwargs) -> CountRequirementResponse:
-        """Analyze count requirements with validation."""
-        return self.chat_with_validation(messages, CountRequirementResponse, **kwargs)
-
     def extract_entities(self, messages: List[Dict[str, str]], **kwargs) -> EntityExtractionResponse:
         """Extract entities from questions with validation."""
         return self.chat_with_validation(messages, EntityExtractionResponse, **kwargs)

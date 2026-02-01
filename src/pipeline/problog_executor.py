@@ -10,13 +10,13 @@ from problog.program import PrologString
 from problog import get_evaluatable
 
 from src.core.model_manager import ModelManager
-from src.core.types import BinarySubquestion, ProbLogFact, SubquestionResult, ModeResult
+from src.core.types import ProbLogFact, ModeResult
 from src.pipeline.problog_builder import ProbLogFactBuilder
 
 
 class ProbLogExecutor:
     """
-    Execute ProbLog reasoning for subquestions.
+    Execute ProbLog reasoning for a question.
 
     Flow:
     1. Build facts from evidence
@@ -31,117 +31,94 @@ class ProbLogExecutor:
 
     def execute_dual(
         self,
-        subquestions: List[BinarySubquestion],
-        evidence_collections: List['EvidenceCollection'],
+        question: str,
+        evidence: 'EvidenceCollection',
         images: Dict[str, 'ImageData'],
-        ultimate_question: str,
         threshold: float = 0.5
     ) -> Tuple[ModeResult, ModeResult]:
         """
-        Execute all subquestions in both probabilistic and deterministic modes.
+        Execute question in both probabilistic and deterministic modes.
 
         Args:
-            subquestions: List of binary subquestions
-            evidence_collections: Evidence for each subquestion (1:1)
+            question: The question to answer
+            evidence: Evidence collection for the question
             images: ImageData for entity metadata
-            ultimate_question: Original question
             threshold: Threshold for deterministic mode
 
         Returns:
             (probabilistic_result, deterministic_result)
         """
-        if not subquestions:
-            empty = ModeResult(subquestion_results=[], final_answer="False", problog_program="")
-            return empty, empty
-
-        if len(evidence_collections) != len(subquestions):
-            raise RuntimeError(f"Evidence mismatch: {len(evidence_collections)} vs {len(subquestions)}")
-
         llm = self.model_manager.get_llm_client()
-        prob_results, det_results = [], []
 
         print(f"\n{'='*60}")
-        print(f"ProbLog Execution ({len(subquestions)} subquestions, threshold={threshold})")
+        print(f"ProbLog Execution (threshold={threshold})")
+        print(f"Question: {question}")
         print(f"{'='*60}")
 
-        for i, (sq, evidence) in enumerate(zip(subquestions, evidence_collections), 1):
-            print(f"\n[{i}/{len(subquestions)}] {sq.question}")
+        # Build probabilistic facts
+        prob_facts = self.fact_builder.build_facts(evidence, images)
+        print(f"  Facts: {len(prob_facts)}")
 
-            # Build probabilistic facts
-            prob_facts = self.fact_builder.build_facts(evidence, images)
-            print(f"  Facts: {len(prob_facts)}")
+        # Generate rules + query (once, reuse for both modes)
+        rules, query = self._generate_query(question, prob_facts, llm)
 
-            # Generate rules + query (once, reuse for both modes)
-            rules, query = self._generate_query(sq, prob_facts, llm)
+        # Build deterministic facts
+        det_facts = ProbLogFactBuilder.threshold_facts(prob_facts, threshold)
 
-            # Build deterministic facts
-            det_facts = ProbLogFactBuilder.threshold_facts(prob_facts, threshold)
+        # Execute both
+        prob_prob = self._execute_program(prob_facts, rules, query)
+        det_prob = self._execute_program(det_facts, rules, query)
 
-            # Execute both
-            prob_prob = self._execute_program(prob_facts, rules, query)
-            det_prob = self._execute_program(det_facts, rules, query)
+        print(f"  Probabilistic: {prob_prob:.4f}")
+        print(f"  Deterministic: {det_prob:.4f}")
 
-            print(f"  Probabilistic: {prob_prob:.4f}")
-            print(f"  Deterministic: {det_prob:.4f}")
+        # Convert probability to answer
+        prob_answer = "True" if prob_prob >= 0.5 else "False"
+        det_answer = "True" if det_prob >= 0.5 else "False"
 
-            # Store results
-            prob_results.append(SubquestionResult(
-                subquestion=sq.question,
-                probability=prob_prob,
-                supporting_facts=prob_facts,
-                problog_program=self._build_program_string(prob_facts, rules, query),
-                evidence_trail=[f"prob: {prob_prob:.4f}"]
-            ))
-
-            det_results.append(SubquestionResult(
-                subquestion=sq.question,
-                probability=det_prob,
-                supporting_facts=det_facts,
-                problog_program=self._build_program_string(det_facts, rules, query),
-                evidence_trail=[f"det: {det_prob:.4f}"]
-            ))
-
-        # Compose ultimate answers
-        print(f"\n{'='*60}")
-        print(f"Ultimate Composition: {ultimate_question}")
-        print(f"{'='*60}")
-
-        prob_answer = self._compose_ultimate(prob_results, ultimate_question, llm)
-        det_answer = self._compose_ultimate(det_results, ultimate_question, llm)
-
-        print(f"  Probabilistic: {prob_answer}")
-        print(f"  Deterministic: {det_answer}")
+        print(f"  Probabilistic answer: {prob_answer}")
+        print(f"  Deterministic answer: {det_answer}")
 
         return (
             ModeResult(
-                subquestion_results=prob_results,
+                probability=prob_prob,
                 final_answer=prob_answer,
-                problog_program=self._build_unified_program(prob_results)
+                problog_program=self._build_program_string(prob_facts, rules, query)
             ),
             ModeResult(
-                subquestion_results=det_results,
+                probability=det_prob,
                 final_answer=det_answer,
-                problog_program=self._build_unified_program(det_results)
+                problog_program=self._build_program_string(det_facts, rules, query)
             )
         )
 
     def _generate_query(
         self,
-        subquestion: BinarySubquestion,
+        question: str,
         facts: List[ProbLogFact],
         llm
     ) -> Tuple[str, str]:
-        """LLM generates ProbLog rules and query for a subquestion."""
+        """LLM generates ProbLog rules and query for the question."""
 
         facts_str = ProbLogFactBuilder.facts_to_string(facts)
 
-        prompt = f"""Generate ProbLog rules and query to answer this subquestion.
+        prompt = f"""Generate ProbLog rules and query to answer this question.
 
 PREDICATES:
 - entity(image_id, entity_id, category)
 - attribute(image_id, entity_id, value)
 - relation(image_id, subject_id, object_id, relation_type)
-- count(image_id, category, count_value)
+
+COUNT PREDICATES (use directly in rules):
+- count_at_least(image_id, class, N) - at least N objects in image
+- count_at_most(image_id, class, N) - at most N objects in image
+- count_exactly(image_id, class, N) - exactly N objects in image
+- count_more(image_id_a, image_id_b, class) - more in A than B
+- count_fewer(image_id_a, image_id_b, class) - fewer in A than B
+- count_equal(image_id_a, image_id_b, class) - same count in both
+- count_total_exactly(image_id_a, image_id_b, class, N) - exactly N total
+- count_total_at_least(image_id_a, image_id_b, class, N) - at least N total
+- count_total_at_most(image_id_a, image_id_b, class, N) - at most N total
 
 SUGAR RULES (available):
 - has_attribute(I,E,A) :- attribute(I,E,A).
@@ -151,7 +128,7 @@ SUGAR RULES (available):
 AVAILABLE FACTS:
 {facts_str}
 
-SUBQUESTION: {subquestion.question}
+QUESTION: {question}
 
 Generate ONLY:
 1. Rule definition(s) using :- syntax
@@ -175,13 +152,13 @@ Output rules and query only, no explanation:"""
             rules, query = self._parse_response(response)
 
             if not query.startswith("query("):
-                return self._fallback_query(subquestion)
+                return self._fallback_query(question)
 
             return rules, query
 
         except Exception as e:
             print(f"  Warning: Query generation failed: {e}")
-            return self._fallback_query(subquestion)
+            return self._fallback_query(question)
 
     def _parse_response(self, response: str) -> Tuple[str, str]:
         """Parse LLM response into rules and query."""
@@ -202,10 +179,10 @@ Output rules and query only, no explanation:"""
 
         return '\n'.join(rules_lines), '\n'.join(query_lines)
 
-    def _fallback_query(self, subquestion: BinarySubquestion) -> Tuple[str, str]:
+    def _fallback_query(self, question: str) -> Tuple[str, str]:
         """Generate fallback query when LLM fails."""
         # Extract image from question
-        match = re.search(r'image[_ ]([ab])', subquestion.question.lower())
+        match = re.search(r'image[_ ]([ab])', question.lower())
         image_id = f"image_{match.group(1)}" if match else "image_a"
 
         rules = "fallback(I) :- entity(I, _, _)."
@@ -247,45 +224,3 @@ Output rules and query only, no explanation:"""
         """Build complete ProbLog program."""
         facts_str = ProbLogFactBuilder.facts_to_string(facts)
         return f"{ProbLogFactBuilder.SUGAR_RULES}\n\n{facts_str}\n\n{rules}\n\n{query}"
-
-    def _build_unified_program(self, results: List[SubquestionResult]) -> str:
-        """Build unified program for logging."""
-        parts = [ProbLogFactBuilder.SUGAR_RULES, ""]
-        for i, r in enumerate(results, 1):
-            parts.append(f"% [{i}] {r.subquestion} → {r.probability:.4f}")
-            parts.append(r.problog_program)
-            parts.append("")
-        return "\n".join(parts)
-
-    def _compose_ultimate(
-        self,
-        results: List[SubquestionResult],
-        ultimate_question: str,
-        llm
-    ) -> str:
-        """LLM composes final answer from subquestion results."""
-
-        # Build summary of subquestion answers
-        answers = []
-        for r in results:
-            answer = "TRUE" if r.probability >= 0.5 else "FALSE"
-            answers.append(f"- {r.subquestion} → {answer} (p={r.probability:.3f})")
-
-        prompt = f"""Given these subquestion answers:
-
-{chr(10).join(answers)}
-
-Answer this question: {ultimate_question}
-
-Reply with ONLY 'True' or 'False'."""
-
-        messages = [
-            {"role": "system", "content": "Answer with only 'True' or 'False'. No explanation."},
-            {"role": "user", "content": prompt}
-        ]
-
-        try:
-            response = llm.chat(messages, temperature=0.0).strip().lower()
-            return "True" if "true" in response else "False"
-        except Exception:
-            return "False"

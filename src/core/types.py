@@ -83,13 +83,6 @@ class ImageData:
         }
 
 
-@dataclass
-class BinarySubquestion:
-    """Binary subquestion - pure natural language, no type classification."""
-    question: str  # Binary question answerable with Yes/No
-
-    def to_dict(self) -> Dict[str, Any]:
-        return asdict(self)
 
 
 @dataclass
@@ -121,17 +114,17 @@ class ProbLogFact:
 
 
 @dataclass
-class SubquestionResult:
-    """Result from ProbLog execution of a subquestion."""
-    subquestion: str  # Original binary subquestion
+class QueryResult:
+    """Result from ProbLog execution of a question."""
+    question: str  # The question answered
     probability: float  # Computed probability
-    supporting_facts: List['ProbLogFact']  # Scoped ProbLog facts for this subquestion
-    problog_program: str  # Complete scoped ProbLog program
+    supporting_facts: List['ProbLogFact']  # ProbLog facts used
+    problog_program: str  # Complete ProbLog program
     evidence_trail: List[str]  # Human-readable evidence chain
 
     def to_dict(self) -> Dict[str, Any]:
         return {
-            'subquestion': self.subquestion,
+            'question': self.question,
             'probability': self.probability,
             'supporting_facts': [f.to_dict() for f in self.supporting_facts],
             'problog_program': self.problog_program,
@@ -147,23 +140,6 @@ class AnswerResult:
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
-
-
-@dataclass
-class PipelineResult:
-    """Result from PROVE pipeline execution - clean probabilistic output."""
-    ultimate_question: str
-    ultimate_probability: float  # From ProbLog ultimate query
-    subquestion_results: List['SubquestionResult']  # Evidence trail
-    problog_program: str  # Full program for debugging
-
-    def to_dict(self) -> Dict[str, Any]:
-        return {
-            "ultimate_question": self.ultimate_question,
-            "ultimate_probability": self.ultimate_probability,
-            "subquestion_results": [r.to_dict() for r in self.subquestion_results],
-            "problog_program": self.problog_program
-        }
 
 
 class ComparisonType(Enum):
@@ -199,13 +175,13 @@ ATTRIBUTE_CATEGORIES = [
 @dataclass
 class ModeResult:
     """Results for a single execution mode (probabilistic or deterministic)."""
-    subquestion_results: List['SubquestionResult']
+    probability: float  # Computed probability for the question
     final_answer: str  # "True" or "False"
     problog_program: str  # Complete ProbLog program for this mode
 
     def to_dict(self) -> Dict[str, Any]:
         return {
-            'subquestion_results': [r.to_dict() for r in self.subquestion_results],
+            'probability': self.probability,
             'final_answer': self.final_answer,
             'problog_program': self.problog_program
         }
@@ -214,13 +190,13 @@ class ModeResult:
 @dataclass
 class SharedEvidence:
     """Evidence shared between probabilistic and deterministic modes."""
-    subquestions: List['BinarySubquestion']
-    evidence_collections: List[Any]  # List of EvidenceCollection (avoid circular import)
+    question: str  # The question being answered
+    evidence_collection: Any  # EvidenceCollection (avoid circular import)
     detected_objects: Dict[str, List['ObjectDetection']]  # {image_id: [objects]}
 
     def to_dict(self) -> Dict[str, Any]:
         return {
-            'subquestions': [sq.to_dict() for sq in self.subquestions],
+            'question': self.question,
             'detected_objects': {
                 img_id: [obj.to_dict() for obj in objs]
                 for img_id, objs in self.detected_objects.items()
@@ -254,6 +230,4 @@ class UnifiedResult:
 Objects = List[ObjectDetection]
 Attributes = List[AttributeData]
 IntraRelations = List[IntraRelation]
-BinarySubquestions = List[BinarySubquestion]
 ProbLogFacts = List[ProbLogFact]
-SubquestionResults = List[SubquestionResult]

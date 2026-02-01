@@ -3,8 +3,11 @@ ProbLog fact builder for PROVE pipeline.
 Converts evidence collections into ProbLog facts.
 """
 
-from typing import List, Dict, Tuple, Set
+from typing import List, Dict, Tuple, Set, TYPE_CHECKING
 from src.core.types import ImageData, ProbLogFact
+
+if TYPE_CHECKING:
+    from src.pipeline.unified_agent import CountEvidence
 
 
 class ProbLogFactBuilder:
@@ -15,7 +18,17 @@ class ProbLogFactBuilder:
     - entity(image_id, entity_id, category)
     - attribute(image_id, entity_id, value)
     - relation(image_id, subject_id, object_id, relation_type)
-    - count(image_id, category, count_value)
+
+    Count predicates (query-driven):
+    - count_at_least(image_id, class, N)
+    - count_at_most(image_id, class, N)
+    - count_exactly(image_id, class, N)
+    - count_more(image_id_a, image_id_b, class)
+    - count_fewer(image_id_a, image_id_b, class)
+    - count_equal(image_id_a, image_id_b, class)
+    - count_total_exactly(image_id_a, image_id_b, class, N)
+    - count_total_at_least(image_id_a, image_id_b, class, N)
+    - count_total_at_most(image_id_a, image_id_b, class, N)
     """
 
     SUGAR_RULES = """% Sugar rules for cleaner queries
@@ -32,7 +45,7 @@ has_relationship(I,A,B,R) :- relation(I,A,B,R)."""
         Build ProbLog facts from evidence collection.
 
         Args:
-            evidence: Evidence collected for a subquestion
+            evidence: Evidence collected for the question
             images: ImageData for entity metadata
 
         Returns:
@@ -100,17 +113,7 @@ has_relationship(I,A,B,R) :- relation(I,A,B,R)."""
             entities.add(subj_id)
             entities.add(obj_id)
 
-        # From counts: find entities of that category in that image
-        for count_key in evidence.counts.keys():
-            # count_key format: "image_a_dog"
-            parts = count_key.rsplit('_', 1)
-            if len(parts) == 2:
-                image_id, category = parts
-                if image_id in images:
-                    for obj in images[image_id].objects:
-                        if obj.label == category:
-                            letter = image_id.replace("image_", "")
-                            entities.add(f"{obj.label}_{letter}_{obj.object_id}")
+        # Count evidence no longer adds entities - counts are standalone predicates
 
         return entities
 
@@ -177,21 +180,41 @@ has_relationship(I,A,B,R) :- relation(I,A,B,R)."""
 
     def _build_count_facts(
         self,
-        counts: Dict[str, Dict[int, float]]
+        counts: List['CountEvidence']
     ) -> List[ProbLogFact]:
-        """Build count facts from evidence (full distribution)."""
+        """Build count facts from evidence (query-driven format)."""
         facts = []
 
-        for count_key, distribution in counts.items():
-            # count_key format: "image_a_dog"
-            parts = count_key.rsplit('_', 1)
-            if len(parts) == 2:
-                image_id, category = parts
-                for count_value, probability in distribution.items():
-                    facts.append(ProbLogFact(
-                        probability=probability,
-                        predicate="count",
-                        arguments=[image_id, category, str(count_value)]
-                    ))
+        for count_ev in counts:
+            query_type = count_ev.query_type
+            object_class = count_ev.object_class
+            probability = count_ev.probability
+
+            if query_type in ["at_least", "at_most", "exactly"]:
+                # Single-image: count_<query_type>(image_id, class, N)
+                predicate = f"count_{query_type}"
+                facts.append(ProbLogFact(
+                    probability=probability,
+                    predicate=predicate,
+                    arguments=[count_ev.image_id, object_class, str(count_ev.value)]
+                ))
+
+            elif query_type in ["more", "fewer", "equal"]:
+                # Cross-image comparison: count_<query_type>(image_id_a, image_id_b, class)
+                predicate = f"count_{query_type}"
+                facts.append(ProbLogFact(
+                    probability=probability,
+                    predicate=predicate,
+                    arguments=[count_ev.image_id_a, count_ev.image_id_b, object_class]
+                ))
+
+            elif query_type.startswith("total_"):
+                # Total across both: count_<query_type>(image_id_a, image_id_b, class, N)
+                predicate = f"count_{query_type}"
+                facts.append(ProbLogFact(
+                    probability=probability,
+                    predicate=predicate,
+                    arguments=[count_ev.image_id_a, count_ev.image_id_b, object_class, str(count_ev.value)]
+                ))
 
         return facts
