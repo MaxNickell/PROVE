@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
 """
-Fair comparison: CountComparator vs PROVE Agent for count subquestions.
+Fair comparison: CountComparator vs PROVE Agent for count questions.
 
-Both methods start from the SAME subquestion (no subquestion generation).
+Both methods start from the SAME question (no subquestion generation).
 Compares evidence collection and reasoning approaches.
 
 Usage:
-    python test_count_fair.py <image_a> <image_b> <subquestion>
+    python count_test.py <image_a> <image_b> <question>
 
 Example:
-    python test_count_fair.py img1.jpg img2.jpg "Are there the same number of beers in image A as in image B?"
+    python count_test.py img1.jpg img2.jpg "Are there the same number of beers in image A as in image B?"
 """
 
 import sys
@@ -18,9 +18,9 @@ from PIL import Image
 
 from src.core.model_manager import ModelManager
 from src.core.knowledge_base import KnowledgeBase
-from src.core.types import BinarySubquestion, ImageData
+from src.core.types import ImageData
 from src.pipeline.detector import Detector
-from src.pipeline.unified_agent import UnifiedAgent, EvidenceCollection
+from src.pipeline.unified_agent import UnifiedAgent, EvidenceCollection, CountEvidence
 from src.pipeline.problog_executor import ProbLogExecutor
 from src.pipeline.problog_builder import ProbLogFactBuilder
 from src.pipeline.count_processor2 import CountComparator
@@ -52,27 +52,17 @@ def run_shared_detection(image_a_path: str, image_b_path: str, question: str):
     print("=" * 60)
 
     detector = Detector()
-    model_manager = ModelManager()
-    florence2 = model_manager.get_florence2()
 
     # Detect objects
     detections_a = detector.detect_from_question(image_a_path, question)
     detections_b = detector.detect_from_question(image_b_path, question)
 
-    # Generate captions
-    image_a = Image.open(image_a_path)
-    image_b = Image.open(image_b_path)
-    caption_a = florence2.describe_region(image_a, task="<MORE_DETAILED_CAPTION>")
-    caption_b = florence2.describe_region(image_b, task="<MORE_DETAILED_CAPTION>")
-
     print(f"\nImage A: {image_a_path}")
-    print(f"  Caption: {caption_a[:100]}...")
     print(f"  Detections: {len(detections_a)}")
     for det in detections_a:
         print(f"    - {det.label} (conf={det.confidence:.3f})")
 
     print(f"\nImage B: {image_b_path}")
-    print(f"  Caption: {caption_b[:100]}...")
     print(f"  Detections: {len(detections_b)}")
     for det in detections_b:
         print(f"    - {det.label} (conf={det.confidence:.3f})")
@@ -84,14 +74,12 @@ def run_shared_detection(image_a_path: str, image_b_path: str, question: str):
             attributes={},
             relationships=[],
             counts={},
-            scene_context={"caption": caption_a}
         ),
         "image_b": ImageData(
             objects=detections_b,
             attributes={},
             relationships=[],
             counts={},
-            scene_context={"caption": caption_b}
         )
     }
 
@@ -103,12 +91,12 @@ def run_shared_detection(image_a_path: str, image_b_path: str, question: str):
     return images, image_paths, detections_a, detections_b
 
 
-def run_count_comparator(detections_a, detections_b, subquestion: str):
+def run_count_comparator(detections_a, detections_b, question: str):
     """Run the direct CountComparator approach."""
     print("\n" + "=" * 60)
     print("METHOD 1: CountComparator (Direct Mathematical)")
     print("=" * 60)
-    print(f"\nSubquestion: {subquestion}")
+    print(f"\nQuestion: {question}")
 
     # Get unique classes
     all_classes = set(d.label for d in detections_a) | set(d.label for d in detections_b)
@@ -151,7 +139,7 @@ def run_count_comparator(detections_a, detections_b, subquestion: str):
         }
 
     # Determine which comparison the question asks about
-    question_lower = subquestion.lower()
+    question_lower = question.lower()
 
     if "same" in question_lower or "equal" in question_lower:
         comparison_type = "equal"
@@ -176,21 +164,18 @@ def run_count_comparator(detections_a, detections_b, subquestion: str):
     return primary_prob, results
 
 
-def run_prove_agent(images: Dict[str, ImageData], image_paths: Dict[str, str], subquestion: str):
+def run_prove_agent(images: Dict[str, ImageData], image_paths: Dict[str, str], question: str):
     """Run the PROVE agent approach."""
     print("\n" + "=" * 60)
     print("METHOD 2: PROVE Agent (ProbLog-based)")
     print("=" * 60)
-    print(f"\nSubquestion: {subquestion}")
+    print(f"\nQuestion: {question}")
 
-    # Create subquestion object
-    sq = BinarySubquestion(question=subquestion)
-
-    # Run unified agent
+    # Run unified agent directly on the question
     print("\n  Agent Evidence Collection:")
     agent = UnifiedAgent(max_iterations=10)  # Limit iterations
     evidence = agent.collect_evidence(
-        subquestion=sq,
+        question=question,
         images=images,
         image_paths=image_paths
     )
@@ -204,26 +189,23 @@ def run_prove_agent(images: Dict[str, ImageData], image_paths: Dict[str, str], s
     for rel in evidence.relationships:
         print(f"      - {rel}")
     print(f"    Counts: {len(evidence.counts)}")
-    for key, dist in evidence.counts.items():
-        most_likely = max(dist, key=dist.get)
-        print(f"      - {key}: most likely {most_likely} (p={dist[most_likely]:.3f})")
-        print(f"        Full distribution: {format_distribution(dist)}")
+    for count_ev in evidence.counts:
+        print(f"      - {count_ev.query_type}({count_ev.object_class}): p={count_ev.probability:.3f}")
 
     # Run ProbLog execution
     print("\n  ProbLog Execution:")
     executor = ProbLogExecutor()
 
     prob_result, det_result = executor.execute_dual(
-        subquestions=[sq],
-        evidence_collections=[evidence],
+        question=question,
+        evidence=evidence,
         images=images,
-        ultimate_question=subquestion,
         threshold=0.5
     )
 
     print(f"\n  Results:")
-    print(f"    Probabilistic: p={prob_result.subquestion_results[0].probability:.4f}")
-    print(f"    Deterministic: p={det_result.subquestion_results[0].probability:.4f}")
+    print(f"    Probabilistic: p={prob_result.probability:.4f}")
+    print(f"    Deterministic: p={det_result.probability:.4f}")
     print(f"    Final Answer (Prob): {prob_result.final_answer}")
     print(f"    Final Answer (Det): {det_result.final_answer}")
 
@@ -239,35 +221,35 @@ def run_prove_agent(images: Dict[str, ImageData], image_paths: Dict[str, str], s
 
 def main():
     if len(sys.argv) < 4:
-        print("Usage: python test_count_fair.py <image_a> <image_b> <subquestion>")
+        print("Usage: python count_test.py <image_a> <image_b> <question>")
         print(
-            'Example: python test_count_fair.py img1.jpg img2.jpg "Are there the same number of beers in image A as in image B?"')
+            'Example: python count_test.py img1.jpg img2.jpg "Are there the same number of beers in image A as in image B?"')
         sys.exit(1)
 
     image_a_path = sys.argv[1]
     image_b_path = sys.argv[2]
-    subquestion = sys.argv[3]
+    question = sys.argv[3]
 
     print("=" * 60)
     print("FAIR COMPARISON: CountComparator vs PROVE Agent")
     print("=" * 60)
-    print(f"\nSubquestion: {subquestion}")
+    print(f"\nQuestion: {question}")
     print(f"Image A: {image_a_path}")
     print(f"Image B: {image_b_path}")
 
     # Shared detection (same for both methods)
     images, image_paths, detections_a, detections_b = run_shared_detection(
-        image_a_path, image_b_path, subquestion
+        image_a_path, image_b_path, question
     )
 
     # Method 1: CountComparator
     comparator_prob, comparator_results = run_count_comparator(
-        detections_a, detections_b, subquestion
+        detections_a, detections_b, question
     )
 
     # Method 2: PROVE Agent
     prove_prob_result, prove_det_result, prove_evidence = run_prove_agent(
-        images, image_paths, subquestion
+        images, image_paths, question
     )
 
     # Summary
@@ -276,7 +258,7 @@ def main():
     print("=" * 60)
 
     comparator_answer = "True" if comparator_prob >= 0.5 else "False"
-    prove_prob = prove_prob_result.subquestion_results[0].probability
+    prove_prob = prove_prob_result.probability
     prove_answer = prove_prob_result.final_answer
 
     print(f"\nCountComparator (Direct Math):")
@@ -303,17 +285,11 @@ def main():
 
     # Check if PROVE collected counts
     if prove_evidence.counts:
-        print("\nPROVE collected count distributions:")
-        for key, dist in prove_evidence.counts.items():
-            print(f"  {key}: {format_distribution(dist)}")
-
-        # Check if ProbLog encoded them correctly
-        print("\nProbLog encoding issue:")
-        print("  Count facts are encoded as INDEPENDENT (wrong)")
-        print("  They should be mutually exclusive alternatives")
-        print("  This causes incorrect probability computation")
+        print("\nPROVE collected count evidence:")
+        for count_ev in prove_evidence.counts:
+            print(f"  {count_ev.query_type}({count_ev.object_class}): p={count_ev.probability:.3f}")
     else:
-        print("\nPROVE did NOT collect count distributions!")
+        print("\nPROVE did NOT collect count evidence!")
         print("  The agent may not have used verify_count action")
 
 

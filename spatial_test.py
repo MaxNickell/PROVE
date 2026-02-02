@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
 """
-Compare VLM vs Geometric spatial verification on a single subquestion.
+Compare VLM vs Geometric spatial verification on a single question.
 
 Usage:
-    python spatial_test.py -i image.png -s "Is the bird on top of the buffalo?"
+    python spatial_test.py -i image.png -q "Is the bird on top of the buffalo?"
 """
 
 import argparse
 import sys
+import math
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
@@ -15,13 +16,13 @@ sys.path.insert(0, str(Path(__file__).parent))
 from src.pipeline.unified_agent import EntityCandidate
 
 
-def parse_subquestion(subquestion: str, llm_client) -> tuple:
-    """Extract subject, relation, object from subquestion."""
+def parse_question(question: str, llm_client) -> tuple:
+    """Extract subject, relation, object from question."""
     import json
 
-    prompt = f"""Parse this spatial subquestion into subject, relation, and object.
+    prompt = f"""Parse this spatial question into subject, relation, and object.
 
-Subquestion: "{subquestion}"
+Question: "{question}"
 
 Examples:
 - "Is the cat to the left of the dog?" → {{"subject": "cat", "relation": "left_of", "object": "dog"}}
@@ -58,10 +59,57 @@ def detection_to_entity(det, image_id: str = "image_a") -> EntityCandidate:
     )
 
 
+def extract_yes_no_probability(logits, response: str, tokenizer) -> float:
+    """Extract probability from VLM logits for Yes/No response."""
+    if not logits:
+        # Fallback to response text
+        response_lower = response.lower().strip()
+        if response_lower.startswith("yes"):
+            return 0.9
+        elif response_lower.startswith("no"):
+            return 0.1
+        return 0.5
+
+    try:
+        # Get first token logits
+        first_logits = logits[0][0] if len(logits) > 0 else None
+        if first_logits is None:
+            return 0.5
+
+        # Get token IDs for Yes/No variants
+        yes_tokens = ["Yes", "yes", "YES"]
+        no_tokens = ["No", "no", "NO"]
+
+        yes_ids = []
+        no_ids = []
+        for token in yes_tokens:
+            yes_ids.extend(tokenizer.encode(token, add_special_tokens=False))
+        for token in no_tokens:
+            no_ids.extend(tokenizer.encode(token, add_special_tokens=False))
+
+        # Get max logits for each class
+        yes_logits = [first_logits[i].item() for i in yes_ids if i < len(first_logits)]
+        no_logits = [first_logits[i].item() for i in no_ids if i < len(first_logits)]
+
+        if not yes_logits or not no_logits:
+            return 0.5
+
+        yes_max = max(yes_logits)
+        no_max = max(no_logits)
+
+        # Softmax over the two options
+        max_logit = max(yes_max, no_max)
+        exp_yes = math.exp(yes_max - max_logit)
+        exp_no = math.exp(no_max - max_logit)
+
+        return exp_yes / (exp_yes + exp_no)
+    except Exception:
+        return 0.5
+
+
 def verify_vlm(image, subject: EntityCandidate, obj: EntityCandidate, relation: str, qwen_client):
     """VLM verification."""
     from PIL import ImageDraw
-    from src.core.probability import get_verifier_probability
 
     # Crop to union with 15% margin
     x1 = min(subject.bbox[0], obj.bbox[0])
@@ -108,12 +156,12 @@ Respond with ONLY "Yes" or "No". Do not add punctuation or explanation.
 Answer:"""
 
     response, logits = qwen_client.run_inference_with_logits(annotated, prompt)
-    probability = get_verifier_probability(logits, response, qwen_client.processor.tokenizer)
+    probability = extract_yes_no_probability(logits, response, qwen_client.processor.tokenizer)
 
     return probability, response.strip()
 
 
-def compare_methods(image_path: str, subquestion: str):
+def compare_methods(image_path: str, question: str):
     """Compare VLM vs Geometric verification."""
     from PIL import Image
     from src.core.model_manager import ModelManager
@@ -124,16 +172,16 @@ def compare_methods(image_path: str, subquestion: str):
     print("VLM vs GEOMETRIC COMPARISON")
     print("=" * 70)
     print(f"Image: {image_path}")
-    print(f"Subquestion: {subquestion}")
+    print(f"Question: {question}")
     print("=" * 70)
 
     model_manager = ModelManager()
     llm_client = model_manager.get_llm_client()
 
-    # Parse subquestion
-    print("\n[1] Parsing subquestion...")
+    # Parse question
+    print("\n[1] Parsing question...")
     try:
-        subject_label, relation, object_label = parse_subquestion(subquestion, llm_client)
+        subject_label, relation, object_label = parse_question(question, llm_client)
         print(f"    Subject: {subject_label}")
         print(f"    Relation: {relation}")
         print(f"    Object: {object_label}")
@@ -217,7 +265,7 @@ def compare_methods(image_path: str, subquestion: str):
     print("\n" + "=" * 70)
     print("COMPARISON")
     print("=" * 70)
-    print(f"  Subquestion: {subquestion}")
+    print(f"  Question: {question}")
     print()
     print(f"  VLM:       p={vlm_prob:.4f}  → {'TRUE' if vlm_answer else 'FALSE'}")
 
@@ -241,7 +289,7 @@ def main():
         description="Compare VLM vs Geometric spatial verification"
     )
     parser.add_argument("--image", "-i", type=str, required=True)
-    parser.add_argument("--subquestion", "-s", type=str, required=True)
+    parser.add_argument("--question", "-q", type=str, required=True)
 
     args = parser.parse_args()
 
@@ -249,7 +297,7 @@ def main():
         print(f"Error: Image not found: {args.image}")
         return 1
 
-    compare_methods(args.image, args.subquestion)
+    compare_methods(args.image, args.question)
     return 0
 
 
