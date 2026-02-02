@@ -10,7 +10,6 @@ from typing import Tuple
 # ==============================================================================
 # Detector Confidence Calibration using Anchored Sigmoid Mapping
 # ==============================================================================
-
 # Anchor points for detector confidence calibration
 # These map raw detector scores to operational probabilities
 DETECTOR_ANCHOR_P_LO = 0.1   # Low raw score anchor

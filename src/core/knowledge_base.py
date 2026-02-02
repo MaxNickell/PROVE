@@ -7,8 +7,7 @@ import json
 from typing import List, Dict, Any, Optional
 
 from src.core.types import (
-    ObjectDetection, AttributeData, IntraRelation, ImageData,
-    BinarySubquestion, ProbLogFact, SubquestionResult, AnswerResult
+    ObjectDetection, AttributeData, IntraRelation, ImageData, ProbLogFact
 )
 
 
@@ -31,9 +30,7 @@ class KnowledgeBase:
         self.images: Dict[str, ImageData] = {}  # {"image_a": ImageData, "image_b": ImageData}
 
         # Pipeline processing results
-        self.subquestions: List[BinarySubquestion] = []
         self.problog_facts: List[ProbLogFact] = []
-        self.subquestion_results: List[SubquestionResult] = []
 
     def ensure_image_exists(self, image_id: str) -> None:
         """
@@ -193,17 +190,9 @@ class KnowledgeBase:
         self.ensure_image_exists(image_id)
         self.images[image_id].scene_context.update(context)
 
-    def add_subquestions(self, subquestions: List[BinarySubquestion]) -> None:
-        """Store generated binary subquestions."""
-        self.subquestions = subquestions
-
     def add_problog_facts(self, facts: List[ProbLogFact]) -> None:
         """Store ProbLog knowledge base facts."""
         self.problog_facts = facts
-
-    def add_subquestion_results(self, results: List[SubquestionResult]) -> None:
-        """Store subquestion execution results."""
-        self.subquestion_results = results
 
     def to_dict(self) -> Dict[str, Any]:
         """
@@ -215,9 +204,7 @@ class KnowledgeBase:
         return {
             "ultimate_question": self.ultimate_question,
             "images": {image_id: image_data.to_dict() for image_id, image_data in self.images.items()},
-            "subquestions": [sq.to_dict() for sq in self.subquestions],
-            "problog_facts": [fact.to_dict() for fact in self.problog_facts],
-            "subquestion_results": [result.to_dict() for result in self.subquestion_results]
+            "problog_facts": [fact.to_dict() for fact in self.problog_facts]
         }
 
     def to_json(self, indent: int = 2) -> str:
