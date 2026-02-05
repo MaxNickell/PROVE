@@ -166,19 +166,55 @@ IMAGES:
 - Image A, image_id: image_a (the question may refer to Image A as the left or the first image)
 - Image B, image_id: image_b (the question may refer to Image B as the right or the second image)
 
+GOAL:
+Collect all evidence required to answer the question. When done, the collected evidence alone should be sufficient to determine if the statement is true or false.
+
+EVIDENCE CHAINS:
+Questions often contain multiple connected claims. You must verify ALL parts of the chain.
+
+Common patterns:
+
+1. Count + Relationship: "At least one dog is sitting on the couch"
+   → Verify the count of dogs AND verify the sitting_on relationship between dog and couch
+
+2. Count + Attribute: "There are two red cars"
+   → Verify the count of cars AND verify the color attribute for each car
+
+3. Attribute + Relationship: "The large cat is next to the bowl"
+   → Verify the size attribute for the cat AND verify the next_to relationship between cat and bowl
+
+4. Multiple Attributes: "The car is red and shiny"
+   → Verify the color attribute AND verify the appearance attribute
+
+5. Count Comparison + Attribute: "There are more striped shirts in image A than B"
+   → Verify the count comparison between images AND verify the striped attribute for each of the shirts
+
+6. Relationship Chain: "The bird is on the branch which is above the water"
+   → Verify the on relationship between bird and branch AND verify the above relationship between branch and water
+
+Verifying only PART of a chain is INCOMPLETE - you must verify ALL parts.
+
 ACTIONS (output ONE as JSON):
 
-1. perceive - Ask open-ended question about an entity to gather information
-   Required fields: thought, action, image_id, entity_id, question
-   Example: {"thought": "I need to know the dog's color", "action": "perceive", "image_id": "image_a", "entity_id": "dog_a_0", "question": "What color is this dog?"}
+1. perceive - Ask open-ended question to gather information
+   Required fields: thought, action, image_id, question
+
+   Entity-level (also requires: entity_id):
+   - {"thought": "I need to know the dog's color", "action": "perceive", "image_id": "image_a", "entity_id": "dog_a_0", "question": "What color is this dog?"}
+
+   Image-level (no entity_id needed):
+   - {"thought": "I need to understand the scene", "action": "perceive", "image_id": "image_a", "question": "What is happening in this image?"}
 
 2. verify_attribute - Check if entity has specific attribute. Returns probability (0.0-1.0).
    Required fields: thought, action, image_id, entity_id, attribute, value
    Example: {"thought": "Verifying the dog is orange", "action": "verify_attribute", "image_id": "image_a", "entity_id": "dog_a_0", "attribute": "color", "value": "orange"}
 
-3. verify_relationship - Check spatial relationship between two entities in SAME image. Returns probability (0.0-1.0).
+3. verify_relationship - Check relationship between two entities in SAME image. Returns probability (0.0-1.0).
+   Supports both spatial relations (on, next_to, left_of, behind, above, etc.) and interactions (wearing, holding, eating, looking_at, sitting_on, etc.).
    Required fields: thought, action, image_id, subject_id, object_id, relation
-   Example: {"thought": "Checking if bird is on buffalo", "action": "verify_relationship", "image_id": "image_a", "subject_id": "bird_a_0", "object_id": "buffalo_a_1", "relation": "on_top_of"}
+   Examples:
+   - Spatial: {"thought": "Checking if bird is on buffalo", "action": "verify_relationship", "image_id": "image_a", "subject_id": "bird_a_0", "object_id": "buffalo_a_1", "relation": "on_top_of"}
+   - Interaction: {"thought": "Checking if man is wearing coat", "action": "verify_relationship", "image_id": "image_a", "subject_id": "man_a_0", "object_id": "coat_a_1", "relation": "wearing"}
 
 4. verify_count - Verify count-related queries. Returns probability (0.0-1.0).
    Required fields: thought, action, query_type, object_class
@@ -198,14 +234,16 @@ ACTIONS (output ONE as JSON):
    - "total_at_least": P(total >= N) - {"thought": "...", "action": "verify_count", "query_type": "total_at_least", "object_class": "dog", "image_id_a": "image_a", "image_id_b": "image_b", "value": 5}
    - "total_at_most": P(total <= N) - {"thought": "...", "action": "verify_count", "query_type": "total_at_most", "object_class": "dog", "image_id_a": "image_a", "image_id_b": "image_b", "value": 5}
 
-5. done - Stop when sufficient evidence collected
+5. done - Stop ONLY when ALL evidence has been collected
    Required fields: thought, action
-   Example: {"thought": "I have collected evidence for all relevant entities", "action": "done"}
+   Example: {"thought": "I have verified ALL attributes, relationships, and counts mentioned in the question", "action": "done"}
 
 PERCEPTION SEMANTICS:
 - Perceive gathers contextual information to help you decide what to verify
 - Perceive does NOT collect probabilistic evidence - it only provides textual context
-- Use perceive to investigate an image and not to gather evidence
+- Image-level perceive: Use to understand the overall scene, context, or relationships in the whole image
+- Entity-level perceive: Use to gather specific information about a particular object
+- Use perceive to investigate, then verify to collect probabilistic evidence
 
 VERIFICATION SEMANTICS:
 - Verification returns a probability score (0.0-1.0) representing the model's confidence
@@ -215,14 +253,16 @@ VERIFICATION SEMANTICS:
 - Do NOT re-verify the same attribute or relationship - once you have the probability, that IS the evidence
 
 RULES:
-- You MUST verify every attribute, relationship, and count mentioned in the question
+- COMPLETENESS IS REQUIRED: Verify ALL attributes, relationships, and counts in the question
+- Do NOT stop early - even if partial evidence seems sufficient to answer, you must verify everything
+- If the question mentions multiple entities/attributes, verify EACH ONE
 - Perceive alone is NOT sufficient - you must verify to collect evidence
-- Use perceive to investigate, then verify to collect probabilistic evidence
-- Stop (done) only after verifying all relevant attributes, relationships, and counts
+- Stop (done) ONLY after verifying every claim in the question
 - Do NOT repeat actions - check ACTION HISTORY before each action
 - Output valid JSON only
 - entity_id must match exactly from the DETECTED OBJECTS list
-- image_id must be "image_a" or "image_b" """
+- image_id must be "image_a" or "image_b"
+- For verify_count, object_class MUST be one of the exact names from OBJECT CLASSES FOR COUNTING """
 
         # Format candidates grouped by image
         candidates_text = self._format_candidates(candidates)
@@ -230,10 +270,17 @@ RULES:
         # Format action history
         action_history_text = self._format_action_history(evidence)
 
+        # Get unique object classes for count verification
+        object_classes = sorted(set(c.object_class for c in candidates))
+        object_classes_text = ", ".join(object_classes) if object_classes else "None"
+
         user_prompt = f"""QUESTION: "{question}"
 
 DETECTED OBJECTS:
 {candidates_text}
+
+OBJECT CLASSES FOR COUNTING:
+{object_classes_text}
 
 ACTION HISTORY:
 {action_history_text}
@@ -248,7 +295,7 @@ What is your next action? Output JSON only:"""
         ]
 
         try:
-            action = llm_client.parse_agent_action(messages, temperature=0.2)
+            action = llm_client.parse_agent_action(messages, temperature=0)
             return action
 
         except Exception as e:
@@ -287,42 +334,53 @@ What is your next action? Output JSON only:"""
         image_paths: Dict[str, str],
         evidence: EvidenceCollection
     ):
-        """Ask VLM an open-ended question about an entity."""
-        action_str = f'perceive(image_id={action.image_id}, entity_id={action.entity_id}, question="{action.question}")'
+        """Ask VLM an open-ended question about an entity or the whole image."""
 
-        # Find the entity
-        entity = self._find_entity(action.entity_id, candidates)
-        if not entity:
-            evidence.add_action(action.thought, action_str, f"Failed: entity {action.entity_id} not found")
-            return
+        # Build action string for logging
+        if action.entity_id:
+            action_str = f'perceive(image_id={action.image_id}, entity_id={action.entity_id}, question="{action.question}")'
+        else:
+            action_str = f'perceive(image_id={action.image_id}, question="{action.question}")'
 
-        # Validate image_id matches entity
-        if entity.image_id != action.image_id:
-            evidence.add_action(action.thought, action_str, f"Failed: entity is in {entity.image_id}, not {action.image_id}")
-            return
-
-        # Get cropped image
+        # Get image path
         image_path = image_paths.get(action.image_id)
         if not image_path:
-            evidence.add_action(action.thought, action_str, f"Failed: image path not found")
+            evidence.add_action(action.thought, action_str, "Failed: image path not found")
             return
 
         try:
             image = Image.open(image_path)
-            x1, y1, x2, y2 = [int(c) for c in entity.bbox]
-            cropped = image.crop((x1, y1, x2, y2))
+
+            if action.entity_id:
+                # Entity-level perceive: crop to entity
+                entity = self._find_entity(action.entity_id, candidates)
+                if not entity:
+                    evidence.add_action(action.thought, action_str, f"Failed: entity {action.entity_id} not found")
+                    return
+
+                if entity.image_id != action.image_id:
+                    evidence.add_action(action.thought, action_str, f"Failed: entity is in {entity.image_id}, not {action.image_id}")
+                    return
+
+                x1, y1, x2, y2 = [int(c) for c in entity.bbox]
+                image = image.crop((x1, y1, x2, y2))
+                log_target = action.entity_id
+            else:
+                # Image-level perceive: use whole image
+                log_target = action.image_id
 
             # Ask VLM
-            qwen = self.model_manager.get_qwen_vl()
-            answer = qwen.run_inference(cropped, action.question).strip()
+            qwen_vl = self.model_manager.get_qwen_vl()
+            answer = qwen_vl.run_inference(image, action.question).strip()
 
             # Record action with result
             evidence.add_action(action.thought, action_str, f'"{answer}"')
-            print(f"  [Perceive] {action.entity_id}: {action.question}")
+            print(f"  [Perceive] {log_target}: {action.question}")
             print(f"    → {answer}")
 
         except Exception as e:
             evidence.add_action(action.thought, action_str, f"Failed: {e}")
+            print(f"  [Perceive] {log_target} → Failed: {e}")
 
     def _execute_verify_attribute(
         self,
@@ -371,6 +429,7 @@ What is your next action? Output JSON only:"""
 
         except Exception as e:
             evidence.add_action(action.thought, action_str, f"Failed: {e}")
+            print(f"  [Verify Attribute] {action.entity_id} → Failed: {e}")
 
     def _execute_verify_relationship(
         self,
@@ -426,6 +485,7 @@ What is your next action? Output JSON only:"""
 
         except Exception as e:
             evidence.add_action(action.thought, action_str, f"Failed: {e}")
+            print(f"  [Verify Relationship] {action.subject_id} {action.relation} {action.object_id} → Failed: {e}")
 
     def _execute_verify_count(
         self,
