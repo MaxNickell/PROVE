@@ -29,20 +29,27 @@ class EntityExtractionResponse(BaseModel):
 # ==============================================================================
 
 class PerceiveAction(BaseModel):
-    """Ask VLM an open-ended question about an entity to gather information."""
+    """Ask VLM an open-ended question about an entity or the whole image."""
 
     thought: str = Field(..., description="Reasoning for this action")
     action: Literal["perceive"] = Field("perceive", description="Action type")
-    image_id: str = Field(..., description="Image containing the entity (e.g., 'image_a')")
-    entity_id: str = Field(..., description="Entity to ask about (e.g., 'dog_a_0')")
+    image_id: str = Field(..., description="Image to ask about (e.g., 'image_a')")
+    entity_id: str | None = Field(None, description="Entity to ask about (e.g., 'dog_a_0'), or None for whole image")
     question: str = Field(..., description="Open-ended question (e.g., 'What color is this dog?')")
 
-    @field_validator('thought', 'image_id', 'entity_id', 'question')
+    @field_validator('thought', 'image_id', 'question')
     @classmethod
     def validate_non_empty(cls, v):
         if not v or not v.strip():
             raise ValueError("Field cannot be empty")
         return v.strip()
+
+    @field_validator('entity_id')
+    @classmethod
+    def validate_entity_id(cls, v):
+        if v is not None and not v.strip():
+            raise ValueError("entity_id cannot be empty string, use None for whole image")
+        return v.strip() if v else None
 
     @field_validator('image_id')
     @classmethod
@@ -78,14 +85,14 @@ class VerifyAttributeAction(BaseModel):
 
 
 class VerifyRelationshipAction(BaseModel):
-    """Verify spatial relationship between two entities in the same image."""
+    """Verify relationship between two entities in the same image (spatial or interaction)."""
 
     thought: str = Field(..., description="Reasoning for this action")
     action: Literal["verify_relationship"] = Field("verify_relationship", description="Action type")
     image_id: str = Field(..., description="Image containing both entities (e.g., 'image_a')")
     subject_id: str = Field(..., description="Subject entity (e.g., 'bird_a_0')")
     object_id: str = Field(..., description="Object entity (e.g., 'buffalo_a_1')")
-    relation: str = Field(..., description="Relationship to verify (e.g., 'on_top_of', 'next_to')")
+    relation: str = Field(..., description="Relationship to verify (e.g., 'on_top_of', 'next_to', 'sitting_on', 'wearing', 'holding')")
 
     @field_validator('thought', 'image_id', 'subject_id', 'object_id', 'relation')
     @classmethod

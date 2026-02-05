@@ -20,17 +20,26 @@
 
 
 ### UNIFIED AGENT
-- Perception is currently tied to a single object so it will always crop to that object
-- Make sure counts are only on object classes
-- Spatial Relationship Calibration?
+- Make sure counts are only on object classes and not non existent object classes or objects and attributes (X)
+- I believe relationships are restricted to spatial only right now (X)
+- Make sure it grabs every attribute, every relationship necessary to be sure (X)
+- Are string relationships or string attributes fine? ()
+- Percieve needs to be used when deciding which facts it should verify and to collect image context (X)
+- Sometimes reverifying facts -> could possibly have a list of verified actions
+- Sometimes only focusing on one image
+- Remove all temperature values
+
 
 ### ATTR/REL VERIFICATION CALIBRATION
 - Calibration is working very well with BLIP ITM
 - Question format is not good and forming illogical grammar for BLIP ITM
 
 # PROBLOG GENERATION
-- Need to get a final probability
-    - Cannot force subquestions to be true (Ultimate question: is there at least 1 dog?)
 - LLM Problog generation is fragile
     - Pass only the facts for that subquestion to the problog generator?
     - Maybe structured outputs?
+
+    - Do we really need the sugar rules?
+    - Only use the listed facts and do not try to use facts that dont exist. If a fact is missing than just omit it
+    - Most form the correct logical sequence
+
