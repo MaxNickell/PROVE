@@ -66,8 +66,8 @@ class ProbLogExecutor:
         det_facts = ProbLogFactBuilder.threshold_facts(prob_facts, threshold)
 
         # Execute both
-        prob_prob = self._execute_program(prob_facts, rules, query)
-        det_prob = self._execute_program(det_facts, rules, query)
+        prob_prob = self._execute_program(prob_facts, rules, query, threshold)
+        det_prob = self._execute_program(det_facts, rules, query, threshold)
 
         print(f"  Probabilistic: {prob_prob:.4f}")
         print(f"  Deterministic: {det_prob:.4f}")
@@ -120,13 +120,13 @@ COUNT PREDICATES (use directly in rules):
 - count_total_at_least(image_id_a, image_id_b, class, N) - at least N total
 - count_total_at_most(image_id_a, image_id_b, class, N) - at most N total
 
-SUGAR RULES (available):
-- has_attribute(I,E,A) :- attribute(I,E,A).
-- is_category(I,E,C) :- entity(I,E,C).
-- has_relationship(I,A,B,R) :- relation(I,A,B,R).
-
 AVAILABLE FACTS:
 {facts_str}
+
+IMPORTANT RULES:
+- CLOSED WORLD: You may ONLY reference predicates that appear in the AVAILABLE FACTS above. Do NOT generate rules that use predicates not present in the facts.
+- SELECTIVE USAGE: You do NOT need to use all facts. Only use facts that are relevant to answering the question.
+- INCOMPLETE EVIDENCE: If the evidence is incomplete, write rules using only the facts that ARE available. Do not reference facts that do not exist.
 
 QUESTION: {question}
 
@@ -134,11 +134,20 @@ Generate ONLY:
 1. Rule definition(s) using :- syntax
 2. query(...) statement
 
+NOTE: Multi-word values in facts are quoted with single quotes (e.g., 'showing teeth'). You must use the same quoting in your rules.
+
 Example output:
 dog_is_orange(I) :-
-    is_category(I, E, dog),
-    has_attribute(I, E, orange).
+    entity(I, E, dog),
+    attribute(I, E, orange).
 query(dog_is_orange(image_a)).
+
+Example with quoted atoms:
+bird_on_branch(I) :-
+    entity(I, E1, bird),
+    entity(I, E2, branch),
+    relation(I, E1, E2, 'on top of').
+query(bird_on_branch(image_a)).
 
 Output rules and query only, no explanation:"""
 
@@ -148,7 +157,7 @@ Output rules and query only, no explanation:"""
         ]
 
         try:
-            response = llm.chat(messages, temperature=0.2)
+            response = llm.chat(messages, temperature=0.0)
             rules, query = self._parse_response(response)
 
             if not query.startswith("query("):
@@ -193,7 +202,8 @@ Output rules and query only, no explanation:"""
         self,
         facts: List[ProbLogFact],
         rules: str,
-        query: str
+        query: str,
+        threshold: float = 0.5
     ) -> float:
         """Execute ProbLog program and return query probability."""
         program = self._build_program_string(facts, rules, query)
@@ -213,7 +223,7 @@ Output rules and query only, no explanation:"""
 
         except Exception as e:
             print(f"  Warning: ProbLog execution failed: {e}")
-            return 0.5
+            return threshold
 
     def _build_program_string(
         self,
@@ -223,4 +233,4 @@ Output rules and query only, no explanation:"""
     ) -> str:
         """Build complete ProbLog program."""
         facts_str = ProbLogFactBuilder.facts_to_string(facts)
-        return f"{ProbLogFactBuilder.SUGAR_RULES}\n\n{facts_str}\n\n{rules}\n\n{query}"
+        return f"{facts_str}\n\n{rules}\n\n{query}"

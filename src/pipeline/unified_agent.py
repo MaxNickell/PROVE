@@ -48,8 +48,8 @@ class EvidenceCollection:
     """All evidence collected for a question."""
     question: str
 
-    # Attribute evidence: (entity_id, attribute_class, value, probability)
-    attributes: List[Tuple[str, str, str, float]] = field(default_factory=list)
+    # Attribute evidence: (entity_id, attribute, probability)
+    attributes: List[Tuple[str, str, float]] = field(default_factory=list)
 
     # Relationship evidence: (subject_id, object_id, relation, probability)
     relationships: List[Tuple[str, str, str, float]] = field(default_factory=list)
@@ -60,8 +60,8 @@ class EvidenceCollection:
     # Turn-by-turn action history: [{"thought": "...", "action": "...", "result": "..."}]
     action_history: List[Dict[str, str]] = field(default_factory=list)
 
-    def add_attribute(self, entity_id: str, attribute: str, value: str, probability: float):
-        self.attributes.append((entity_id, attribute, value, probability))
+    def add_attribute(self, entity_id: str, attribute: str, probability: float):
+        self.attributes.append((entity_id, attribute, probability))
 
     def add_relationship(self, subject_id: str, object_id: str, relation: str, probability: float):
         self.relationships.append((subject_id, object_id, relation, probability))
@@ -175,22 +175,22 @@ Questions often contain multiple connected claims. You must verify ALL parts of 
 Common patterns:
 
 1. Count + Relationship: "At least one dog is sitting on the couch"
-   → Verify the count of dogs AND verify the sitting_on relationship between dog and couch
+   → Verify the count of dogs AND verify the "sitting on" relationship between dog and couch
 
 2. Count + Attribute: "There are two red cars"
-   → Verify the count of cars AND verify the color attribute for each car
+   → Verify the count of cars AND verify the "red" attribute for each car
 
 3. Attribute + Relationship: "The large cat is next to the bowl"
-   → Verify the size attribute for the cat AND verify the next_to relationship between cat and bowl
+   → Verify the "large" attribute for the cat AND verify the "next to" relationship between cat and bowl
 
 4. Multiple Attributes: "The car is red and shiny"
-   → Verify the color attribute AND verify the appearance attribute
+   → Verify the "red" attribute AND verify the "shiny" attribute
 
 5. Count Comparison + Attribute: "There are more striped shirts in image A than B"
-   → Verify the count comparison between images AND verify the striped attribute for each of the shirts
+   → Verify the count comparison between images AND verify the "striped" attribute for each of the shirts
 
 6. Relationship Chain: "The bird is on the branch which is above the water"
-   → Verify the on relationship between bird and branch AND verify the above relationship between branch and water
+   → Verify the "on" relationship between bird and branch AND verify the "above" relationship between branch and water
 
 Verifying only PART of a chain is INCOMPLETE - you must verify ALL parts.
 
@@ -206,15 +206,21 @@ ACTIONS (output ONE as JSON):
    - {"thought": "I need to understand the scene", "action": "perceive", "image_id": "image_a", "question": "What is happening in this image?"}
 
 2. verify_attribute - Check if entity has specific attribute. Returns probability (0.0-1.0).
-   Required fields: thought, action, image_id, entity_id, attribute, value
-   Example: {"thought": "Verifying the dog is orange", "action": "verify_attribute", "image_id": "image_a", "entity_id": "dog_a_0", "attribute": "color", "value": "orange"}
+   Required fields: thought, action, image_id, entity_id, attribute, verification
+   - attribute: the attribute being verified (e.g., "orange", "wooden", "showing teeth")
+   - verification: natural language describing the attribute (e.g., "an orange dog", "a dog showing its teeth")
+   Examples:
+   - {"thought": "Verifying the dog is orange", "action": "verify_attribute", "image_id": "image_a", "entity_id": "dog_a_0", "attribute": "orange", "verification": "an orange dog"}
+   - {"thought": "Verifying the dog is showing teeth", "action": "verify_attribute", "image_id": "image_b", "entity_id": "dog_b_2", "attribute": "showing teeth", "verification": "a dog showing its teeth"}
 
 3. verify_relationship - Check relationship between two entities in SAME image. Returns probability (0.0-1.0).
-   Supports both spatial relations (on, next_to, left_of, behind, above, etc.) and interactions (wearing, holding, eating, looking_at, sitting_on, etc.).
-   Required fields: thought, action, image_id, subject_id, object_id, relation
+   Supports both spatial relations (e.g., on, next to, left of, behind, above, etc.) and interactions (e.g., wearing, holding, eating, looking at, sitting on, etc.).
+   Required fields: thought, action, image_id, subject_id, object_id, relation, verification
+   - relation: the relationship being verified (e.g., "on top of", "wearing")
+   - verification: natural language describing the relationship (e.g., "a bird on top of a buffalo", "a man wearing a coat")
    Examples:
-   - Spatial: {"thought": "Checking if bird is on buffalo", "action": "verify_relationship", "image_id": "image_a", "subject_id": "bird_a_0", "object_id": "buffalo_a_1", "relation": "on_top_of"}
-   - Interaction: {"thought": "Checking if man is wearing coat", "action": "verify_relationship", "image_id": "image_a", "subject_id": "man_a_0", "object_id": "coat_a_1", "relation": "wearing"}
+   - Spatial: {"thought": "Checking if bird is on buffalo", "action": "verify_relationship", "image_id": "image_a", "subject_id": "bird_a_0", "object_id": "buffalo_a_1", "relation": "on top of", "verification": "a bird on top of a buffalo"}
+   - Interaction: {"thought": "Checking if man is wearing coat", "action": "verify_relationship", "image_id": "image_a", "subject_id": "man_a_0", "object_id": "coat_a_1", "relation": "wearing", "verification": "a man wearing a coat"}
 
 4. verify_count - Verify count-related queries. Returns probability (0.0-1.0).
    Required fields: thought, action, query_type, object_class
@@ -390,7 +396,7 @@ What is your next action? Output JSON only:"""
         evidence: EvidenceCollection
     ):
         """Verify if an entity has a specific attribute using BLIP-ITM."""
-        action_str = f'verify_attribute(image_id={action.image_id}, entity_id={action.entity_id}, attribute={action.attribute}, value={action.value})'
+        action_str = f'verify_attribute(image_id={action.image_id}, entity_id={action.entity_id}, attribute={action.attribute}, verification="{action.verification}")'
 
         # Find the entity
         entity = self._find_entity(action.entity_id, candidates)
@@ -415,16 +421,16 @@ What is your next action? Output JSON only:"""
             probability = blip_verifier.verify_attribute(
                 image=image_path,
                 bbox=entity.bbox,
-                object_class=entity.object_class,
-                attr_value=action.value
+                verification=action.verification
             )
 
             # Store evidence for probability computation
-            evidence.add_attribute(action.entity_id, action.attribute, action.value, probability)
+            evidence.add_attribute(action.entity_id, action.attribute, probability)
 
             # Record action with result
             evidence.add_action(action.thought, action_str, f"p={probability:.3f}")
-            print(f"  [Verify Attribute] {action.entity_id}.{action.attribute}={action.value}")
+            print(f"  [Verify Attribute] {action.entity_id}.{action.attribute}")
+            print(f"    verification: \"{action.verification}\"")
             print(f"    → p={probability:.3f}")
 
         except Exception as e:
@@ -439,7 +445,7 @@ What is your next action? Output JSON only:"""
         evidence: EvidenceCollection
     ):
         """Verify if two entities have a relationship using BLIP-ITM."""
-        action_str = f'verify_relationship(image_id={action.image_id}, subject_id={action.subject_id}, object_id={action.object_id}, relation={action.relation})'
+        action_str = f'verify_relationship(image_id={action.image_id}, subject_id={action.subject_id}, object_id={action.object_id}, relation={action.relation}, verification="{action.verification}")'
 
         # Find both entities
         subject = self._find_entity(action.subject_id, candidates)
@@ -470,9 +476,7 @@ What is your next action? Output JSON only:"""
                 image=image_path,
                 bbox1=subject.bbox,
                 bbox2=obj.bbox,
-                obj1_class=subject.object_class,
-                obj2_class=obj.object_class,
-                relation=action.relation
+                verification=action.verification
             )
 
             # Store evidence for probability computation
@@ -481,6 +485,7 @@ What is your next action? Output JSON only:"""
             # Record action with result
             evidence.add_action(action.thought, action_str, f"p={probability:.3f}")
             print(f"  [Verify Relationship] {action.subject_id} {action.relation} {action.object_id}")
+            print(f"    verification: \"{action.verification}\"")
             print(f"    → p={probability:.3f}")
 
         except Exception as e:

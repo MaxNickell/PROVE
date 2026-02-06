@@ -57,11 +57,6 @@ class BLIPVerifier:
         except Exception as e:
             raise BLIPVerifierError(f"Failed to load BLIP-ITM model: {e}")
 
-    def _get_article(self, word: str) -> str:
-        """Return 'an' if word starts with vowel sound, else 'a'."""
-        vowels = ('a', 'e', 'i', 'o', 'u')
-        return "an" if word.lower().startswith(vowels) else "a"
-
     def _crop_with_padding(
         self,
         image: Image.Image,
@@ -123,8 +118,7 @@ class BLIPVerifier:
         self,
         image: Union[Image.Image, str],
         bbox: List[float],
-        object_class: str,
-        attr_value: str
+        verification: str
     ) -> float:
         """
         Verify if an entity has a specific attribute.
@@ -132,14 +126,13 @@ class BLIPVerifier:
         Args:
             image: PIL Image or path to image file
             bbox: Bounding box [x1, y1, x2, y2] of the entity
-            object_class: Class of the object (e.g., "cat", "car")
-            attr_value: Attribute value to verify (e.g., "orange", "metallic")
+            verification: Natural language statement to verify (e.g., "an orange cat")
 
         Returns:
             float: Probability that the entity has the attribute (0.0 to 1.0)
 
         Example:
-            >>> prob = verifier.verify_attribute(image, [100, 100, 200, 200], "cat", "orange")
+            >>> prob = verifier.verify_attribute(image, [100, 100, 200, 200], "an orange cat")
             >>> print(f"P(orange cat) = {prob:.3f}")
         """
         if not self.is_available():
@@ -152,20 +145,14 @@ class BLIPVerifier:
         # Crop to entity with padding
         cropped = self._crop_with_padding(image, bbox)
 
-        # Build prompt: "a {value} {object}" with proper article
-        article = self._get_article(attr_value)
-        prompt = f"{article} {attr_value} {object_class}"
-
-        return self._get_itm_score(cropped, prompt)
+        return self._get_itm_score(cropped, verification)
 
     def verify_relationship(
         self,
         image: Union[Image.Image, str],
         bbox1: List[float],
         bbox2: List[float],
-        obj1_class: str,
-        obj2_class: str,
-        relation: str
+        verification: str
     ) -> float:
         """
         Verify if two entities have a specific relationship.
@@ -174,9 +161,7 @@ class BLIPVerifier:
             image: PIL Image or path to image file
             bbox1: Bounding box [x1, y1, x2, y2] of the subject entity
             bbox2: Bounding box [x1, y1, x2, y2] of the object entity
-            obj1_class: Class of subject (e.g., "man", "bird")
-            obj2_class: Class of object (e.g., "buffalo", "tree")
-            relation: Relationship to verify (e.g., "riding", "on_top_of")
+            verification: Natural language statement to verify (e.g., "a man riding a buffalo")
 
         Returns:
             float: Probability that the relationship holds (0.0 to 1.0)
@@ -184,7 +169,7 @@ class BLIPVerifier:
         Example:
             >>> prob = verifier.verify_relationship(
             ...     image, [10, 20, 100, 150], [80, 100, 200, 250],
-            ...     "man", "buffalo", "riding"
+            ...     "a man riding a buffalo"
             ... )
             >>> print(f"P(man riding buffalo) = {prob:.3f}")
         """
@@ -205,15 +190,7 @@ class BLIPVerifier:
         # Crop to union with padding
         cropped = self._crop_with_padding(image, union_bbox)
 
-        # Build prompt: "a {obj1} {relation} a {obj2}"
-        # Replace underscores with spaces (e.g., "on_top_of" -> "on top of")
-        relation_text = relation.replace("_", " ")
-
-        article1 = self._get_article(obj1_class)
-        article2 = self._get_article(obj2_class)
-        prompt = f"{article1} {obj1_class} {relation_text} {article2} {obj2_class}"
-
-        return self._get_itm_score(cropped, prompt)
+        return self._get_itm_score(cropped, verification)
 
     def is_available(self) -> bool:
         """Check if model is loaded and ready."""
