@@ -31,11 +31,6 @@ class ProbLogFactBuilder:
     - count_total_at_most(image_id_a, image_id_b, class, N)
     """
 
-    SUGAR_RULES = """% Sugar rules for cleaner queries
-has_attribute(I,E,A) :- attribute(I,E,A).
-is_category(I,E,C) :- entity(I,E,C).
-has_relationship(I,A,B,R) :- relation(I,A,B,R)."""
-
     def build_facts(
         self,
         evidence: 'EvidenceCollection',
@@ -104,8 +99,8 @@ has_relationship(I,A,B,R) :- relation(I,A,B,R)."""
         """Extract all entity IDs referenced in evidence."""
         entities = set()
 
-        # From attributes: (entity_id, attr_class, value, prob)
-        for entity_id, _, _, _ in evidence.attributes:
+        # From attributes: (entity_id, attribute, prob)
+        for entity_id, _, _ in evidence.attributes:
             entities.add(entity_id)
 
         # From relationships: (subj_id, obj_id, relation, prob)
@@ -140,12 +135,12 @@ has_relationship(I,A,B,R) :- relation(I,A,B,R)."""
 
     def _build_attribute_facts(
         self,
-        attributes: List[Tuple[str, str, str, float]]
+        attributes: List[Tuple[str, str, float]]
     ) -> List[ProbLogFact]:
         """Build attribute facts from evidence."""
         facts = []
 
-        for entity_id, _, value, prob in attributes:
+        for entity_id, attribute, prob in attributes:
             # Extract image_id from entity_id (e.g., "bird_a_3" -> "image_a")
             parts = entity_id.split('_')
             if len(parts) >= 2:
@@ -153,7 +148,7 @@ has_relationship(I,A,B,R) :- relation(I,A,B,R)."""
                 facts.append(ProbLogFact(
                     probability=prob,
                     predicate="attribute",
-                    arguments=[image_id, entity_id, value]
+                    arguments=[image_id, entity_id, attribute]
                 ))
 
         return facts

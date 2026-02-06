@@ -49,7 +49,7 @@ class LLMClient:
         """
         try:
             # Extract parameters with defaults
-            temperature = kwargs.get("temperature", 0.7)
+            temperature = kwargs.get("temperature", 0.0)
             max_tokens = kwargs.get("max_tokens", kwargs.get("max_new_tokens", 2048))
 
             # Separate system messages from conversation messages

@@ -60,16 +60,16 @@ class PerceiveAction(BaseModel):
 
 
 class VerifyAttributeAction(BaseModel):
-    """Verify if an entity has a specific attribute value (binary Yes/No)."""
+    """Verify if an entity has a specific attribute (binary Yes/No)."""
 
     thought: str = Field(..., description="Reasoning for this action")
     action: Literal["verify_attribute"] = Field("verify_attribute", description="Action type")
     image_id: str = Field(..., description="Image containing the entity (e.g., 'image_a')")
     entity_id: str = Field(..., description="Entity to verify (e.g., 'dog_a_0')")
-    attribute: str = Field(..., description="Attribute class (e.g., 'color', 'material')")
-    value: str = Field(..., description="Value to verify (e.g., 'orange', 'wooden')")
+    attribute: str = Field(..., description="Attribute to verify (e.g., 'orange', 'wooden', 'showing teeth')")
+    verification: str = Field(..., description="Natural language statement to verify (e.g., 'an orange dog', 'a dog showing its teeth')")
 
-    @field_validator('thought', 'image_id', 'entity_id', 'attribute', 'value')
+    @field_validator('thought', 'image_id', 'entity_id', 'attribute', 'verification')
     @classmethod
     def validate_non_empty(cls, v):
         if not v or not v.strip():
@@ -92,9 +92,10 @@ class VerifyRelationshipAction(BaseModel):
     image_id: str = Field(..., description="Image containing both entities (e.g., 'image_a')")
     subject_id: str = Field(..., description="Subject entity (e.g., 'bird_a_0')")
     object_id: str = Field(..., description="Object entity (e.g., 'buffalo_a_1')")
-    relation: str = Field(..., description="Relationship to verify (e.g., 'on_top_of', 'next_to', 'sitting_on', 'wearing', 'holding')")
+    relation: str = Field(..., description="Relationship to verify (e.g., 'on top of', 'next to', 'sitting on', 'wearing', 'holding')")
+    verification: str = Field(..., description="Natural language statement to verify (e.g., 'a bird on top of a buffalo', 'a man wearing a coat')")
 
-    @field_validator('thought', 'image_id', 'subject_id', 'object_id', 'relation')
+    @field_validator('thought', 'image_id', 'subject_id', 'object_id', 'relation', 'verification')
     @classmethod
     def validate_non_empty(cls, v):
         if not v or not v.strip():

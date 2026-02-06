@@ -57,6 +57,7 @@ class Florence2:
                 input_ids=input_ids,
                 pixel_values=pixel_values,
                 max_new_tokens=1024,
+                do_sample=False,
                 num_beams=3,
                 return_dict_in_generate=True,
                 output_scores=True,
@@ -213,6 +214,7 @@ class Florence2:
                 input_ids=input_ids,
                 pixel_values=pixel_values,
                 max_new_tokens=1024,
+                do_sample=False,
                 num_beams=3,
             )
 
