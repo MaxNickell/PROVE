@@ -14,3 +14,10 @@
 
 ### ACTUAL PROBLEMS
 - Qwen issue generating bullshit
+
+
+# Calibration
+1. Investigate why failed
+    - poor problog generation
+2. Investigate why so many at 0
+    - Most 0 probabilities are from the lack of object detections
