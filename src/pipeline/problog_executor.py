@@ -127,27 +127,59 @@ IMPORTANT RULES:
 - CLOSED WORLD: You may ONLY reference predicates that appear in the AVAILABLE FACTS above. Do NOT generate rules that use predicates not present in the facts.
 - SELECTIVE USAGE: You do NOT need to use all facts. Only use facts that are relevant to answering the question.
 - INCOMPLETE EVIDENCE: If the evidence is incomplete, write rules using only the facts that ARE available. Do not reference facts that do not exist.
+- ANSWER PATTERN: Always define an `answer` rule and end with `query(answer).`. Write helper rule(s) with variable I for per-image logic, then combine them in `answer :- ...`. Never generate more than one query statement.
+- LOGICAL CONNECTIVES: Choose connectives based on the question's logical meaning:
+  - `,` (AND/conjunction): ALL conditions must hold. Use when the question requires EVERY image to satisfy the condition (e.g., "all images show X", "both images have X", "each image contains X").
+  - `;` (OR/disjunction): AT LEAST ONE condition must hold. Use when the question requires ANY image to satisfy the condition (e.g., "at least one X is Y", "there is an X that is Y", "either image shows X").
+  - Parenthesized mix: Use `(cond_a ; cond_b)` within a larger conjunction when part of the question is universal and part is existential (e.g., "same count AND at least one does X").
+  Analyze what the question actually requires — do not default to AND or OR without reasoning about the meaning.
+
+NOTE: Values containing spaces, hyphens, or special characters are single-quoted in facts (e.g., 'medium-blue', 'on top of'). You must use the same single-quoted form when referencing these values in your rules. Simple atoms like car, image_a are NOT quoted.
 
 QUESTION: {question}
 
 Generate ONLY:
-1. Rule definition(s) using :- syntax
-2. query(...) statement
+1. Helper rule(s) using :- syntax
+2. An answer rule combining the helper rule(s)
+3. query(answer).
 
-NOTE: Multi-word values in facts are quoted with single quotes (e.g., 'showing teeth'). You must use the same quoting in your rules.
+EXAMPLE PATTERNS:
 
-Example output:
-dog_is_orange(I) :-
-    entity(I, E, dog),
-    attribute(I, E, orange).
-query(dog_is_orange(image_a)).
+Single image:
+is_tall_building(I) :-
+    entity(I, E, building),
+    attribute(I, E, tall).
+answer :- is_tall_building(image_a).
+query(answer).
 
-Example with quoted atoms:
-bird_on_branch(I) :-
-    entity(I, E1, bird),
-    entity(I, E2, branch),
+Both images must satisfy condition → AND (,):
+% "Both images show a red car" → every image must have one → conjunction
+has_red_car(I) :-
+    entity(I, E, car),
+    attribute(I, E, red).
+answer :- has_red_car(image_a), has_red_car(image_b).
+query(answer).
+
+At least one image satisfies condition → OR (;):
+% "There is a cat on a table" → any image can satisfy it → disjunction
+cat_on_table(I) :-
+    entity(I, E1, cat),
+    entity(I, E2, table),
     relation(I, E1, E2, 'on top of').
-query(bird_on_branch(image_a)).
+answer :- cat_on_table(image_a) ; cat_on_table(image_b).
+query(answer).
+
+Universal + existential mix → AND with parenthesized OR:
+% "Same number of dogs and at least one is sitting on a couch"
+% → count must match in both (AND) + at least one image has the relation (OR)
+dog_sitting(I) :-
+    entity(I, E1, dog),
+    entity(I, E2, couch),
+    relation(I, E1, E2, on).
+answer :-
+    count_equal(image_a, image_b, dog),
+    (dog_sitting(image_a) ; dog_sitting(image_b)).
+query(answer).
 
 Output rules and query only, no explanation:"""
 
@@ -212,9 +244,9 @@ Output rules and query only, no explanation:"""
             result = get_evaluatable().create_from(PrologString(program)).evaluate()
 
             # Extract query result
-            query_match = re.search(r'query\(([^)]+\([^)]*\))\)', query)
+            query_match = re.search(r'query\((.+?)\)', query)
             if query_match:
-                query_term = query_match.group(1)
+                query_term = query_match.group(1).strip().rstrip('.')
                 for key in result.keys():
                     if str(key) == query_term or query_term in str(key):
                         return float(result[key])

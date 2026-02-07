@@ -138,7 +138,7 @@ class UnifiedAgent:
             image_letter = image_id.replace("image_", "")
 
             for obj in image_data.objects:
-                entity_id = f"{obj.label}_{image_letter}_{obj.object_id}"
+                entity_id = f"{obj.label.replace(' ', '_')}_{image_letter}_{obj.object_id}"
                 candidates.append(EntityCandidate(
                     entity_id=entity_id,
                     image_id=image_id,

@@ -94,19 +94,25 @@ class ProbLogFact:
     
     def to_prolog_string(self) -> str:
         """Convert to ProbLog fact string with proper quoting."""
-        # Quote arguments that need it (contain spaces, special chars, start with uppercase)
-        def quote_if_needed(arg: str) -> str:
+        def quote_arg(arg: str) -> str:
+            """Quote ProbLog arguments that aren't valid bare atoms or numbers."""
             # Already quoted
             if arg.startswith("'") and arg.endswith("'"):
                 return arg
-            # Needs quoting if: contains space, starts with uppercase, or has special chars
-            if ' ' in arg or (arg and arg[0].isupper()) or not arg.replace('_', '').replace('-', '').isalnum():
-                # Escape single quotes inside the string
-                escaped = arg.replace("'", "\\'")
-                return f"'{escaped}'"
-            return arg
+            # Don't quote numeric values (integers and floats)
+            try:
+                float(arg)
+                return arg
+            except ValueError:
+                pass
+            # Don't quote valid bare Prolog atoms (lowercase start, only alnum + underscore)
+            if arg and arg[0].islower() and arg.replace('_', '').isalnum():
+                return arg
+            # Quote everything else (hyphens, spaces, dots, uppercase start, etc.)
+            escaped = arg.replace("'", "\\'")
+            return f"'{escaped}'"
 
-        args_str = ", ".join(quote_if_needed(arg) for arg in self.arguments)
+        args_str = ", ".join(quote_arg(arg) for arg in self.arguments)
         return f"{self.probability}::{self.predicate}({args_str})."
     
     def to_dict(self) -> Dict[str, Any]:
