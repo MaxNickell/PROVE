@@ -124,7 +124,7 @@ AVAILABLE FACTS:
 {facts_str}
 
 IMPORTANT RULES:
-- CLOSED WORLD: You may ONLY reference predicates that appear in the AVAILABLE FACTS above. Do NOT generate rules that use predicates not present in the facts.
+- CLOSED WORLD: You may ONLY reference predicates that appear EXACTLY in the AVAILABLE FACTS above. Do NOT generate rules that use predicates not present in the facts.
 - SELECTIVE USAGE: You do NOT need to use all facts. Only use facts that are relevant to answering the question.
 - INCOMPLETE EVIDENCE: If the evidence is incomplete, write rules using only the facts that ARE available. Do not reference facts that do not exist.
 - ANSWER PATTERN: Always define an `answer` rule and end with `query(answer).`. Write helper rule(s) with variable I for per-image logic, then combine them in `answer :- ...`. Never generate more than one query statement.
