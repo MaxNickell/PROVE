@@ -34,9 +34,9 @@ class PROVE:
         """Initialize PROVE model.
 
         Args:
-            threshold: Threshold for deterministic mode mapping (default 0.5)
-                - p < threshold → 0.0 (false)
-                - p >= threshold → 1.0 (true)
+            threshold: Threshold for final answer mapping (default 0.5)
+                - probability >= threshold → "True"
+                - probability < threshold → "False"
         """
         self.threshold = threshold
         # Components initialized lazily on first use
