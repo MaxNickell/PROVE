@@ -123,7 +123,7 @@ class ProbLogFactBuilder:
         for image_id, image_data in images.items():
             letter = image_id.replace("image_", "")
             for obj in image_data.objects:
-                entity_id = f"{obj.label}_{letter}_{obj.object_id}"
+                entity_id = f"{obj.label.replace(' ', '_')}_{letter}_{obj.object_id}"
                 if entity_id in entity_ids:
                     facts.append(ProbLogFact(
                         probability=obj.confidence,
