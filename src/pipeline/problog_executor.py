@@ -42,8 +42,8 @@ class ProbLogExecutor:
         Args:
             question: The question to answer
             evidence: Evidence collection for the question
+            threshold: Threshold for final answer (prob >= threshold → "True")
             images: ImageData for entity metadata
-            threshold: Threshold for deterministic mode
 
         Returns:
             (probabilistic_result, deterministic_result)
@@ -62,8 +62,8 @@ class ProbLogExecutor:
         # Generate rules + query (once, reuse for both modes)
         rules, query = self._generate_query(question, prob_facts, llm)
 
-        # Build deterministic facts
-        det_facts = ProbLogFactBuilder.threshold_facts(prob_facts, threshold)
+        # Build deterministic facts (always threshold at 0.5)
+        det_facts = ProbLogFactBuilder.threshold_facts(prob_facts, 0.5)
 
         # Execute both
         prob_prob = self._execute_program(prob_facts, rules, query, threshold)
@@ -72,9 +72,9 @@ class ProbLogExecutor:
         print(f"  Probabilistic: {prob_prob:.4f}")
         print(f"  Deterministic: {det_prob:.4f}")
 
-        # Convert probability to answer
-        prob_answer = "True" if prob_prob >= 0.5 else "False"
-        det_answer = "True" if det_prob >= 0.5 else "False"
+        # Convert probability to answer using configurable threshold
+        prob_answer = "True" if prob_prob >= threshold else "False"
+        det_answer = "True" if det_prob >= threshold else "False"
 
         print(f"  Probabilistic answer: {prob_answer}")
         print(f"  Deterministic answer: {det_answer}")
