@@ -1,6 +1,7 @@
 from __future__ import annotations
 import os
 import json
+import time
 from typing import Any, List, Dict, Type, TypeVar
 from dotenv import load_dotenv
 import boto3
@@ -113,8 +114,27 @@ class LLMClient:
                 # Extended thinking requires temperature=1 for Claude
                 converse_params["inferenceConfig"]["temperature"] = 1.0
 
-            # Call AWS Bedrock Converse API
-            response = self.client.converse(**converse_params)
+            # Call AWS Bedrock Converse API with retry on transient errors
+            _TRANSIENT_KEYWORDS = (
+                'ThrottlingException', 'Too many requests', 'timeout',
+                'ServiceUnavailable', 'ServiceException', 'ConnectionError',
+                'EndpointConnectionError', 'ReadTimeoutError',
+            )
+            max_api_retries = 5
+            for attempt in range(max_api_retries):
+                try:
+                    response = self.client.converse(**converse_params)
+                    break  # success
+                except Exception as api_err:
+                    err_str = str(api_err)
+                    is_transient = any(kw in err_str for kw in _TRANSIENT_KEYWORDS)
+                    if is_transient and attempt < max_api_retries - 1:
+                        wait = 2 ** attempt  # 1, 2, 4, 8s
+                        print(f"  Warning: Bedrock API transient error (attempt {attempt+1}/{max_api_retries}), "
+                              f"retrying in {wait}s: {err_str[:120]}")
+                        time.sleep(wait)
+                        continue
+                    raise  # non-transient or final attempt
 
             # Extract the generated text (skip thinking blocks for Claude)
             content_blocks = response['output']['message']['content']
