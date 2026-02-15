@@ -120,8 +120,24 @@ Output:"""
             }
         ]
 
-        response = llm_client.extract_entities(messages, temperature=0)
-        return response.entities  # Already lowercase and deduplicated by Pydantic
+        # Retry on any failure — API errors (throttling/timeouts) are retried
+        # in LLMClient.chat(), but JSON/validation failures from non-deterministic
+        # LLM output need an outer retry since chat_with_validation's 3 internal
+        # retries may all fail on unlucky runs
+        import time
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                # Build fresh messages each attempt (chat_with_validation mutates on retry)
+                msgs = [dict(m) for m in messages]
+                response = llm_client.extract_entities(msgs, temperature=0)
+                return response.entities
+            except RuntimeError as e:
+                print(f"  Warning: Entity extraction failed (attempt {attempt+1}/{max_retries}): {e}")
+                if attempt < max_retries - 1:
+                    time.sleep(2 ** attempt)
+                    continue
+                raise
 
     def _detect_entity(
         self,
