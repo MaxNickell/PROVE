@@ -1,6 +1,7 @@
 from __future__ import annotations
 import os
 import json
+import re
 import time
 from typing import Any, List, Dict, Type, TypeVar
 from dotenv import load_dotenv
@@ -176,7 +177,13 @@ class LLMClient:
                 json_str = self._extract_json(response)
 
                 # Parse and validate with Pydantic
-                parsed_json = json.loads(json_str)
+                try:
+                    parsed_json = json.loads(json_str)
+                except json.JSONDecodeError:
+                    # Fix common LLM JSON issues: single quotes, trailing commas
+                    fixed = json_str.replace("'", '"')
+                    fixed = re.sub(r',\s*([}\]])', r'\1', fixed)
+                    parsed_json = json.loads(fixed)
 
                 validated_output = output_model(**parsed_json)
 
@@ -186,11 +193,13 @@ class LLMClient:
                 if attempt == max_retries - 1:
                     raise RuntimeError(f"Failed to get valid JSON after {max_retries} attempts. Last error: {e}")
 
-                # Add JSON format instruction for retry (Llama 3.3 may need stronger hints)
+                # Add JSON format instruction for retry — use a concrete example
+                # instead of the raw schema (some models parrot the schema back)
                 if messages[-1]["role"] == "user":
                     messages[-1]["content"] += (
-                        "\n\nIMPORTANT: Respond with ONLY valid JSON, no other text. "
-                        "Required format: " + str(output_model.model_json_schema())
+                        '\n\nIMPORTANT: Respond with ONLY a valid JSON object, no other text. '
+                        'Do NOT output a schema definition. '
+                        'Example: {"entities": ["dog", "cat"]}'
                     )
 
         raise RuntimeError("Unexpected error in chat_with_validation")
