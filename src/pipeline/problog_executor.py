@@ -92,41 +92,78 @@ class ProbLogExecutor:
             )
         )
 
-    def _generate_query(
-        self,
-        question: str,
-        facts: List[ProbLogFact],
-        llm
-    ) -> Tuple[str, str]:
-        """LLM generates ProbLog rules and query for the question."""
+    @staticmethod
+    def _build_prompt(question: str, facts_str: str) -> str:
+        """Build the ProbLog generation prompt.
 
-        facts_str = ProbLogFactBuilder.facts_to_string(facts)
+        Dynamically detects which count predicates appear in the facts
+        and only advertises those, preventing the LLM from inventing
+        predicates that don't exist.
+        """
+        # Detect which count predicates actually appear in the facts
+        count_pred_descriptions = {
+            'count_at_least': 'count_at_least(image_id, class, N) - at least N objects in image',
+            'count_at_most': 'count_at_most(image_id, class, N) - at most N objects in image',
+            'count_exactly': 'count_exactly(image_id, class, N) - exactly N objects in image',
+            'count_more': 'count_more(image_id_a, image_id_b, class) - more in A than B',
+            'count_fewer': 'count_fewer(image_id_a, image_id_b, class) - fewer in A than B',
+            'count_equal': 'count_equal(image_id_a, image_id_b, class) - same count in both',
+            'count_total_exactly': 'count_total_exactly(image_id_a, image_id_b, class, N) - exactly N total',
+            'count_total_at_least': 'count_total_at_least(image_id_a, image_id_b, class, N) - at least N total',
+            'count_total_at_most': 'count_total_at_most(image_id_a, image_id_b, class, N) - at most N total',
+        }
+        available_counts = []
+        for pred, desc in count_pred_descriptions.items():
+            if pred + '(' in facts_str:
+                available_counts.append(f'- {desc}')
+
+        if available_counts:
+            count_section = "COUNT PREDICATES (available in the facts above):\n" + '\n'.join(available_counts) + "\n\n"
+        else:
+            count_section = ""
+
+        # Detect if facts are count-only (no entity/attribute/relation facts)
+        has_entity = 'entity(' in facts_str
+        has_attribute = 'attribute(' in facts_str
+        has_relation = 'relation(' in facts_str
+        count_only = available_counts and not has_entity and not has_attribute and not has_relation
+
+        if count_only:
+            predicate_section = """WARNING: The facts below contain ONLY count predicates. Do NOT use entity(), attribute(), or relation() — they are not available. Build your answer rule using ONLY the count predicates listed below."""
+        else:
+            # Only list predicates that actually appear in the facts
+            pred_lines = []
+            missing_preds = []
+            if has_entity:
+                pred_lines.append('- entity(image_id, entity_id, category)          — ALWAYS 3 arguments')
+            else:
+                missing_preds.append('entity')
+            if has_attribute:
+                pred_lines.append('- attribute(image_id, entity_id, value)           — ALWAYS 3 arguments (NOT 2)')
+            else:
+                missing_preds.append('attribute')
+            if has_relation:
+                pred_lines.append('- relation(image_id, subject_id, object_id, relation_type) — ALWAYS 4 arguments (NOT 3)')
+            else:
+                missing_preds.append('relation')
+
+            predicate_section = "PREDICATES (with EXACT arities — you MUST match these):\n" + '\n'.join(pred_lines)
+            if missing_preds:
+                predicate_section += f"\n\nWARNING: The following predicates are NOT available in the facts: {', '.join(missing_preds)}. Do NOT use them."
 
         prompt = f"""Generate ProbLog rules and query to answer this question.
 
-PREDICATES:
-- entity(image_id, entity_id, category)
-- attribute(image_id, entity_id, value)
-- relation(image_id, subject_id, object_id, relation_type)
+{predicate_section}
 
-COUNT PREDICATES (use directly in rules):
-- count_at_least(image_id, class, N) - at least N objects in image
-- count_at_most(image_id, class, N) - at most N objects in image
-- count_exactly(image_id, class, N) - exactly N objects in image
-- count_more(image_id_a, image_id_b, class) - more in A than B
-- count_fewer(image_id_a, image_id_b, class) - fewer in A than B
-- count_equal(image_id_a, image_id_b, class) - same count in both
-- count_total_exactly(image_id_a, image_id_b, class, N) - exactly N total
-- count_total_at_least(image_id_a, image_id_b, class, N) - at least N total
-- count_total_at_most(image_id_a, image_id_b, class, N) - at most N total
-
-AVAILABLE FACTS:
+{count_section}AVAILABLE FACTS:
 {facts_str}
 
 IMPORTANT RULES:
-- CLOSED WORLD: You may ONLY reference predicates that appear EXACTLY in the AVAILABLE FACTS above. Do NOT generate rules that use predicates not present in the facts.
-- SELECTIVE USAGE: You do NOT need to use all facts. Only use facts that are relevant to answering the question.
+- CLOSED WORLD: You may ONLY use predicates that appear in the AVAILABLE FACTS above. If a predicate (like count_exactly, count_more, etc.) does NOT appear in the facts, you MUST NOT use it. Using undefined predicates causes a fatal error.
+- ARITY MUST MATCH: entity always has 3 args (image_id, entity_id, category). attribute always has 3 args (image_id, entity_id, value). relation always has 4 args (image_id, subject_id, object_id, relation_type). The first argument is ALWAYS the image_id. Never omit it.
+- SELECTIVE USAGE: You do NOT need to use all facts. Only use facts relevant to answering the question.
 - INCOMPLETE EVIDENCE: If the evidence is incomplete, write rules using only the facts that ARE available. Do not reference facts that do not exist.
+- PURE LOGIC ONLY: Do NOT embed numeric literals, probability values, or arithmetic comparisons (like 0.8, <=, >=) in rule bodies. ProbLog rules must contain only predicate calls and logical connectives (, ; \\+). Probabilities are handled by the facts, not the rules.
 - ANSWER PATTERN: Always define an `answer` rule and end with `query(answer).`. Write helper rule(s) with variable I for per-image logic, then combine them in `answer :- ...`. Never generate more than one query statement.
 - LOGICAL CONNECTIVES: Choose connectives based on the question's logical meaning:
   - `,` (AND/conjunction): ALL conditions must hold. Use when the question requires EVERY image to satisfy the condition (e.g., "all images show X", "both images have X", "each image contains X").
@@ -153,7 +190,6 @@ answer :- is_tall_building(image_a).
 query(answer).
 
 Both images must satisfy condition → AND (,):
-% "Both images show a red car" → every image must have one → conjunction
 has_red_car(I) :-
     entity(I, E, car),
     attribute(I, E, red).
@@ -161,7 +197,6 @@ answer :- has_red_car(image_a), has_red_car(image_b).
 query(answer).
 
 At least one image satisfies condition → OR (;):
-% "There is a cat on a table" → any image can satisfy it → disjunction
 cat_on_table(I) :-
     entity(I, E1, cat),
     entity(I, E2, table),
@@ -169,19 +204,20 @@ cat_on_table(I) :-
 answer :- cat_on_table(image_a) ; cat_on_table(image_b).
 query(answer).
 
-Universal + existential mix → AND with parenthesized OR:
-% "Same number of dogs and at least one is sitting on a couch"
-% → count must match in both (AND) + at least one image has the relation (OR)
-dog_sitting(I) :-
-    entity(I, E1, dog),
-    entity(I, E2, couch),
-    relation(I, E1, E2, on).
-answer :-
-    count_equal(image_a, image_b, dog),
-    (dog_sitting(image_a) ; dog_sitting(image_b)).
-query(answer).
-
 Output rules and query only, no explanation:"""
+        return prompt
+
+    def _generate_query(
+        self,
+        question: str,
+        facts: List[ProbLogFact],
+        llm
+    ) -> Tuple[str, str]:
+        """LLM generates ProbLog rules and query for the question."""
+
+        facts_str = ProbLogFactBuilder.facts_to_string(facts)
+
+        prompt = self._build_prompt(question, facts_str)
 
         messages = [
             {"role": "system", "content": "Generate valid ProbLog syntax only. No markdown, no explanations."},

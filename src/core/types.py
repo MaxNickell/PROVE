@@ -96,6 +96,11 @@ class ProbLogFact:
         """Convert to ProbLog fact string with proper quoting."""
         def quote_arg(arg: str) -> str:
             """Quote ProbLog arguments that aren't valid bare atoms or numbers."""
+            # Handle None/non-string arguments defensively
+            if arg is None:
+                return "'none'"
+            if not isinstance(arg, str):
+                arg = str(arg)
             # Already quoted
             if arg.startswith("'") and arg.endswith("'"):
                 return arg

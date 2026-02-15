@@ -9,6 +9,8 @@ from typing import List, Dict, Tuple, Any, Optional, Union
 from dataclasses import dataclass, field
 from PIL import Image
 
+import os
+
 from src.core.model_manager import ModelManager
 from src.core.types import ImageData
 from src.language.output_models import (
@@ -85,9 +87,15 @@ class UnifiedAgent:
     needed to answer the question through an iterative Think → Act → Observe loop.
     """
 
+    # Minimum verify actions before "done" is accepted
+    MIN_VERIFY_ACTIONS = 1
+
     def __init__(self, max_iterations: int = 15):
         self.max_iterations = max_iterations
         self.model_manager = ModelManager()
+        # Detect Nova models for prompt adjustments
+        model_id = os.environ.get("LLAMA33_MODEL_ID", "")
+        self.is_nova = "nova" in model_id.lower()
 
     def collect_evidence(
         self,
@@ -122,6 +130,18 @@ class UnifiedAgent:
 
             # Check for done
             if isinstance(action, DoneAction):
+                n_verify = len(evidence.attributes) + len(evidence.relationships) + len(evidence.counts)
+                if n_verify < self.MIN_VERIFY_ACTIONS and iteration < self.max_iterations - 1:
+                    # Reject premature done — no probabilistic evidence collected
+                    evidence.add_action(
+                        action.thought, "done (REJECTED)",
+                        "REJECTED: You have NOT collected any probabilistic evidence yet. "
+                        "You MUST use verify_attribute, verify_relationship, or verify_count "
+                        "to collect evidence before stopping. Look at the question again and "
+                        "verify each claim. Do NOT say done until you have verified something."
+                    )
+                    print(f"  [Done REJECTED] iteration={iteration}, verify_actions={n_verify}")
+                    continue
                 evidence.add_action(action.thought, "done", "Agent stopped")
                 break
 
@@ -268,7 +288,19 @@ RULES:
 - Output valid JSON only
 - entity_id must match exactly from the DETECTED OBJECTS list
 - image_id must be "image_a" or "image_b"
-- For verify_count, object_class MUST be one of the exact names from OBJECT CLASSES FOR COUNTING """
+- For verify_count, object_class MUST be one of the exact names from OBJECT CLASSES FOR COUNTING"""
+
+        # Nova-specific prompt additions — Nova models tend to stop too early
+        if self.is_nova:
+            system_prompt += """
+
+CRITICAL ADDITIONAL RULES:
+- You MUST perform at least one verify_attribute, verify_relationship, or verify_count action BEFORE saying done
+- Do NOT say done after only perceive actions — perceive alone does NOT collect probabilistic evidence
+- If you are unsure what to verify, re-read the question carefully and identify ALL claims that need verification
+- If you tried to verify something and got a low probability, that IS valid evidence — do NOT stop because of low scores
+- You should typically perform 5-15 actions per question. If you have done fewer than 5, you are likely missing evidence
+- After each verify action, ask yourself: "Have I verified EVERY claim in the question?" If not, continue"""
 
         # Format candidates grouped by image
         candidates_text = self._format_candidates(candidates)
@@ -300,16 +332,25 @@ What is your next action? Output JSON only:"""
             {"role": "user", "content": user_prompt}
         ]
 
-        try:
-            action = llm_client.parse_agent_action(messages, temperature=0)
-            return action
+        # B fix: retry up to 3 times on LLM failure instead of giving up immediately
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                action = llm_client.parse_agent_action(messages, temperature=0)
+                return action
 
-        except Exception as e:
-            print(f"  Warning: LLM decision failed: {e}")
-            # Fallback to done if we've collected some evidence
-            if evidence.action_history:
-                return DoneAction(thought="Fallback: stopping due to error", action="done")
-            return None
+            except Exception as e:
+                print(f"  Warning: LLM decision failed (attempt {attempt+1}/{max_retries}): {e}")
+                if attempt < max_retries - 1:
+                    import time
+                    time.sleep(1)
+                    continue
+                # C1 fix: only fallback to done if we have actual verify evidence,
+                # not just perceive actions
+                n_verify = len(evidence.attributes) + len(evidence.relationships) + len(evidence.counts)
+                if n_verify > 0:
+                    return DoneAction(thought="Fallback: stopping due to error", action="done")
+                return None
 
     def _execute_action(
         self,
@@ -361,7 +402,8 @@ What is your next action? Output JSON only:"""
                 # Entity-level perceive: crop to entity
                 entity = self._find_entity(action.entity_id, candidates)
                 if not entity:
-                    evidence.add_action(action.thought, action_str, f"Failed: entity {action.entity_id} not found")
+                    hint = self._available_entities_hint(action.image_id, candidates)
+                    evidence.add_action(action.thought, action_str, f"Failed: entity {action.entity_id} not found. {hint}")
                     return
 
                 if entity.image_id != action.image_id:
@@ -401,7 +443,8 @@ What is your next action? Output JSON only:"""
         # Find the entity
         entity = self._find_entity(action.entity_id, candidates)
         if not entity:
-            evidence.add_action(action.thought, action_str, f"Failed: entity {action.entity_id} not found")
+            hint = self._available_entities_hint(action.image_id, candidates)
+            evidence.add_action(action.thought, action_str, f"Failed: entity {action.entity_id} not found. {hint}")
             return
 
         # Validate image_id matches entity
@@ -452,7 +495,13 @@ What is your next action? Output JSON only:"""
         obj = self._find_entity(action.object_id, candidates)
 
         if not subject or not obj:
-            evidence.add_action(action.thought, action_str, "Failed: entity not found")
+            missing = []
+            if not subject:
+                missing.append(action.subject_id)
+            if not obj:
+                missing.append(action.object_id)
+            hint = self._available_entities_hint(action.image_id, candidates)
+            evidence.add_action(action.thought, action_str, f"Failed: entity {', '.join(missing)} not found. {hint}")
             return
 
         # Validate both entities are in the specified image
@@ -512,6 +561,31 @@ What is your next action? Output JSON only:"""
             action_str = f'verify_count(query_type={query_type}, object_class={object_class}, image_id_a={action.image_id_a}, image_id_b={action.image_id_b}, value={action.value})'
 
         try:
+            # Validate required fields before computing
+            if query_type in ["at_least", "at_most", "exactly"]:
+                if not action.image_id:
+                    evidence.add_action(action.thought, action_str, f"Failed: missing image_id for {query_type} query")
+                    print(f"  [Verify Count] {query_type}({object_class}) → Failed: missing image_id")
+                    return
+                if action.value is None:
+                    evidence.add_action(action.thought, action_str, f"Failed: missing value for {query_type} query")
+                    print(f"  [Verify Count] {query_type}({object_class}) → Failed: missing value")
+                    return
+            elif query_type in ["more", "fewer", "equal"]:
+                if not action.image_id_a or not action.image_id_b:
+                    evidence.add_action(action.thought, action_str, f"Failed: missing image_id_a or image_id_b for {query_type} query")
+                    print(f"  [Verify Count] {query_type}({object_class}) → Failed: missing image_id_a/b")
+                    return
+            else:  # total_*
+                if not action.image_id_a or not action.image_id_b:
+                    evidence.add_action(action.thought, action_str, f"Failed: missing image_id_a or image_id_b for {query_type} query")
+                    print(f"  [Verify Count] {query_type}({object_class}) → Failed: missing image_id_a/b")
+                    return
+                if action.value is None:
+                    evidence.add_action(action.thought, action_str, f"Failed: missing value for {query_type} query")
+                    print(f"  [Verify Count] {query_type}({object_class}) → Failed: missing value")
+                    return
+
             # Compute the probability based on query type
             if query_type in ["at_least", "at_most", "exactly"]:
                 probability = self._compute_single_image_count(
@@ -671,6 +745,13 @@ What is your next action? Output JSON only:"""
             if c.entity_id == entity_id:
                 return c
         return None
+
+    def _available_entities_hint(self, image_id: str, candidates: List[EntityCandidate]) -> str:
+        """Format available entity IDs for a given image for error messages."""
+        matching = [c.entity_id for c in candidates if c.image_id == image_id]
+        if not matching:
+            return f"No entities detected in {image_id}."
+        return f"Available entities in {image_id}: {', '.join(matching)}"
 
     def _format_candidates(self, candidates: List[EntityCandidate]) -> str:
         """Format candidates for LLM prompt with explicit labeling."""

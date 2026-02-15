@@ -20,15 +20,24 @@ T = TypeVar('T', bound=BaseModel)
 
 
 class LLMClient:
-    """Llama 3.3 70B Instruct client via AWS Bedrock."""
+    """LLM client via AWS Bedrock (supports Llama, Claude, Nova, etc.)."""
 
-    def __init__(self, model_id: str | None = None) -> None:
-        """Initialize the Llama 3.3 client via AWS Bedrock."""
+    def __init__(self, model_id: str | None = None, thinking_budget: int | None = None,
+                 cot_enabled: bool = False) -> None:
+        """Initialize LLM client via AWS Bedrock.
+
+        Args:
+            model_id: Bedrock model ID (falls back to LLAMA33_MODEL_ID env var)
+            thinking_budget: Enable Claude extended thinking with this token budget
+            cot_enabled: Enable prompt-level chain-of-thought for non-Claude models
+        """
         load_dotenv()
 
         # AWS Bedrock configuration
         self.region = os.getenv("AWS_REGION", "us-east-1")
         self.model_id = model_id or os.getenv("LLAMA33_MODEL_ID")
+        self.thinking_budget = thinking_budget
+        self.cot_enabled = cot_enabled
 
         # Initialize Bedrock client
         self.client = boto3.client(
@@ -68,6 +77,17 @@ class LLMClient:
                         "content": [{"text": msg["content"]}]
                     })
 
+            # Prompt-level CoT: append reasoning instruction to system messages
+            if self.cot_enabled:
+                cot_instruction = (
+                    "\n\nBefore providing your final answer, think step by step about the problem. "
+                    "Write your reasoning first, then provide your final answer."
+                )
+                if system_messages:
+                    system_messages[-1]["text"] += cot_instruction
+                else:
+                    system_messages.append({"text": cot_instruction.strip()})
+
             # Build converse API parameters
             converse_params = {
                 "modelId": self.model_id,
@@ -82,15 +102,31 @@ class LLMClient:
             if system_messages:
                 converse_params["system"] = system_messages
 
+            # Claude extended thinking via Bedrock API
+            if self.thinking_budget and "anthropic" in (self.model_id or ""):
+                converse_params["additionalModelRequestFields"] = {
+                    "thinking": {
+                        "type": "enabled",
+                        "budget_tokens": self.thinking_budget
+                    }
+                }
+                # Extended thinking requires temperature=1 for Claude
+                converse_params["inferenceConfig"]["temperature"] = 1.0
+
             # Call AWS Bedrock Converse API
             response = self.client.converse(**converse_params)
 
-            # Extract the generated text
-            generated_text = response['output']['message']['content'][0]['text']
-            return generated_text
+            # Extract the generated text (skip thinking blocks for Claude)
+            content_blocks = response['output']['message']['content']
+            for block in content_blocks:
+                if 'text' in block:
+                    return block['text']
+
+            # Fallback
+            return content_blocks[0].get('text', str(content_blocks[0]))
 
         except Exception as e:
-            raise RuntimeError(f"Llama 3.3 generation via AWS Bedrock failed: {e}")
+            raise RuntimeError(f"LLM generation via AWS Bedrock failed: {e}")
 
     def chat_with_validation(
         self,

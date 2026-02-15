@@ -187,6 +187,9 @@ class ProbLogFactBuilder:
 
             if query_type in ["at_least", "at_most", "exactly"]:
                 # Single-image: count_<query_type>(image_id, class, N)
+                if count_ev.image_id is None or count_ev.value is None:
+                    print(f"  Warning: Skipping count fact {query_type}({object_class}) — missing image_id or value")
+                    continue
                 predicate = f"count_{query_type}"
                 facts.append(ProbLogFact(
                     probability=probability,
@@ -196,6 +199,9 @@ class ProbLogFactBuilder:
 
             elif query_type in ["more", "fewer", "equal"]:
                 # Cross-image comparison: count_<query_type>(image_id_a, image_id_b, class)
+                if count_ev.image_id_a is None or count_ev.image_id_b is None:
+                    print(f"  Warning: Skipping count fact {query_type}({object_class}) — missing image_id_a or image_id_b")
+                    continue
                 predicate = f"count_{query_type}"
                 facts.append(ProbLogFact(
                     probability=probability,
@@ -205,6 +211,9 @@ class ProbLogFactBuilder:
 
             elif query_type.startswith("total_"):
                 # Total across both: count_<query_type>(image_id_a, image_id_b, class, N)
+                if count_ev.image_id_a is None or count_ev.image_id_b is None or count_ev.value is None:
+                    print(f"  Warning: Skipping count fact {query_type}({object_class}) — missing image_id_a, image_id_b, or value")
+                    continue
                 predicate = f"count_{query_type}"
                 facts.append(ProbLogFact(
                     probability=probability,
