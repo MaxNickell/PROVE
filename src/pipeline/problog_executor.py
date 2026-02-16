@@ -164,20 +164,18 @@ IMPORTANT RULES:
 - SELECTIVE USAGE: You do NOT need to use all facts. Only use facts relevant to answering the question.
 - INCOMPLETE EVIDENCE: If the evidence is incomplete, write rules using only the facts that ARE available. Do not reference facts that do not exist.
 - PURE LOGIC ONLY: Do NOT embed numeric literals, probability values, or arithmetic comparisons (like 0.8, <=, >=) in rule bodies. ProbLog rules must contain only predicate calls and logical connectives (, ; \\+). Probabilities are handled by the facts, not the rules.
-- ANSWER PATTERN: Always define an `answer` rule and end with `query(answer).`. Write helper rule(s) with variable I for per-image logic, then combine them in `answer :- ...`. Never generate more than one query statement.
+- ANSWER PATTERN: Always define an `answer` rule and end with `query(answer).`. For per-image conditions, write helper rule(s) with variable I, then combine in `answer :- ...`. For cross-image count predicates (count_total_*, count_more, count_fewer, count_equal), use them DIRECTLY in the answer rule — they already span both images. Never generate more than one query statement.
 - LOGICAL CONNECTIVES: Choose connectives based on the question's logical meaning:
   - `,` (AND/conjunction): ALL conditions must hold. Use when the question requires EVERY image to satisfy the condition (e.g., "all images show X", "both images have X", "each image contains X").
   - `;` (OR/disjunction): AT LEAST ONE condition must hold. Use when the question requires ANY image to satisfy the condition (e.g., "at least one X is Y", "there is an X that is Y", "either image shows X").
   - Parenthesized mix: Use `(cond_a ; cond_b)` within a larger conjunction when part of the question is universal and part is existential (e.g., "same count AND at least one does X").
   Analyze what the question actually requires — do not default to AND or OR without reasoning about the meaning.
 
-NOTE: Values containing spaces, hyphens, or special characters are single-quoted in facts (e.g., 'medium-blue', 'on top of'). You must use the same single-quoted form when referencing these values in your rules. Simple atoms like car, image_a are NOT quoted.
-
 QUESTION: {question}
 
 Generate ONLY:
-1. Helper rule(s) using :- syntax
-2. An answer rule combining the helper rule(s)
+1. Rule(s) using :- syntax
+2. An answer rule combining the conditions
 3. query(answer).
 
 EXAMPLE PATTERNS:
@@ -202,6 +200,20 @@ cat_on_table(I) :-
     entity(I, E2, table),
     relation(I, E1, E2, 'on top of').
 answer :- cat_on_table(image_a) ; cat_on_table(image_b).
+query(answer).
+
+Cross-image count (use directly, do NOT wrap in per-image helper):
+answer :- count_total_at_most(image_a, image_b, dog, 3).
+query(answer).
+
+Mixed per-image + cross-image count:
+dog_sitting(I) :-
+    entity(I, E1, dog),
+    entity(I, E2, couch),
+    relation(I, E1, E2, on).
+answer :-
+    count_equal(image_a, image_b, dog),
+    (dog_sitting(image_a) ; dog_sitting(image_b)).
 query(answer).
 
 Output rules and query only, no explanation:"""
