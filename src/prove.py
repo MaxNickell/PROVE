@@ -19,15 +19,17 @@ from .pipeline.problog_executor import ProbLogExecutor
 
 class PROVE:
     """
-    PROVE model for visual reasoning over image pairs.
+    PROVE model for visual reasoning over one or more images.
 
     Unified pipeline that always runs both probabilistic and deterministic modes
     with shared evidence to isolate the effect of perception uncertainty.
 
     Usage:
         model = PROVE()
-        result = model.predict("img1.jpg", "img2.jpg", "Is there a cat in both images?")
-        # result contains both probabilistic and deterministic answers
+        # Two images (NLVR2):
+        result = model.predict({"image_a": "img1.jpg", "image_b": "img2.jpg"}, "Is there a cat in both images?")
+        # Single image (GQA):
+        result = model.predict({"image_a": "img.jpg"}, "Is the dog brown?")
     """
 
     def __init__(self, threshold: float = 0.5):
@@ -58,16 +60,15 @@ class PROVE:
 
     def predict(
         self,
-        image_a_path: str,
-        image_b_path: str,
+        image_paths: Dict[str, str],
         question: str
     ) -> UnifiedResult:
         """
-        Run PROVE inference on image pair (unified pipeline).
+        Run PROVE inference on one or more images (unified pipeline).
 
         Args:
-            image_a_path: Path to first image
-            image_b_path: Path to second image
+            image_paths: Dict mapping image_id to file path
+                         e.g. {"image_a": "img1.jpg"} or {"image_a": "img1.jpg", "image_b": "img2.jpg"}
             question: Ultimate question to answer
 
         Returns:
@@ -77,12 +78,11 @@ class PROVE:
             FileNotFoundError: If image paths don't exist
             RuntimeError: If pipeline execution fails
         """
-        return self.predict_with_details(image_a_path, image_b_path, question)
+        return self.predict_with_details(image_paths, question)
 
     def predict_with_details(
         self,
-        image_a_path: str,
-        image_b_path: str,
+        image_paths: Dict[str, str],
         question: str,
         save_logs: bool = False,
         log_dir: str = "logs"
@@ -94,8 +94,7 @@ class PROVE:
         to isolate the effect of perception uncertainty.
 
         Args:
-            image_a_path: Path to first image
-            image_b_path: Path to second image
+            image_paths: Dict mapping image_id to file path
             question: Ultimate question to answer
             save_logs: Whether to save ProbLog and intermediate results
             log_dir: Base directory for logs (default: "logs")
@@ -112,17 +111,17 @@ class PROVE:
             RuntimeError: If pipeline execution fails
         """
         # Validate inputs
-        if not Path(image_a_path).exists():
-            raise FileNotFoundError(f"Image A not found: {image_a_path}")
-        if not Path(image_b_path).exists():
-            raise FileNotFoundError(f"Image B not found: {image_b_path}")
+        if not image_paths:
+            raise ValueError("image_paths must not be empty")
+        for image_id, path in image_paths.items():
+            if not Path(path).exists():
+                raise FileNotFoundError(f"{image_id} not found: {path}")
 
         # Initialize components
         self._init_components()
 
         # Initialize knowledge base
         kb = KnowledgeBase(ultimate_question=question)
-        image_paths = {"image_a": image_a_path, "image_b": image_b_path}
 
         try:
             # Print question
@@ -202,8 +201,9 @@ class PROVE:
                 # Copy images
                 images_dir = example_dir / "images"
                 images_dir.mkdir(exist_ok=True)
-                shutil.copy(image_a_path, images_dir / "image_a.jpg")
-                shutil.copy(image_b_path, images_dir / "image_b.jpg")
+                for img_id, img_path in image_paths.items():
+                    ext = Path(img_path).suffix or ".jpg"
+                    shutil.copy(img_path, images_dir / f"{img_id}{ext}")
 
                 # Save probabilistic ProbLog program
                 with open(example_dir / "probabilistic.pl", 'w') as f:

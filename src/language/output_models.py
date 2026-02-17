@@ -1,6 +1,14 @@
 from __future__ import annotations
+import re
 from typing import List, Dict, Literal, Union
 from pydantic import BaseModel, Field, field_validator
+
+
+def _validate_image_id(v: str) -> str:
+    """Validate that image_id matches the pattern 'image_X' where X is a lowercase letter."""
+    if not re.match(r'^image_[a-z]$', v):
+        raise ValueError(f"image_id must match 'image_X' pattern (e.g. 'image_a'), got '{v}'")
+    return v
 
 
 class EntityExtractionResponse(BaseModel):
@@ -54,9 +62,7 @@ class PerceiveAction(BaseModel):
     @field_validator('image_id')
     @classmethod
     def validate_image_id(cls, v):
-        if v not in ['image_a', 'image_b']:
-            raise ValueError("image_id must be 'image_a' or 'image_b'")
-        return v
+        return _validate_image_id(v)
 
 
 class VerifyAttributeAction(BaseModel):
@@ -79,9 +85,7 @@ class VerifyAttributeAction(BaseModel):
     @field_validator('image_id')
     @classmethod
     def validate_image_id(cls, v):
-        if v not in ['image_a', 'image_b']:
-            raise ValueError("image_id must be 'image_a' or 'image_b'")
-        return v
+        return _validate_image_id(v)
 
 
 class VerifyRelationshipAction(BaseModel):
@@ -105,9 +109,7 @@ class VerifyRelationshipAction(BaseModel):
     @field_validator('image_id')
     @classmethod
     def validate_image_id(cls, v):
-        if v not in ['image_a', 'image_b']:
-            raise ValueError("image_id must be 'image_a' or 'image_b'")
-        return v
+        return _validate_image_id(v)
 
 
 class VerifyCountAction(BaseModel):
@@ -142,8 +144,8 @@ class VerifyCountAction(BaseModel):
     @field_validator('image_id', 'image_id_a', 'image_id_b')
     @classmethod
     def validate_image_id(cls, v):
-        if v is not None and v not in ['image_a', 'image_b']:
-            raise ValueError("image_id must be 'image_a' or 'image_b'")
+        if v is not None:
+            return _validate_image_id(v)
         return v
 
 
