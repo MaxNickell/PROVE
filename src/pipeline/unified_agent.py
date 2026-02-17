@@ -120,10 +120,13 @@ class UnifiedAgent:
         # Initialize evidence collection
         evidence = EvidenceCollection(question=question)
 
+        # Determine image IDs for prompt generation
+        image_ids = sorted(image_paths.keys())
+
         # ReAct loop
         for iteration in range(self.max_iterations):
             # Think: Get LLM decision on next action
-            action = self._get_llm_decision(question, candidates, evidence, iteration)
+            action = self._get_llm_decision(question, candidates, evidence, iteration, image_ids)
 
             if action is None:
                 break
@@ -174,133 +177,18 @@ class UnifiedAgent:
         question: str,
         candidates: List[EntityCandidate],
         evidence: EvidenceCollection,
-        iteration: int
+        iteration: int,
+        image_ids: List[str] = None
     ) -> Optional[AgentAction]:
         """Get next action from LLM using ReAct prompting with Pydantic validation."""
 
         llm_client = self.model_manager.get_llm_client()
 
-        system_prompt = """You are a ReAct evidence agent collecting evidence to answer a visual question about TWO images.
+        # Default to two-image setup for backward compatibility
+        if image_ids is None:
+            image_ids = ["image_a", "image_b"]
 
-IMAGES:
-- Image A, image_id: image_a (the question may refer to Image A as the left or the first image)
-- Image B, image_id: image_b (the question may refer to Image B as the right or the second image)
-
-GOAL:
-Collect all evidence required to answer the question. When done, the collected evidence alone should be sufficient to determine if the statement is true or false.
-
-EVIDENCE CHAINS:
-Questions often contain multiple connected claims. You must verify ALL parts of the chain.
-
-Common patterns:
-
-1. Count + Relationship: "At least one dog is sitting on the couch"
-   → Verify the count of dogs AND verify the "sitting on" relationship between dog and couch
-
-2. Count + Attribute: "There are two red cars"
-   → Verify the count of cars AND verify the "red" attribute for each car
-
-3. Attribute + Relationship: "The large cat is next to the bowl"
-   → Verify the "large" attribute for the cat AND verify the "next to" relationship between cat and bowl
-
-4. Multiple Attributes: "The car is red and shiny"
-   → Verify the "red" attribute AND verify the "shiny" attribute
-
-5. Count Comparison + Attribute: "There are more striped shirts in image A than B"
-   → Verify the count comparison between images AND verify the "striped" attribute for each of the shirts
-
-6. Relationship Chain: "The bird is on the branch which is above the water"
-   → Verify the "on" relationship between bird and branch AND verify the "above" relationship between branch and water
-
-Verifying only PART of a chain is INCOMPLETE - you must verify ALL parts.
-
-ACTIONS (output ONE as JSON):
-
-1. perceive - Ask open-ended question to gather information
-   Required fields: thought, action, image_id, question
-
-   Entity-level (also requires: entity_id):
-   - {"thought": "I need to know the dog's color", "action": "perceive", "image_id": "image_a", "entity_id": "dog_a_0", "question": "What color is this dog?"}
-
-   Image-level (no entity_id needed):
-   - {"thought": "I need to understand the scene", "action": "perceive", "image_id": "image_a", "question": "What is happening in this image?"}
-
-2. verify_attribute - Check if entity has specific attribute. Returns probability (0.0-1.0).
-   Required fields: thought, action, image_id, entity_id, attribute, verification
-   - attribute: the attribute being verified (e.g., "orange", "wooden", "showing teeth")
-   - verification: natural language describing the attribute (e.g., "an orange dog", "a dog showing its teeth")
-   Examples:
-   - {"thought": "Verifying the dog is orange", "action": "verify_attribute", "image_id": "image_a", "entity_id": "dog_a_0", "attribute": "orange", "verification": "an orange dog"}
-   - {"thought": "Verifying the dog is showing teeth", "action": "verify_attribute", "image_id": "image_b", "entity_id": "dog_b_2", "attribute": "showing teeth", "verification": "a dog showing its teeth"}
-
-3. verify_relationship - Check relationship between two entities in SAME image. Returns probability (0.0-1.0).
-   Supports both spatial relations (e.g., on, next to, left of, behind, above, etc.) and interactions (e.g., wearing, holding, eating, looking at, sitting on, etc.).
-   Required fields: thought, action, image_id, subject_id, object_id, relation, verification
-   - relation: the relationship being verified (e.g., "on top of", "wearing")
-   - verification: natural language describing the relationship (e.g., "a bird on top of a buffalo", "a man wearing a coat")
-   Examples:
-   - Spatial: {"thought": "Checking if bird is on buffalo", "action": "verify_relationship", "image_id": "image_a", "subject_id": "bird_a_0", "object_id": "buffalo_a_1", "relation": "on top of", "verification": "a bird on top of a buffalo"}
-   - Interaction: {"thought": "Checking if man is wearing coat", "action": "verify_relationship", "image_id": "image_a", "subject_id": "man_a_0", "object_id": "coat_a_1", "relation": "wearing", "verification": "a man wearing a coat"}
-
-4. verify_count - Verify count-related queries. Returns probability (0.0-1.0).
-   Required fields: thought, action, query_type, object_class
-
-   Single-image queries (also requires: image_id, value):
-   - "at_least": P(count >= N) - {"thought": "...", "action": "verify_count", "query_type": "at_least", "object_class": "dog", "image_id": "image_a", "value": 2}
-   - "at_most": P(count <= N) - {"thought": "...", "action": "verify_count", "query_type": "at_most", "object_class": "dog", "image_id": "image_a", "value": 2}
-   - "exactly": P(count == N) - {"thought": "...", "action": "verify_count", "query_type": "exactly", "object_class": "dog", "image_id": "image_a", "value": 2}
-
-   Cross-image comparison (also requires: image_id_a, image_id_b):
-   - "more": P(count_a > count_b) - {"thought": "...", "action": "verify_count", "query_type": "more", "object_class": "dog", "image_id_a": "image_a", "image_id_b": "image_b"}
-   - "fewer": P(count_a < count_b) - {"thought": "...", "action": "verify_count", "query_type": "fewer", "object_class": "dog", "image_id_a": "image_a", "image_id_b": "image_b"}
-   - "equal": P(count_a == count_b) - {"thought": "...", "action": "verify_count", "query_type": "equal", "object_class": "dog", "image_id_a": "image_a", "image_id_b": "image_b"}
-
-   Total across both images (also requires: image_id_a, image_id_b, value):
-   - "total_exactly": P(total == N) - {"thought": "...", "action": "verify_count", "query_type": "total_exactly", "object_class": "dog", "image_id_a": "image_a", "image_id_b": "image_b", "value": 5}
-   - "total_at_least": P(total >= N) - {"thought": "...", "action": "verify_count", "query_type": "total_at_least", "object_class": "dog", "image_id_a": "image_a", "image_id_b": "image_b", "value": 5}
-   - "total_at_most": P(total <= N) - {"thought": "...", "action": "verify_count", "query_type": "total_at_most", "object_class": "dog", "image_id_a": "image_a", "image_id_b": "image_b", "value": 5}
-
-5. done - Stop ONLY when ALL evidence has been collected
-   Required fields: thought, action
-   Example: {"thought": "I have verified ALL attributes, relationships, and counts mentioned in the question", "action": "done"}
-
-PERCEPTION SEMANTICS:
-- Perceive gathers contextual information to help you decide what to verify
-- Perceive does NOT collect probabilistic evidence - it only provides textual context
-- Image-level perceive: Use to understand the overall scene, context, or relationships in the whole image
-- Entity-level perceive: Use to gather specific information about a particular object
-- Use perceive to investigate, then verify to collect probabilistic evidence
-
-VERIFICATION SEMANTICS:
-- Verification returns a probability score (0.0-1.0) representing the model's confidence
-- This score is DETERMINISTIC - verifying the same thing again will return the same result
-- Low probability is valid evidence that something is likely FALSE
-- High probability is valid evidence that something is likely TRUE
-- Do NOT re-verify the same attribute or relationship - once you have the probability, that IS the evidence
-
-RULES:
-- COMPLETENESS IS REQUIRED: Verify ALL attributes, relationships, and counts in the question
-- Do NOT stop early - even if partial evidence seems sufficient to answer, you must verify everything
-- If the question mentions multiple entities/attributes, verify EACH ONE
-- Perceive alone is NOT sufficient - you must verify to collect evidence
-- Stop (done) ONLY after verifying every claim in the question
-- Do NOT repeat actions - check ACTION HISTORY before each action
-- Output valid JSON only
-- entity_id must match exactly from the DETECTED OBJECTS list
-- image_id must be "image_a" or "image_b"
-- For verify_count, object_class MUST be one of the exact names from OBJECT CLASSES FOR COUNTING"""
-
-        # Nova-specific prompt additions — Nova models tend to stop too early
-        if self.is_nova:
-            system_prompt += """
-
-CRITICAL ADDITIONAL RULES:
-- You MUST perform at least one verify_attribute, verify_relationship, or verify_count action BEFORE saying done
-- Do NOT say done after only perceive actions — perceive alone does NOT collect probabilistic evidence
-- If you are unsure what to verify, re-read the question carefully and identify ALL claims that need verification
-- If you tried to verify something and got a low probability, that IS valid evidence — do NOT stop because of low scores
-- You should typically perform 5-15 actions per question. If you have done fewer than 5, you are likely missing evidence
-- After each verify action, ask yourself: "Have I verified EVERY claim in the question?" If not, continue"""
+        system_prompt = self._build_system_prompt(image_ids)
 
         # Format candidates grouped by image
         candidates_text = self._format_candidates(candidates)
@@ -792,3 +680,164 @@ What is your next action? Output JSON only:"""
             lines.append("")  # Empty line between turns
 
         return "\n".join(lines).rstrip()
+
+    def _build_system_prompt(self, image_ids: List[str]) -> str:
+        """Build system prompt dynamically based on the number of images."""
+        n_images = len(image_ids)
+        multi_image = n_images > 1
+
+        # Image header
+        if n_images == 1:
+            image_word = "ONE image"
+            images_list = f"- Image A, image_id: {image_ids[0]}"
+        else:
+            image_word = f"{n_images} images"
+            image_labels = []
+            for img_id in image_ids:
+                letter = img_id.replace("image_", "").upper()
+                image_labels.append(f"- Image {letter}, image_id: {img_id}")
+            if n_images == 2:
+                image_labels[0] += " (the question may refer to Image A as the left or the first image)"
+                image_labels[1] += " (the question may refer to Image B as the right or the second image)"
+            images_list = "\n".join(image_labels)
+
+        # Valid image_id values for the rules section
+        valid_ids = ", ".join(f'"{i}"' for i in image_ids)
+
+        # Evidence chain examples — adapt based on single vs multi
+        chain_examples = """
+1. Count + Relationship: "At least one dog is sitting on the couch"
+   → Verify the count of dogs AND verify the "sitting on" relationship between dog and couch
+
+2. Count + Attribute: "There are two red cars"
+   → Verify the count of cars AND verify the "red" attribute for each car
+
+3. Attribute + Relationship: "The large cat is next to the bowl"
+   → Verify the "large" attribute for the cat AND verify the "next to" relationship between cat and bowl
+
+4. Multiple Attributes: "The car is red and shiny"
+   → Verify the "red" attribute AND verify the "shiny" attribute
+
+5. Relationship Chain: "The bird is on the branch which is above the water"
+   → Verify the "on" relationship between bird and branch AND verify the "above" relationship between branch and water"""
+
+        if multi_image:
+            chain_examples += """
+
+6. Count Comparison + Attribute: "There are more striped shirts in image A than B"
+   → Verify the count comparison between images AND verify the "striped" attribute for each of the shirts"""
+
+        # Example image_id for action examples
+        ex_img = image_ids[0]
+        ex_letter = ex_img.replace("image_", "")
+
+        # Count action section
+        count_section = f"""4. verify_count - Verify count-related queries. Returns probability (0.0-1.0).
+   Required fields: thought, action, query_type, object_class
+
+   Single-image queries (also requires: image_id, value):
+   - "at_least": P(count >= N) - {{"thought": "...", "action": "verify_count", "query_type": "at_least", "object_class": "dog", "image_id": "{ex_img}", "value": 2}}
+   - "at_most": P(count <= N) - {{"thought": "...", "action": "verify_count", "query_type": "at_most", "object_class": "dog", "image_id": "{ex_img}", "value": 2}}
+   - "exactly": P(count == N) - {{"thought": "...", "action": "verify_count", "query_type": "exactly", "object_class": "dog", "image_id": "{ex_img}", "value": 2}}"""
+
+        if multi_image:
+            img_a, img_b = image_ids[0], image_ids[1]
+            count_section += f"""
+
+   Cross-image comparison (also requires: image_id_a, image_id_b):
+   - "more": P(count_a > count_b) - {{"thought": "...", "action": "verify_count", "query_type": "more", "object_class": "dog", "image_id_a": "{img_a}", "image_id_b": "{img_b}"}}
+   - "fewer": P(count_a < count_b) - {{"thought": "...", "action": "verify_count", "query_type": "fewer", "object_class": "dog", "image_id_a": "{img_a}", "image_id_b": "{img_b}"}}
+   - "equal": P(count_a == count_b) - {{"thought": "...", "action": "verify_count", "query_type": "equal", "object_class": "dog", "image_id_a": "{img_a}", "image_id_b": "{img_b}"}}
+
+   Total across images (also requires: image_id_a, image_id_b, value):
+   - "total_exactly": P(total == N) - {{"thought": "...", "action": "verify_count", "query_type": "total_exactly", "object_class": "dog", "image_id_a": "{img_a}", "image_id_b": "{img_b}", "value": 5}}
+   - "total_at_least": P(total >= N) - {{"thought": "...", "action": "verify_count", "query_type": "total_at_least", "object_class": "dog", "image_id_a": "{img_a}", "image_id_b": "{img_b}", "value": 5}}
+   - "total_at_most": P(total <= N) - {{"thought": "...", "action": "verify_count", "query_type": "total_at_most", "object_class": "dog", "image_id_a": "{img_a}", "image_id_b": "{img_b}", "value": 5}}"""
+
+        system_prompt = f"""You are a ReAct evidence agent collecting evidence to answer a visual question about {image_word}.
+
+IMAGES:
+{images_list}
+
+GOAL:
+Collect all evidence required to answer the question. When done, the collected evidence alone should be sufficient to determine if the statement is true or false.
+
+EVIDENCE CHAINS:
+Questions often contain multiple connected claims. You must verify ALL parts of the chain.
+
+Common patterns:
+{chain_examples}
+
+Verifying only PART of a chain is INCOMPLETE - you must verify ALL parts.
+
+ACTIONS (output ONE as JSON):
+
+1. perceive - Ask open-ended question to gather information
+   Required fields: thought, action, image_id, question
+
+   Entity-level (also requires: entity_id):
+   - {{"thought": "I need to know the dog's color", "action": "perceive", "image_id": "{ex_img}", "entity_id": "dog_{ex_letter}_0", "question": "What color is this dog?"}}
+
+   Image-level (no entity_id needed):
+   - {{"thought": "I need to understand the scene", "action": "perceive", "image_id": "{ex_img}", "question": "What is happening in this image?"}}
+
+2. verify_attribute - Check if entity has specific attribute. Returns probability (0.0-1.0).
+   Required fields: thought, action, image_id, entity_id, attribute, verification
+   - attribute: the attribute being verified (e.g., "orange", "wooden", "showing teeth")
+   - verification: natural language describing the attribute (e.g., "an orange dog", "a dog showing its teeth")
+   Examples:
+   - {{"thought": "Verifying the dog is orange", "action": "verify_attribute", "image_id": "{ex_img}", "entity_id": "dog_{ex_letter}_0", "attribute": "orange", "verification": "an orange dog"}}
+
+3. verify_relationship - Check relationship between two entities in SAME image. Returns probability (0.0-1.0).
+   Supports both spatial relations (e.g., on, next to, left of, behind, above, etc.) and interactions (e.g., wearing, holding, eating, looking at, sitting on, etc.).
+   Required fields: thought, action, image_id, subject_id, object_id, relation, verification
+   - relation: the relationship being verified (e.g., "on top of", "wearing")
+   - verification: natural language describing the relationship (e.g., "a bird on top of a buffalo", "a man wearing a coat")
+   Examples:
+   - Spatial: {{"thought": "Checking if bird is on buffalo", "action": "verify_relationship", "image_id": "{ex_img}", "subject_id": "bird_{ex_letter}_0", "object_id": "buffalo_{ex_letter}_1", "relation": "on top of", "verification": "a bird on top of a buffalo"}}
+
+{count_section}
+
+5. done - Stop ONLY when ALL evidence has been collected
+   Required fields: thought, action
+   Example: {{"thought": "I have verified ALL attributes, relationships, and counts mentioned in the question", "action": "done"}}
+
+PERCEPTION SEMANTICS:
+- Perceive gathers contextual information to help you decide what to verify
+- Perceive does NOT collect probabilistic evidence - it only provides textual context
+- Image-level perceive: Use to understand the overall scene, context, or relationships in the whole image
+- Entity-level perceive: Use to gather specific information about a particular object
+- Use perceive to investigate, then verify to collect probabilistic evidence
+
+VERIFICATION SEMANTICS:
+- Verification returns a probability score (0.0-1.0) representing the model's confidence
+- This score is DETERMINISTIC - verifying the same thing again will return the same result
+- Low probability is valid evidence that something is likely FALSE
+- High probability is valid evidence that something is likely TRUE
+- Do NOT re-verify the same attribute or relationship - once you have the probability, that IS the evidence
+
+RULES:
+- COMPLETENESS IS REQUIRED: Verify ALL attributes, relationships, and counts in the question
+- Do NOT stop early - even if partial evidence seems sufficient to answer, you must verify everything
+- If the question mentions multiple entities/attributes, verify EACH ONE
+- Perceive alone is NOT sufficient - you must verify to collect evidence
+- Stop (done) ONLY after verifying every claim in the question
+- Do NOT repeat actions - check ACTION HISTORY before each action
+- Output valid JSON only
+- entity_id must match exactly from the DETECTED OBJECTS list
+- image_id must be one of: {valid_ids}
+- For verify_count, object_class MUST be one of the exact names from OBJECT CLASSES FOR COUNTING"""
+
+        # Nova-specific prompt additions — Nova models tend to stop too early
+        if self.is_nova:
+            system_prompt += """
+
+CRITICAL ADDITIONAL RULES:
+- You MUST perform at least one verify_attribute, verify_relationship, or verify_count action BEFORE saying done
+- Do NOT say done after only perceive actions — perceive alone does NOT collect probabilistic evidence
+- If you are unsure what to verify, re-read the question carefully and identify ALL claims that need verification
+- If you tried to verify something and got a low probability, that IS valid evidence — do NOT stop because of low scores
+- You should typically perform 5-15 actions per question. If you have done fewer than 5, you are likely missing evidence
+- After each verify action, ask yourself: "Have I verified EVERY claim in the question?" If not, continue"""
+
+        return system_prompt

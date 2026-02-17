@@ -98,8 +98,16 @@ class ProbLogExecutor:
 
         Dynamically detects which count predicates appear in the facts
         and only advertises those, preventing the LLM from inventing
-        predicates that don't exist.
+        predicates that don't exist. Also adapts examples based on
+        how many images are present in the facts.
         """
+        # Detect which image IDs appear in the facts
+        import re
+        image_ids = sorted(set(re.findall(r'image_[a-z]', facts_str)))
+        if not image_ids:
+            image_ids = ['image_a']  # fallback
+        multi_image = len(image_ids) > 1
+
         # Detect which count predicates actually appear in the facts
         count_pred_descriptions = {
             'count_at_least': 'count_at_least(image_id, class, N) - at least N objects in image',
@@ -151,6 +159,87 @@ class ProbLogExecutor:
             if missing_preds:
                 predicate_section += f"\n\nWARNING: The following predicates are NOT available in the facts: {', '.join(missing_preds)}. Do NOT use them."
 
+        # Build answer pattern guidance based on image count
+        if multi_image:
+            answer_pattern = "- ANSWER PATTERN: Always define an `answer` rule and end with `query(answer).`. For per-image conditions, write helper rule(s) with variable I, then combine in `answer :- ...`. For cross-image count predicates (count_total_*, count_more, count_fewer, count_equal), use them DIRECTLY in the answer rule — they already span both images. Never generate more than one query statement."
+            connectives = """- LOGICAL CONNECTIVES: Choose connectives based on the question's logical meaning:
+  - `,` (AND/conjunction): ALL conditions must hold. Use when the question requires EVERY image to satisfy the condition (e.g., "all images show X", "both images have X", "each image contains X").
+  - `;` (OR/disjunction): AT LEAST ONE condition must hold. Use when the question requires ANY image to satisfy the condition (e.g., "at least one X is Y", "there is an X that is Y", "either image shows X").
+  - Parenthesized mix: Use `(cond_a ; cond_b)` within a larger conjunction when part of the question is universal and part is existential (e.g., "same count AND at least one does X").
+  Analyze what the question actually requires — do not default to AND or OR without reasoning about the meaning."""
+        else:
+            img = image_ids[0]
+            answer_pattern = f"- ANSWER PATTERN: Always define an `answer` rule and end with `query(answer).`. Write helper rule(s) with variable I, then use `answer :- helper({img}).`. Never generate more than one query statement."
+            connectives = """- LOGICAL CONNECTIVES: Use `,` (AND) to combine multiple conditions that must all hold. Use `;` (OR) when at least one condition suffices."""
+
+        # Build example patterns based on image count
+        img_a = image_ids[0]
+        if multi_image:
+            img_b = image_ids[1]
+            examples = f"""EXAMPLE PATTERNS:
+
+Single image condition:
+is_tall_building(I) :-
+    entity(I, E, building),
+    attribute(I, E, tall).
+answer :- is_tall_building({img_a}).
+query(answer).
+
+Both images must satisfy condition → AND (,):
+has_red_car(I) :-
+    entity(I, E, car),
+    attribute(I, E, red).
+answer :- has_red_car({img_a}), has_red_car({img_b}).
+query(answer).
+
+At least one image satisfies condition → OR (;):
+cat_on_table(I) :-
+    entity(I, E1, cat),
+    entity(I, E2, table),
+    relation(I, E1, E2, 'on top of').
+answer :- cat_on_table({img_a}) ; cat_on_table({img_b}).
+query(answer).
+
+Cross-image count (use directly, do NOT wrap in per-image helper):
+answer :- count_total_at_most({img_a}, {img_b}, dog, 3).
+query(answer).
+
+Mixed per-image + cross-image count:
+dog_sitting(I) :-
+    entity(I, E1, dog),
+    entity(I, E2, couch),
+    relation(I, E1, E2, on).
+answer :-
+    count_equal({img_a}, {img_b}, dog),
+    (dog_sitting({img_a}) ; dog_sitting({img_b})).
+query(answer)."""
+        else:
+            examples = f"""EXAMPLE PATTERNS:
+
+Simple attribute check:
+is_tall_building(I) :-
+    entity(I, E, building),
+    attribute(I, E, tall).
+answer :- is_tall_building({img_a}).
+query(answer).
+
+Relationship check:
+cat_on_table(I) :-
+    entity(I, E1, cat),
+    entity(I, E2, table),
+    relation(I, E1, E2, 'on top of').
+answer :- cat_on_table({img_a}).
+query(answer).
+
+Multiple conditions:
+wet_surfer_with_wetsuit(I) :-
+    entity(I, E1, surfer),
+    attribute(I, E1, wet),
+    entity(I, E2, wetsuit),
+    relation(I, E1, E2, wearing).
+answer :- wet_surfer_with_wetsuit({img_a}).
+query(answer)."""
+
         prompt = f"""Generate ProbLog rules and query to answer this question.
 
 {predicate_section}
@@ -164,12 +253,8 @@ IMPORTANT RULES:
 - SELECTIVE USAGE: You do NOT need to use all facts. Only use facts relevant to answering the question.
 - INCOMPLETE EVIDENCE: If the evidence is incomplete, write rules using only the facts that ARE available. Do not reference facts that do not exist.
 - PURE LOGIC ONLY: Do NOT embed numeric literals, probability values, or arithmetic comparisons (like 0.8, <=, >=) in rule bodies. ProbLog rules must contain only predicate calls and logical connectives (, ; \\+). Probabilities are handled by the facts, not the rules.
-- ANSWER PATTERN: Always define an `answer` rule and end with `query(answer).`. For per-image conditions, write helper rule(s) with variable I, then combine in `answer :- ...`. For cross-image count predicates (count_total_*, count_more, count_fewer, count_equal), use them DIRECTLY in the answer rule — they already span both images. Never generate more than one query statement.
-- LOGICAL CONNECTIVES: Choose connectives based on the question's logical meaning:
-  - `,` (AND/conjunction): ALL conditions must hold. Use when the question requires EVERY image to satisfy the condition (e.g., "all images show X", "both images have X", "each image contains X").
-  - `;` (OR/disjunction): AT LEAST ONE condition must hold. Use when the question requires ANY image to satisfy the condition (e.g., "at least one X is Y", "there is an X that is Y", "either image shows X").
-  - Parenthesized mix: Use `(cond_a ; cond_b)` within a larger conjunction when part of the question is universal and part is existential (e.g., "same count AND at least one does X").
-  Analyze what the question actually requires — do not default to AND or OR without reasoning about the meaning.
+{answer_pattern}
+{connectives}
 
 QUESTION: {question}
 
@@ -178,43 +263,7 @@ Generate ONLY:
 2. An answer rule combining the conditions
 3. query(answer).
 
-EXAMPLE PATTERNS:
-
-Single image:
-is_tall_building(I) :-
-    entity(I, E, building),
-    attribute(I, E, tall).
-answer :- is_tall_building(image_a).
-query(answer).
-
-Both images must satisfy condition → AND (,):
-has_red_car(I) :-
-    entity(I, E, car),
-    attribute(I, E, red).
-answer :- has_red_car(image_a), has_red_car(image_b).
-query(answer).
-
-At least one image satisfies condition → OR (;):
-cat_on_table(I) :-
-    entity(I, E1, cat),
-    entity(I, E2, table),
-    relation(I, E1, E2, 'on top of').
-answer :- cat_on_table(image_a) ; cat_on_table(image_b).
-query(answer).
-
-Cross-image count (use directly, do NOT wrap in per-image helper):
-answer :- count_total_at_most(image_a, image_b, dog, 3).
-query(answer).
-
-Mixed per-image + cross-image count:
-dog_sitting(I) :-
-    entity(I, E1, dog),
-    entity(I, E2, couch),
-    relation(I, E1, E2, on).
-answer :-
-    count_equal(image_a, image_b, dog),
-    (dog_sitting(image_a) ; dog_sitting(image_b)).
-query(answer).
+{examples}
 
 Output rules and query only, no explanation:"""
         return prompt
@@ -241,13 +290,13 @@ Output rules and query only, no explanation:"""
             rules, query = self._parse_response(response)
 
             if not query.startswith("query("):
-                return self._fallback_query(question)
+                return self._fallback_query(question, facts)
 
             return rules, query
 
         except Exception as e:
             print(f"  Warning: Query generation failed: {e}")
-            return self._fallback_query(question)
+            return self._fallback_query(question, facts)
 
     def _parse_response(self, response: str) -> Tuple[str, str]:
         """Parse LLM response into rules and query."""
@@ -268,11 +317,26 @@ Output rules and query only, no explanation:"""
 
         return '\n'.join(rules_lines), '\n'.join(query_lines)
 
-    def _fallback_query(self, question: str) -> Tuple[str, str]:
+    def _fallback_query(self, question: str, facts: list = None) -> Tuple[str, str]:
         """Generate fallback query when LLM fails."""
-        # Extract image from question
-        match = re.search(r'image[_ ]([ab])', question.lower())
-        image_id = f"image_{match.group(1)}" if match else "image_a"
+        # Try to extract image from question
+        match = re.search(r'image[_ ]([a-z])', question.lower())
+        if match:
+            image_id = f"image_{match.group(1)}"
+        elif facts:
+            # Use first image_id found in facts
+            for f in facts:
+                for arg in f.arguments:
+                    if isinstance(arg, str) and arg.startswith('image_'):
+                        image_id = arg
+                        break
+                else:
+                    continue
+                break
+            else:
+                image_id = "image_a"
+        else:
+            image_id = "image_a"
 
         rules = "fallback(I) :- entity(I, _, _)."
         query = f"query(fallback({image_id}))."
