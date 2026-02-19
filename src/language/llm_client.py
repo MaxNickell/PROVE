@@ -6,6 +6,7 @@ import time
 from typing import Any, List, Dict, Type, TypeVar
 from dotenv import load_dotenv
 import boto3
+from botocore.config import Config as BotoConfig
 from pydantic import BaseModel, ValidationError
 
 from .output_models import (
@@ -41,10 +42,15 @@ class LLMClient:
         self.thinking_budget = thinking_budget
         self.cot_enabled = cot_enabled
 
-        # Initialize Bedrock client
+        # Initialize Bedrock client with socket-level timeouts
         self.client = boto3.client(
             service_name='bedrock-runtime',
-            region_name=self.region
+            region_name=self.region,
+            config=BotoConfig(
+                read_timeout=120,       # 2 min per API read
+                connect_timeout=10,     # 10s connection timeout
+                retries={'max_attempts': 0}  # we handle retries ourselves
+            )
         )
 
     def chat(self, messages: List[Dict[str, str]], **kwargs: Any) -> str:
