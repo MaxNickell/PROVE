@@ -247,12 +247,6 @@ def main():
                         help="Path to fine-tuned BLIP LoRA adapter (e.g. eval/vqa_finetune/blip_lora_best)")
     parser.add_argument("--retry_failed", action="store_true",
                         help="Remove failed entries from results and retry them")
-    parser.add_argument("--ice_file", type=str, default=None,
-                        help="Path to JSON file with in-context examples for ProbLog generation")
-    parser.add_argument("--ice_embeddings", type=str, default=None,
-                        help="Path to .npy file with pre-computed ICE embeddings (enables dynamic retrieval)")
-    parser.add_argument("--ice_k", type=int, default=3,
-                        help="Number of ICEs to retrieve per question (default: 3)")
     args = parser.parse_args()
 
     # Set dataset-specific defaults
@@ -268,19 +262,6 @@ def main():
             args.img_dir = "/scratch/gautschi/huan2073/nlvr2_data/images"
 
     os.makedirs(args.output_dir, exist_ok=True)
-
-    # Load in-context examples if provided
-    ices = None
-    ice_retriever = None
-    if args.ice_file:
-        if args.ice_embeddings:
-            from src.pipeline.ice_retriever import ICERetriever
-            ice_retriever = ICERetriever(args.ice_file, args.ice_embeddings, k=args.ice_k)
-            print(f"Dynamic ICE retrieval enabled: {args.ice_k} per question from {args.ice_file}")
-        else:
-            with open(args.ice_file) as f:
-                ices = json.load(f)
-            print(f"Loaded {len(ices)} in-context examples (fixed set) from {args.ice_file}")
 
     # Load test data
     is_gqa = args.dataset == "gqa"
@@ -488,16 +469,12 @@ def main():
                 for f in prob_facts
             ]
 
-            # Select ICEs: dynamic retrieval if available, else fixed set
-            sample_ices = ice_retriever.retrieve(sentence) if ice_retriever else ices
-
             # Run ProbLog with BLIP scores (default)
             prob_result, det_result = executor.execute_dual(
                 question=sentence,
                 evidence=evidence,
                 images=kb.images,
-                threshold=0.5,
-                ices=sample_ices
+                threshold=0.5
             )
 
             result["problog"] = {

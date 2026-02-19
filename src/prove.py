@@ -61,8 +61,7 @@ class PROVE:
     def predict(
         self,
         image_paths: Dict[str, str],
-        question: str,
-        ices: list = None
+        question: str
     ) -> UnifiedResult:
         """
         Run PROVE inference on one or more images (unified pipeline).
@@ -71,7 +70,6 @@ class PROVE:
             image_paths: Dict mapping image_id to file path
                          e.g. {"image_a": "img1.jpg"} or {"image_a": "img1.jpg", "image_b": "img2.jpg"}
             question: Ultimate question to answer
-            ices: Optional list of in-context examples for ProbLog generation
 
         Returns:
             UnifiedResult containing both probabilistic and deterministic results
@@ -80,15 +78,14 @@ class PROVE:
             FileNotFoundError: If image paths don't exist
             RuntimeError: If pipeline execution fails
         """
-        return self.predict_with_details(image_paths, question, ices=ices)
+        return self.predict_with_details(image_paths, question)
 
     def predict_with_details(
         self,
         image_paths: Dict[str, str],
         question: str,
         save_logs: bool = False,
-        log_dir: str = "logs",
-        ices: list = None
+        log_dir: str = "logs"
     ) -> UnifiedResult:
         """
         Run PROVE unified inference with detailed outputs.
@@ -152,8 +149,7 @@ class PROVE:
                 question=question,
                 evidence=evidence,
                 images=kb.images,
-                threshold=self.threshold,
-                ices=ices
+                threshold=self.threshold
             )
 
             # Build shared evidence
