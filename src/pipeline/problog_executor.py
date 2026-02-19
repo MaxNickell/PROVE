@@ -1,9 +1,11 @@
 """
 ProbLog executor for PROVE pipeline.
 Executes ProbLog queries using LLM-generated rules.
+Matches sweep's robustness: subprocess isolation, timeouts.
 """
 
 from typing import List, Dict, Tuple
+import multiprocessing as mp
 import re
 
 from problog.program import PrologString
@@ -12,6 +14,34 @@ from problog import get_evaluatable
 from src.core.model_manager import ModelManager
 from src.core.types import ProbLogFact, ModeResult
 from src.pipeline.problog_builder import ProbLogFactBuilder
+
+# ProbLog built-in predicates that LLMs sometimes redefine as helpers
+_RESERVED_PREDICATES = ['condition']
+
+# Default timeout for ProbLog evaluation (seconds)
+_PROBLOG_TIMEOUT = 30
+
+# Default timeout for LLM calls (seconds)
+_LLM_TIMEOUT = 120
+
+
+def _problog_worker(program, queue):
+    """Evaluate a ProbLog program in a subprocess (memory-isolated)."""
+    try:
+        result = get_evaluatable().create_from(PrologString(program)).evaluate()
+        for k, v in result.items():
+            queue.put(float(v))
+            return
+        queue.put(0.0)
+    except Exception as e:
+        queue.put(('error', str(e)))
+
+
+def sanitize_program(program):
+    """Rename LLM-generated predicates that clash with ProbLog built-ins."""
+    for pred in _RESERVED_PREDICATES:
+        program = re.sub(rf'\b{pred}\b', f'{pred}_', program)
+    return program
 
 
 class ProbLogExecutor:
@@ -34,7 +64,8 @@ class ProbLogExecutor:
         question: str,
         evidence: 'EvidenceCollection',
         images: Dict[str, 'ImageData'],
-        threshold: float = 0.5
+        threshold: float = 0.5,
+        ices: list = None
     ) -> Tuple[ModeResult, ModeResult]:
         """
         Execute question in both probabilistic and deterministic modes.
@@ -42,7 +73,7 @@ class ProbLogExecutor:
         Args:
             question: The question to answer
             evidence: Evidence collection for the question
-            threshold: Threshold for final answer (prob >= threshold → "True")
+            threshold: Threshold for final answer (prob >= threshold -> "True")
             images: ImageData for entity metadata
 
         Returns:
@@ -60,14 +91,19 @@ class ProbLogExecutor:
         print(f"  Facts: {len(prob_facts)}")
 
         # Generate rules + query (once, reuse for both modes)
-        rules, query = self._generate_query(question, prob_facts, llm)
+        rules, query = self._generate_query(question, prob_facts, llm, ices=ices)
 
         # Build deterministic facts (always threshold at 0.5)
         det_facts = ProbLogFactBuilder.threshold_facts(prob_facts, 0.5)
 
-        # Execute both
-        prob_prob = self._execute_program(prob_facts, rules, query, threshold)
-        det_prob = self._execute_program(det_facts, rules, query, threshold)
+        # Execute both in subprocesses with timeout
+        prob_prob, prob_err = self._execute_program(prob_facts, rules, query, threshold)
+        det_prob, det_err = self._execute_program(det_facts, rules, query, threshold)
+
+        if prob_err:
+            print(f"  Warning: Probabilistic ProbLog failed: {prob_err}")
+        if det_err:
+            print(f"  Warning: Deterministic ProbLog failed: {det_err}")
 
         print(f"  Probabilistic: {prob_prob:.4f}")
         print(f"  Deterministic: {det_prob:.4f}")
@@ -93,7 +129,7 @@ class ProbLogExecutor:
         )
 
     @staticmethod
-    def _build_prompt(question: str, facts_str: str) -> str:
+    def _build_prompt(question: str, facts_str: str, ices: list = None) -> str:
         """Build the ProbLog generation prompt.
 
         Dynamically detects which count predicates appear in the facts
@@ -173,72 +209,82 @@ class ProbLogExecutor:
             connectives = """- LOGICAL CONNECTIVES: Use `,` (AND) to combine multiple conditions that must all hold. Use `;` (OR) when at least one condition suffices."""
 
         # Build example patterns based on image count
+        # (All examples are real NLVR2 training programs from the ICE pool)
         img_a = image_ids[0]
         if multi_image:
             img_b = image_ids[1]
             examples = f"""EXAMPLE PATTERNS:
 
 Single image condition:
-is_tall_building(I) :-
-    entity(I, E, building),
-    attribute(I, E, tall).
-answer :- is_tall_building({img_a}).
+school_bus_facing_right(I) :-
+    entity(I, E, 'school bus'),
+    attribute(I, E, 'facing right').
+answer :- school_bus_facing_right({img_b}).
 query(answer).
 
 Both images must satisfy condition → AND (,):
-has_red_car(I) :-
-    entity(I, E, car),
-    attribute(I, E, red).
-answer :- has_red_car({img_a}), has_red_car({img_b}).
+full_round_pizza(I) :-
+    entity(I, E, pizza),
+    attribute(I, E, full),
+    attribute(I, E, round).
+answer :- full_round_pizza({img_a}), full_round_pizza({img_b}).
 query(answer).
 
 At least one image satisfies condition → OR (;):
-cat_on_table(I) :-
-    entity(I, E1, cat),
-    entity(I, E2, table),
-    relation(I, E1, E2, 'on top of').
-answer :- cat_on_table({img_a}) ; cat_on_table({img_b}).
+panda_playing_bubble(I) :-
+    entity(I, E1, panda),
+    entity(I, E2, bubble),
+    relation(I, E1, E2, 'playing with').
+answer :- panda_playing_bubble({img_a}) ; panda_playing_bubble({img_b}).
 query(answer).
 
 Cross-image count (use directly, do NOT wrap in per-image helper):
-answer :- count_total_at_most({img_a}, {img_b}, dog, 3).
+answer :- count_total_exactly({img_a}, {img_b}, flute, 2).
 query(answer).
 
 Mixed per-image + cross-image count:
-dog_sitting(I) :-
-    entity(I, E1, dog),
-    entity(I, E2, couch),
-    relation(I, E1, E2, on).
+adult_leopard(I) :-
+    entity(I, E, leopard),
+    attribute(I, E, adult).
 answer :-
-    count_equal({img_a}, {img_b}, dog),
-    (dog_sitting({img_a}) ; dog_sitting({img_b})).
+    count_total_at_least({img_a}, {img_b}, cub, 3),
+    (adult_leopard({img_a}) ; adult_leopard({img_b})).
 query(answer)."""
         else:
             examples = f"""EXAMPLE PATTERNS:
 
 Simple attribute check:
-is_tall_building(I) :-
-    entity(I, E, building),
-    attribute(I, E, tall).
-answer :- is_tall_building({img_a}).
+bird_flying(I) :-
+    entity(I, E, bird),
+    attribute(I, E, flying).
+answer :- bird_flying({img_a}).
 query(answer).
 
 Relationship check:
-cat_on_table(I) :-
-    entity(I, E1, cat),
-    entity(I, E2, table),
-    relation(I, E1, E2, 'on top of').
-answer :- cat_on_table({img_a}).
+power_lines_above_train(I) :-
+    entity(I, E1, 'power lines'),
+    entity(I, E2, train),
+    relation(I, E1, E2, above).
+answer :- power_lines_above_train({img_a}).
 query(answer).
 
 Multiple conditions:
-wet_surfer_with_wetsuit(I) :-
-    entity(I, E1, surfer),
-    attribute(I, E1, wet),
-    entity(I, E2, wetsuit),
-    relation(I, E1, E2, wearing).
-answer :- wet_surfer_with_wetsuit({img_a}).
+human_standing_front_of_car(I) :-
+    entity(I, E1, human),
+    attribute(I, E1, standing),
+    entity(I, E2, car),
+    relation(I, E1, E2, 'in front of').
+answer :- human_standing_front_of_car({img_a}).
 query(answer)."""
+
+        # When ICE is provided, replace hardcoded examples with ICE examples
+        if ices:
+            ice_parts = ["REFERENCE EXAMPLES (real questions with correct ProbLog programs — use these as style/pattern guides, but write rules using YOUR facts above, not theirs):"]
+            for i, ice in enumerate(ices):
+                ice_parts.append(f"\n--- Example {i+1} ---")
+                ice_parts.append(f"Question: {ice['question']}")
+                ice_parts.append(f"Program:\n{ice['program']}")
+            examples = "\n".join(ice_parts)
 
         prompt = f"""Generate ProbLog rules and query to answer this question.
 
@@ -266,19 +312,21 @@ Generate ONLY:
 {examples}
 
 Output rules and query only, no explanation:"""
+
         return prompt
 
     def _generate_query(
         self,
         question: str,
         facts: List[ProbLogFact],
-        llm
+        llm,
+        ices: list = None
     ) -> Tuple[str, str]:
         """LLM generates ProbLog rules and query for the question."""
 
         facts_str = ProbLogFactBuilder.facts_to_string(facts)
 
-        prompt = self._build_prompt(question, facts_str)
+        prompt = self._build_prompt(question, facts_str, ices=ices)
 
         messages = [
             {"role": "system", "content": "Generate valid ProbLog syntax only. No markdown, no explanations."},
@@ -348,26 +396,34 @@ Output rules and query only, no explanation:"""
         rules: str,
         query: str,
         threshold: float = 0.5
-    ) -> float:
-        """Execute ProbLog program and return query probability."""
+    ) -> Tuple[float, str]:
+        """Execute ProbLog program in a subprocess with timeout.
+
+        Returns:
+            (probability, error_message) — error_message is None on success
+        """
         program = self._build_program_string(facts, rules, query)
+        program = sanitize_program(program)
+
+        queue = mp.Queue()
+        proc = mp.Process(target=_problog_worker, args=(program, queue))
+        proc.start()
+        proc.join(timeout=_PROBLOG_TIMEOUT)
+
+        if proc.is_alive():
+            proc.kill()
+            proc.join(timeout=5)
+            return threshold, f"ProbLog timed out after {_PROBLOG_TIMEOUT}s"
 
         try:
-            result = get_evaluatable().create_from(PrologString(program)).evaluate()
+            result = queue.get_nowait()
+        except Exception:
+            return threshold, "ProbLog subprocess returned no result"
 
-            # Extract query result
-            query_match = re.search(r'query\((.+?)\)', query)
-            if query_match:
-                query_term = query_match.group(1).strip().rstrip('.')
-                for key in result.keys():
-                    if str(key) == query_term or query_term in str(key):
-                        return float(result[key])
+        if isinstance(result, tuple) and result[0] == 'error':
+            return threshold, result[1]
 
-            return 0.0
-
-        except Exception as e:
-            print(f"  Warning: ProbLog execution failed: {e}")
-            return threshold
+        return result, None
 
     def _build_program_string(
         self,
