@@ -1,6 +1,6 @@
 """
 Qwen 2.5-VL-7B verifier for PROVE pipeline.
-Uses Yes/No or True/False prompting for binary verification with probability extraction.
+Uses True/False prompting for binary verification with probability extraction.
 """
 
 import torch
@@ -14,7 +14,7 @@ class QwenVerifier:
     """
     Qwen 2.5-VL-7B based verifier for attribute and relationship verification.
 
-    Uses prompted Yes/No or True/False responses with logit-based probability extraction.
+    Uses prompted True/False responses with logit-based probability extraction.
     """
 
     PADDING_RATIO = 0.15  # 15% padding on each side
@@ -22,7 +22,6 @@ class QwenVerifier:
     def __init__(
         self,
         qwen_vl: QwenVL = None,
-        prompt_style: str = "yes_no",
         device: str = "auto"
     ):
         """
@@ -30,10 +29,8 @@ class QwenVerifier:
 
         Args:
             qwen_vl: Existing QwenVL instance to reuse (avoids redundant loading)
-            prompt_style: "yes_no" or "true_false"
             device: Device to use
         """
-        self.prompt_style = prompt_style
         self.device = device
 
         # Reuse existing QwenVL instance or create new one
@@ -81,33 +78,26 @@ class QwenVerifier:
 
     def _get_vlm_probability(self, image: Image.Image, statement: str) -> Tuple[float, str]:
         """
-        Get probability from VLM response.
+        Get probability from VLM response via text parsing (fallback).
 
         Returns:
             Tuple of (probability, raw_response)
         """
         qwen = self._get_qwen()
 
-        if self.prompt_style == "true_false":
-            prompt = f'Determine if the following statement about this image is true or false.\n\nStatement: "{statement}"\n\nAnswer with ONLY "True" or "False".'
-            pos_tokens = ["true", "correct", "yes"]
-            neg_tokens = ["false", "incorrect", "no"]
-        else:  # yes_no
-            prompt = f'Is the following statement about this image correct?\n\nStatement: "{statement}"\n\nAnswer with ONLY "Yes" or "No".'
-            pos_tokens = ["yes", "correct", "true"]
-            neg_tokens = ["no", "incorrect", "false"]
+        prompt = f'Determine if the following statement about this image is true or false.\n\nStatement: "{statement}"\n\nAnswer with ONLY "True" or "False".'
+        pos_tokens = ["true", "correct", "yes"]
+        neg_tokens = ["false", "incorrect", "no"]
 
         try:
             response = qwen.run_inference(image, prompt)
             response_lower = response.lower().strip()
 
-            # Check for positive response
             if any(pos in response_lower for pos in pos_tokens):
                 return 0.9, response
             elif any(neg in response_lower for neg in neg_tokens):
                 return 0.1, response
             else:
-                # Ambiguous response
                 return 0.5, response
 
         except Exception as e:
@@ -118,14 +108,12 @@ class QwenVerifier:
         """
         Get probability from VLM using token logits for better calibration.
 
-        This method tries to extract actual probabilities from the model's logits.
+        This method extracts actual probabilities from the model's logits
+        over True/False tokens.
         """
         qwen = self._get_qwen()
 
-        if self.prompt_style == "true_false":
-            prompt = f'Determine if the following statement about this image is true or false.\n\nStatement: "{statement}"\n\nAnswer with ONLY "True" or "False".'
-        else:  # yes_no
-            prompt = f'Is the following statement about this image correct?\n\nStatement: "{statement}"\n\nAnswer with ONLY "Yes" or "No".'
+        prompt = f'Determine if the following statement about this image is true or false.\n\nStatement: "{statement}"\n\nAnswer with ONLY "True" or "False".'
 
         try:
             # Load image if needed
@@ -169,13 +157,9 @@ class QwenVerifier:
                 )
                 logits = outputs.logits[:, -1, :]  # Last position logits
 
-                # Get token IDs for Yes/No or True/False
-                if self.prompt_style == "true_false":
-                    pos_tokens = ["True", "true", "TRUE"]
-                    neg_tokens = ["False", "false", "FALSE"]
-                else:
-                    pos_tokens = ["Yes", "yes", "YES"]
-                    neg_tokens = ["No", "no", "NO"]
+                # Get token IDs for True/False
+                pos_tokens = ["True", "true", "TRUE"]
+                neg_tokens = ["False", "false", "FALSE"]
 
                 pos_ids = []
                 neg_ids = []
