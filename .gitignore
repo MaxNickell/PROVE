@@ -33,5 +33,5 @@ data/*
 nlvr2_results/
 nlvr2_results/*
 
-eval/
-eval/*
+/eval/
+/eval/*

@@ -1,0 +1,30 @@
+{
+  "v5_perlm": {
+    "description": "Best per-LLM config (v5 sweep)",
+    "threshold": {"base": 0.45, "slope": -0.1},
+    "llm_configs": {
+      "llama":         {"attr_score_type": "qwen_tf_score", "rel_score_type": "qwen_tf_score",
+                        "entity_prob": 1.0, "dampened_alpha": 1.0, "agreement_mode": "sharpen"},
+      "maverick":      {"attr_score_type": "qwen_tf_score", "rel_score_type": "avg_blip_qwen_tf",
+                        "entity_prob": 1.0, "dampened_alpha": 0.9, "agreement_mode": "sharpen"},
+      "mistral_large": {"attr_score_type": "qwen_tf_score", "rel_score_type": "qwen_tf_score",
+                        "entity_prob": null, "dampened_alpha": 0.9, "agreement_mode": "sharpen"}
+    },
+    "fallback": {"attr_score_type": "qwen_tf_score", "rel_score_type": "qwen_tf_score",
+                 "entity_prob": 1.0, "dampened_alpha": 1.0, "agreement_mode": "sharpen"}
+  },
+  "shared_best": {
+    "description": "Best shared config (qwen_tf, ep=1.0, da=1.0, sharpen)",
+    "threshold": {"base": 0.45, "slope": -0.1},
+    "llm_configs": {
+      "llama":         {"attr_score_type": "qwen_tf_score", "rel_score_type": "qwen_tf_score",
+                        "entity_prob": 1.0, "dampened_alpha": 1.0, "agreement_mode": "sharpen"},
+      "maverick":      {"attr_score_type": "qwen_tf_score", "rel_score_type": "qwen_tf_score",
+                        "entity_prob": 1.0, "dampened_alpha": 1.0, "agreement_mode": "sharpen"},
+      "mistral_large": {"attr_score_type": "qwen_tf_score", "rel_score_type": "qwen_tf_score",
+                        "entity_prob": 1.0, "dampened_alpha": 1.0, "agreement_mode": "sharpen"}
+    },
+    "fallback": {"attr_score_type": "qwen_tf_score", "rel_score_type": "qwen_tf_score",
+                 "entity_prob": 1.0, "dampened_alpha": 1.0, "agreement_mode": "sharpen"}
+  }
+}

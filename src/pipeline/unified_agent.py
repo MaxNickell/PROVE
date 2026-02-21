@@ -62,6 +62,10 @@ class EvidenceCollection:
     # Turn-by-turn action history: [{"thought": "...", "action": "...", "result": "..."}]
     action_history: List[Dict[str, str]] = field(default_factory=list)
 
+    # Rich score dicts from all verifiers (replaces rescore_with_qwen)
+    attribute_scores: List[Dict[str, Any]] = field(default_factory=list)
+    relationship_scores: List[Dict[str, Any]] = field(default_factory=list)
+
     def add_attribute(self, entity_id: str, attribute: str, probability: float):
         self.attributes.append((entity_id, attribute, probability))
 
@@ -90,9 +94,10 @@ class UnifiedAgent:
     # Minimum verify actions before "done" is accepted
     MIN_VERIFY_ACTIONS = 1
 
-    def __init__(self, max_iterations: int = 15):
+    def __init__(self, max_iterations: int = 15, extra_verifiers: Dict[str, Any] = None):
         self.max_iterations = max_iterations
         self.model_manager = ModelManager()
+        self.extra_verifiers = extra_verifiers or {}
         # Detect Nova models for prompt adjustments
         model_id = os.environ.get("LLAMA33_MODEL_ID", "")
         self.is_nova = "nova" in model_id.lower()
@@ -355,10 +360,32 @@ What is your next action? Output JSON only:"""
                 verification=action.verification
             )
 
-            # Store evidence for probability computation
+            # Store evidence tuple for ProbLog fact building
             evidence.add_attribute(action.entity_id, action.attribute, probability)
 
-            # Record action with result
+            # Build rich score dict with all verifier scores
+            score_dict = {
+                "entity_id": action.entity_id,
+                "value": action.attribute,
+                "blip_score": probability,
+                "image_id": entity.image_id,
+                "bbox": entity.bbox,
+                "object_class": entity.object_class,
+            }
+            for name, verifier in self.extra_verifiers.items():
+                try:
+                    v_score, v_resp = verifier.verify_attribute(
+                        image_path, entity.bbox, entity.object_class,
+                        action.attribute, use_logits=True
+                    )
+                    score_dict[f"{name}_score"] = v_score
+                    score_dict[f"{name}_response"] = v_resp
+                except Exception as ve:
+                    score_dict[f"{name}_score"] = None
+                    score_dict[f"{name}_response"] = f"ERROR: {ve}"
+            evidence.attribute_scores.append(score_dict)
+
+            # Record action with result (agent sees BLIP score)
             evidence.add_action(action.thought, action_str, f"p={probability:.3f}")
             print(f"  [Verify Attribute] {action.entity_id}.{action.attribute}")
             print(f"    verification: \"{action.verification}\"")
@@ -416,10 +443,36 @@ What is your next action? Output JSON only:"""
                 verification=action.verification
             )
 
-            # Store evidence for probability computation
+            # Store evidence tuple for ProbLog fact building
             evidence.add_relationship(action.subject_id, action.object_id, action.relation, probability)
 
-            # Record action with result
+            # Build rich score dict with all verifier scores
+            score_dict = {
+                "subject_id": action.subject_id,
+                "object_id": action.object_id,
+                "relation": action.relation,
+                "blip_score": probability,
+                "image_id": subject.image_id,
+                "bbox1": subject.bbox,
+                "bbox2": obj.bbox,
+                "obj1_class": subject.object_class,
+                "obj2_class": obj.object_class,
+            }
+            for name, verifier in self.extra_verifiers.items():
+                try:
+                    v_score, v_resp = verifier.verify_relationship(
+                        image_path, subject.bbox, obj.bbox,
+                        subject.object_class, obj.object_class,
+                        action.relation, use_logits=True
+                    )
+                    score_dict[f"{name}_score"] = v_score
+                    score_dict[f"{name}_response"] = v_resp
+                except Exception as ve:
+                    score_dict[f"{name}_score"] = None
+                    score_dict[f"{name}_response"] = f"ERROR: {ve}"
+            evidence.relationship_scores.append(score_dict)
+
+            # Record action with result (agent sees BLIP score)
             evidence.add_action(action.thought, action_str, f"p={probability:.3f}")
             print(f"  [Verify Relationship] {action.subject_id} {action.relation} {action.object_id}")
             print(f"    verification: \"{action.verification}\"")
