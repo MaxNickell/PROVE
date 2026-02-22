@@ -25,10 +25,17 @@ _PROBLOG_TIMEOUT = 30
 _LLM_TIMEOUT = 120
 
 
-def _problog_worker(program, queue):
+def _problog_worker(program, queue, dampened_alpha=None):
     """Evaluate a ProbLog program in a subprocess (memory-isolated)."""
     try:
-        result = get_evaluatable().create_from(PrologString(program)).evaluate()
+        if dampened_alpha is not None and dampened_alpha != 1.0:
+            from src.eval.problog_utils import SemiringDampened
+            sr = SemiringDampened(alpha=dampened_alpha)
+            kc_class = get_evaluatable(semiring=sr)
+            kc = kc_class.create_from(PrologString(program), semiring=sr)
+            result = kc.evaluate(semiring=sr)
+        else:
+            result = get_evaluatable().create_from(PrologString(program)).evaluate()
         for k, v in result.items():
             queue.put(float(v))
             return
@@ -65,7 +72,9 @@ class ProbLogExecutor:
         evidence: 'EvidenceCollection',
         images: Dict[str, 'ImageData'],
         threshold: float = 0.5,
-        ices: list = None
+        ices: list = None,
+        facts: List[ProbLogFact] = None,
+        dampened_alpha: float = None
     ) -> Tuple[ModeResult, ModeResult]:
         """
         Execute question in both probabilistic and deterministic modes.
@@ -75,6 +84,8 @@ class ProbLogExecutor:
             evidence: Evidence collection for the question
             threshold: Threshold for final answer (prob >= threshold -> "True")
             images: ImageData for entity metadata
+            facts: Pre-built facts (skip internal build_facts if provided)
+            dampened_alpha: If set and != 1.0, use dampened semiring for PROVE
 
         Returns:
             (probabilistic_result, deterministic_result)
@@ -86,8 +97,11 @@ class ProbLogExecutor:
         print(f"Question: {question}")
         print(f"{'='*60}")
 
-        # Build probabilistic facts
-        prob_facts = self.fact_builder.build_facts(evidence, images)
+        # Build probabilistic facts (or use pre-built)
+        if facts is not None:
+            prob_facts = facts
+        else:
+            prob_facts = self.fact_builder.build_facts(evidence, images)
         print(f"  Facts: {len(prob_facts)}")
 
         # Generate rules + query (once, reuse for both modes)
@@ -97,7 +111,8 @@ class ProbLogExecutor:
         det_facts = ProbLogFactBuilder.threshold_facts(prob_facts, 0.5)
 
         # Execute both in subprocesses with timeout
-        prob_prob, prob_err = self._execute_program(prob_facts, rules, query, threshold)
+        prob_prob, prob_err = self._execute_program(
+            prob_facts, rules, query, threshold, dampened_alpha=dampened_alpha)
         det_prob, det_err = self._execute_program(det_facts, rules, query, threshold)
 
         if prob_err:
@@ -395,7 +410,8 @@ Output rules and query only, no explanation:"""
         facts: List[ProbLogFact],
         rules: str,
         query: str,
-        threshold: float = 0.5
+        threshold: float = 0.5,
+        dampened_alpha: float = None
     ) -> Tuple[float, str]:
         """Execute ProbLog program in a subprocess with timeout.
 
@@ -406,7 +422,7 @@ Output rules and query only, no explanation:"""
         program = sanitize_program(program)
 
         queue = mp.Queue()
-        proc = mp.Process(target=_problog_worker, args=(program, queue))
+        proc = mp.Process(target=_problog_worker, args=(program, queue, dampened_alpha))
         proc.start()
         proc.join(timeout=_PROBLOG_TIMEOUT)
 
