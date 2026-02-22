@@ -2,9 +2,9 @@
 """
 Ablation: replace all VQA fact probabilities with Gaussian random values.
 Tests whether PROVE's advantage comes from actual scores or ProbLog structure.
-Runs multiple seeds and reports mean ± std.
+Runs multiple seeds and reports mean +/- std.
 """
-import json, math, sys, os, time, signal
+import json, math, sys, os, time, signal, argparse
 import multiprocessing as mp
 import numpy as np
 
@@ -16,62 +16,62 @@ from src.eval.problog_utils import (
     SemiringDampened, execute_problog_direct, threshold_fn,
 )
 
-import argparse
+# ─── Config (loaded from configs.json) ────────────────────────────────────────
 
-BASE = _PROJECT_ROOT
-LLM_NAMES = ['llama', 'maverick', 'mistral_large']
+_CONFIGS_PATH = os.path.join(os.path.dirname(__file__), "configs.json")
+with open(_CONFIGS_PATH) as _f:
+    _ALL_CONFIGS = json.load(_f)
 
-SCORE_CONFIGS = {
-    'llama': {'dampened_alpha': 1.0},
-    'maverick': {'dampened_alpha': 0.9},
-    'mistral_large': {'dampened_alpha': 0.9},
-}
+# ─── Parse arguments ─────────────────────────────────────────────────────────
 
-DATASET_PATHS = {
-    'test1': {
-        'llm_files': {
-            'llama': f'{BASE}/eval/v5_baseline_llama/all_results.json',
-            'maverick': f'{BASE}/eval/v5_baseline_maverick/all_results.json',
-            'mistral_large': f'{BASE}/eval/v5_baseline_mistral_large/all_results.json',
-        },
-        'extra_label_files': {
-            'nova_pro': f'{BASE}/eval/v5_baseline_nova_pro/all_results.json',
-            'nova_premier': f'{BASE}/eval/v5_baseline_nova_premier/all_results.json',
-        },
-    },
-    'test2': {
-        'llm_files': {
-            'llama': f'{BASE}/eval/v5_test2_llama/all_results.json',
-            'maverick': f'{BASE}/eval/v5_test2_maverick/all_results.json',
-            'mistral_large': f'{BASE}/eval/v5_test2_mistral_large/all_results.json',
-        },
-        'extra_label_files': {},
-    },
-    'gqa': {
-        'llm_files': {
-            'llama': f'{BASE}/eval/v5_flex_gqa_llama/all_results.json',
-            'maverick': f'{BASE}/eval/v5_flex_gqa_maverick/all_results.json',
-            'mistral_large': f'{BASE}/eval/v5_flex_gqa_mistral_large/all_results.json',
-        },
-        'extra_label_files': {},
-    },
-}
+parser = argparse.ArgumentParser(description='Gaussian ablation experiment')
+parser.add_argument('--config', default='v5_perlm', choices=list(_ALL_CONFIGS.keys()),
+                    help='Config preset (default: v5_perlm)')
+parser.add_argument('--seeds', type=int, default=20, help='Number of random seeds (default: 20)')
+parser.add_argument('--gauss_mean', type=float, default=0.5, help='Gaussian mean (default: 0.5)')
+parser.add_argument('--gauss_std', type=float, default=0.2, help='Gaussian std (default: 0.2)')
+parser.add_argument('--output', '-o', type=str, default=None,
+                    help='Save results to JSON file')
+parser.add_argument('files', nargs='+', metavar='name=path',
+                    help='LLM result files as name=path')
+args = parser.parse_args()
 
-THRESH_BASE = 0.45
-THRESH_SLOPE = -0.1
-NUM_SEEDS = 20
-GAUSS_MEAN = 0.5
-GAUSS_STD = 0.2
+# Parse name=path pairs
+LLM_FILES = {}
+for spec in args.files:
+    if '=' not in spec:
+        parser.error(f"Expected name=path, got: {spec}")
+    name, path = spec.split('=', 1)
+    LLM_FILES[name] = path
 
+LLM_NAMES = list(LLM_FILES.keys())
 
+preset = _ALL_CONFIGS[args.config]
+THRESH_BASE = preset['threshold']['base']
+THRESH_SLOPE = preset['threshold']['slope']
+
+# Build per-LLM dampening from config
+DAMPENING = {}
+for llm in LLM_NAMES:
+    if llm in preset['llm_configs']:
+        DAMPENING[llm] = preset['llm_configs'][llm]['dampened_alpha']
+    else:
+        DAMPENING[llm] = preset['fallback']['dampened_alpha']
 
 
 def _alarm_handler(signum, frame):
     raise TimeoutError("ProbLog timed out")
 
 
-def _worker(args):
-    llm, ident, sample, da, seed = args
+GAUSS_MEAN = args.gauss_mean
+GAUSS_STD = args.gauss_std
+
+
+def _worker(work_args):
+    """Process one (llm, sample, seed) combination: replace non-entity fact
+    probabilities with Gaussian random values, then run ProbLog to get
+    PROVE (soft) and DePROVE (binarized) probabilities."""
+    llm, ident, sample, da, seed = work_args
 
     stored_facts = sample.get('problog', {}).get('facts', [])
     rules = sample.get('problog', {}).get('rules', '')
@@ -85,10 +85,8 @@ def _worker(args):
     for fact in stored_facts:
         pred = fact.get('predicate', '')
         if pred == 'entity':
-            # Keep entity prob as-is (from original pipeline)
             prob = fact.get('probability', 0.5)
         else:
-            # Random Gaussian probability
             prob = rng.normal(GAUSS_MEAN, GAUSS_STD)
         prob = max(1e-7, min(1 - 1e-7, prob))
         facts.append({**fact, 'probability': prob})
@@ -112,34 +110,22 @@ def _worker(args):
 
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--dataset', default='test1', choices=['test1', 'test2', 'gqa'])
-    args = parser.parse_args()
-
-    ds = DATASET_PATHS[args.dataset]
-    LLM_FILES = ds['llm_files']
-    ALL_LLM_FILES = {**LLM_FILES, **ds['extra_label_files']}
+    NUM_SEEDS = args.seeds
 
     t0 = time.time()
     print("=" * 100)
-    print(f"GAUSSIAN ABLATION ({args.dataset.upper()}): N({GAUSS_MEAN}, {GAUSS_STD}), {NUM_SEEDS} seeds")
+    print(f"GAUSSIAN ABLATION: N({GAUSS_MEAN}, {GAUSS_STD}), {NUM_SEEDS} seeds")
+    print(f"Config: {args.config}, LLMs: {', '.join(LLM_NAMES)}")
     print("=" * 100)
 
-    # Load labels
-    print("\nLoading labels from all LLMs (union)...", flush=True)
-    all_labels = {}
-    for llm, path in ALL_LLM_FILES.items():
-        try:
-            with open(path) as f:
-                data = json.load(f)
-            for s in data:
-                ident = s.get('identifier')
-                if ident and s.get('success') and s.get('label') is not None:
-                    all_labels[ident] = s['label']
-        except FileNotFoundError:
-            pass
+    def to_bool_label(label):
+        if isinstance(label, bool): return label
+        if isinstance(label, str): return label.lower() in ('true', 'yes', '1')
+        return bool(label)
 
-    # Load raw samples
+    # Load labels and raw samples
+    print("\nLoading data...", flush=True)
+    all_labels = {}
     llm_raw = {}
     for llm, path in LLM_FILES.items():
         with open(path) as f:
@@ -147,26 +133,30 @@ if __name__ == '__main__':
         idx = {}
         for s in data:
             ident = s.get('identifier')
-            if ident and s.get('success') and s.get('label') is not None:
+            if not ident or s.get('label') is None:
+                continue
+            all_labels[ident] = to_bool_label(s['label'])
+            if s.get('success'):
                 idx[ident] = s
         llm_raw[llm] = idx
+        print(f"  {llm}: {len(idx)} success / {len(data)} total")
 
     all_ids = sorted(all_labels.keys())
     n = len(all_ids)
     labels_arr = np.array([all_labels[ident] for ident in all_ids], dtype=bool)
     print(f"  n = {n}")
 
-    # Build work items: all LLMs × all samples × all seeds
+    # Build work items: all LLMs x all samples x all seeds
     work_items = []
     for seed in range(NUM_SEEDS):
         for llm in LLM_NAMES:
-            da = SCORE_CONFIGS[llm]['dampened_alpha']
+            da = DAMPENING[llm]
             for ident in all_ids:
                 sample = llm_raw.get(llm, {}).get(ident)
                 if sample is not None:
                     work_items.append((llm, ident, sample, da, seed))
 
-    print(f"  {len(work_items)} work items ({NUM_SEEDS} seeds × 3 LLMs × ~{n} samples)")
+    print(f"  {len(work_items)} work items ({NUM_SEEDS} seeds x {len(LLM_NAMES)} LLMs x ~{n} samples)")
     print(f"  Using {os.cpu_count()} workers...", flush=True)
 
     # results[seed][llm][ident] = (prove_prob, dep_prob, n_facts)
@@ -188,9 +178,10 @@ if __name__ == '__main__':
     dep_majority_accs = []
 
     for seed in range(NUM_SEEDS):
-        prove_arr = np.full((3, n), np.nan)
-        deprove_arr = np.full((3, n), np.nan)
-        nfacts_arr = np.zeros((3, n))
+        n_llms = len(LLM_NAMES)
+        prove_arr = np.full((n_llms, n), np.nan)
+        deprove_arr = np.full((n_llms, n), np.nan)
+        nfacts_arr = np.zeros((n_llms, n))
 
         for j, llm in enumerate(LLM_NAMES):
             cache = results[seed][llm]
@@ -228,7 +219,7 @@ if __name__ == '__main__':
 
         # Majority vote
         dep_votes = np.stack([dep_preds_all[l] for l in LLM_NAMES], axis=0)
-        majority_pred = dep_votes.sum(axis=0) >= 2
+        majority_pred = dep_votes.sum(axis=0) >= len(LLM_NAMES) / 2
         dep_majority_accs.append((majority_pred == labels_arr).sum() / n)
 
     # Report
@@ -238,24 +229,37 @@ if __name__ == '__main__':
 
     prove_mean = 100 * np.mean(prove_accs)
     prove_std = 100 * np.std(prove_accs)
-    print(f"\n  PROVE (perlm_soft):      {prove_mean:.2f}% ± {prove_std:.2f}%")
+    print(f"\n  PROVE (perlm_soft):      {prove_mean:.2f}% +/- {prove_std:.2f}%")
 
     for llm in LLM_NAMES:
         m = 100 * np.mean(dep_accs_per_llm[llm])
         s = 100 * np.std(dep_accs_per_llm[llm])
-        short = {'llama': 'Llama', 'maverick': 'Maverick', 'mistral_large': 'Mistral Large'}
-        print(f"  DePROVE ({short[llm]:14s}): {m:.2f}% ± {s:.2f}%")
+        print(f"  DePROVE ({llm:14s}): {m:.2f}% +/- {s:.2f}%")
 
     maj_m = 100 * np.mean(dep_majority_accs)
     maj_s = 100 * np.std(dep_majority_accs)
-    print(f"  DePROVE (Majority Vote): {maj_m:.2f}% ± {maj_s:.2f}%")
+    print(f"  DePROVE (Majority Vote): {maj_m:.2f}% +/- {maj_s:.2f}%")
 
-    # Also show per-seed for reference
     print(f"\n  Per-seed PROVE: {['%.1f' % (100*a) for a in prove_accs]}")
+    print(f"\nTotal time: {time.time()-t0:.0f}s")
 
-    # Compare to real numbers
-    real_prove = {'test1': 73.06, 'test2': 73.92, 'gqa': 63.99}
-    real_dep = {'test1': 69.95, 'test2': 69.77, 'gqa': 61.02}
-    print(f"\n  For reference — real PROVE: {real_prove.get(args.dataset, '?')}%, real best DePROVE: {real_dep.get(args.dataset, '?')}%")
-
-    print(f"\n\nTotal time: {time.time()-t0:.0f}s")
+    # Save to JSON
+    if args.output:
+        out = {
+            'gaussian': {'mean': GAUSS_MEAN, 'std': GAUSS_STD},
+            'config': args.config,
+            'llms': LLM_NAMES,
+            'n': n,
+            'num_seeds': NUM_SEEDS,
+            'prove': {'mean': round(prove_mean, 2), 'std': round(prove_std, 2),
+                      'per_seed': [round(100 * a, 2) for a in prove_accs]},
+            'deprove_per_llm': {
+                llm: {'mean': round(100 * np.mean(dep_accs_per_llm[llm]), 2),
+                       'std': round(100 * np.std(dep_accs_per_llm[llm]), 2)}
+                for llm in LLM_NAMES
+            },
+            'deprove_majority': {'mean': round(maj_m, 2), 'std': round(maj_s, 2)},
+        }
+        with open(args.output, 'w') as f:
+            json.dump(out, f, indent=2)
+        print(f"\nResults saved to {args.output}")

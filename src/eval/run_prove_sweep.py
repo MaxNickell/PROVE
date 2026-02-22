@@ -2,6 +2,10 @@
 """
 Clean PROVE-only sweep — finalized strategies for the paper.
 
+Usage:
+    python src/eval/run_prove_sweep.py llama=eval/v5_test1_llama/all_results.json maverick=eval/v5_test1_maverick/all_results.json
+    python src/eval/run_prove_sweep.py --output_dir eval/v5_sweep_test2 llama=eval/v5_test2_llama/all_results.json maverick=eval/v5_test2_maverick/all_results.json mistral_large=eval/v5_test2_mistral_large/all_results.json
+
 Dimensions:
 1. VQA scoring (attr × rel, with mix-and-match)
 2. Entity probability (original, 1.0, 0.99, 0.9)
@@ -11,6 +15,7 @@ Dimensions:
 6. LLM combos (singles + all ensemble sizes 2..N; soft + hard vote)
 
 All post-hoc — zero API calls.
+Results saved to {output_dir}/results.json.
 """
 
 import gc
@@ -38,23 +43,17 @@ from src.eval.problog_utils import (
 )
 
 
-# ─── Data paths ──────────────────────────────────────────────────────────────
+import argparse
 
-_DEFAULT_RESULT_FILES = {
-    'maverick': 'eval/v3_baseline_maverick/all_results_entity_fixed.json',
-    'llama': 'eval/v3_baseline_llama/all_results_entity_fixed.json',
-    'nova_pro': 'eval/nova_pro_fixed/all_results_entity_fixed.json',
-    'nova_premier': 'eval/nova_premier_fixed/all_results.json',
-}
-
-# Allow env var override: PROVE_SWEEP_RESULT_FILES='{"maverick":"path",...}'
-if os.environ.get('PROVE_SWEEP_RESULT_FILES'):
-    LLM_RESULT_FILES = json.loads(os.environ['PROVE_SWEEP_RESULT_FILES'])
-    print(f"Using result files from PROVE_SWEEP_RESULT_FILES env var")
-else:
-    LLM_RESULT_FILES = _DEFAULT_RESULT_FILES
-
-OUTPUT_DIR = os.environ.get('PROVE_SWEEP_OUTPUT_DIR', 'eval/prove_sweep')
+def parse_args():
+    parser = argparse.ArgumentParser(
+        description='PROVE scoring config sweep (post-hoc, zero API calls)',
+        usage='%(prog)s [options] llm=path [llm=path ...]')
+    parser.add_argument('files', nargs='+', metavar='name=path',
+                        help='LLM result files as name=path (e.g. llama=eval/v5_test1_llama/all_results.json)')
+    parser.add_argument('--output_dir', '-o', default='eval/prove_sweep',
+                        help='Output directory for results and cache (default: eval/prove_sweep)')
+    return parser.parse_args()
 
 
 # ─── Parallel worker (batch) ────────────────────────────────────────────────
@@ -374,7 +373,7 @@ def _work_item_generator(llm_name, idx, all_ids, score_configs, timed_out_idents
             yield (score_key, ident, facts, rules, query, da)
 
 
-def precompute_all(all_llm_indices, all_ids_by_llm, score_configs):
+def precompute_all(all_llm_indices, all_ids_by_llm, score_configs, output_dir):
     """
     Precompute ProbLog results for all (LLM, score_config, sample) combinations.
     Returns: precomputed[llm][(score_key, ident)] = (prove_prob, deprove_prob, num_facts)
@@ -387,7 +386,7 @@ def precompute_all(all_llm_indices, all_ids_by_llm, score_configs):
     # Cap workers — ProbLog uses ~1.7GB per active worker with maxtasksperchild recycling
     n_workers = min(n_workers, 180)
 
-    cache_dir = os.path.join(OUTPUT_DIR, 'cache')
+    cache_dir = os.path.join(output_dir, 'cache')
     os.makedirs(cache_dir, exist_ok=True)
 
     precomputed = {llm: {} for llm in all_llm_indices}
@@ -927,6 +926,18 @@ def print_summary(all_results):
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def main():
+    args = parse_args()
+
+    # Parse name=path pairs
+    LLM_RESULT_FILES = {}
+    for spec in args.files:
+        if '=' not in spec:
+            print(f"Error: expected name=path, got: {spec}")
+            sys.exit(1)
+        name, path = spec.split('=', 1)
+        LLM_RESULT_FILES[name] = path
+
+    OUTPUT_DIR = args.output_dir
     os.makedirs(OUTPUT_DIR, exist_ok=True)
     start_time = time.time()
 
@@ -964,7 +975,7 @@ def main():
     print(f"\n{'='*80}")
     print("PRECOMPUTING ProbLog results...")
     print(f"{'='*80}")
-    precomputed = precompute_all(all_llm_indices, all_ids_by_llm, score_configs)
+    precomputed = precompute_all(all_llm_indices, all_ids_by_llm, score_configs, OUTPUT_DIR)
     precompute_time = time.time() - start_time
     print(f"\nPrecomputation done in {precompute_time:.1f}s ({precompute_time/60:.1f} min)")
 

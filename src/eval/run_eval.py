@@ -16,7 +16,6 @@ import argparse
 import traceback
 import torch
 from pathlib import Path
-from PIL import Image
 from tqdm import tqdm
 
 # Add project root (two levels up from src/eval/) to sys.path
@@ -30,7 +29,6 @@ from src.pipeline.unified_agent import UnifiedAgent
 from src.pipeline.problog_executor import ProbLogExecutor
 from src.pipeline.problog_builder import ProbLogFactBuilder
 from src.vision.qwen_verifier import QwenVerifier
-from src.vision.blip_verifier import BLIPVerifier
 
 # ── LLM model registry ──────────────────────────────────────────────────────
 LLM_MODELS = {
@@ -45,25 +43,25 @@ LLM_MODELS = {
 # ── Dataset presets ──────────────────────────────────────────────────────────
 DATASET_PRESETS = {
     "test1": {
-        "type": "nlvr2",
+        "type": "paired",       # NLVR2: JSONL, two images per sample
         "test_json": "nlvr2_data/balanced_test1.json",
         "img_dir":   "nlvr2_data/images",
         "z_filter":  0,
     },
     "test2": {
-        "type": "nlvr2",
+        "type": "paired",
         "test_json": "nlvr2_data/balanced_test2.json",
         "img_dir":   "nlvr2_data/images",
         "z_filter":  0,
     },
     "gqa": {
-        "type": "gqa",
+        "type": "single",       # Single image, yes/no question
         "test_json": "gqa_data/testdev_balanced_yn.json",
         "img_dir":   "gqa_data/images",
         "z_filter":  None,
     },
     "vqav2": {
-        "type": "gqa",
+        "type": "single",
         "test_json": "vqav2_data/val_balanced_yn.json",
         "img_dir":   "vqav2_data/images",
         "z_filter":  None,
@@ -98,10 +96,10 @@ def nlvr2_id_to_image_paths(identifier, img_dir, directory=None):
     return img_a, img_b
 
 
-def load_gqa_samples(json_path, img_dir):
-    """Load GQA dataset samples.
+def load_single_image_samples(json_path, img_dir):
+    """Load single-image yes/no dataset (GQA, VQAv2, etc.).
 
-    GQA format: dict of {question_id: {question, imageId, answer, ...}}
+    Expected JSON format: dict of {question_id: {question, imageId, answer, ...}}
     Returns list of dicts with unified keys matching NLVR2 format.
     """
     with open(json_path) as f:
@@ -165,7 +163,7 @@ def run_multi_llm(args):
     # Check which LLMs already have complete results
     to_run = []
     for llm in llm_list:
-        output_dir = f"eval/{args.version}_{args.dataset}_{llm}"
+        output_dir = f"eval/{args.name}_{args.dataset}_{llm}"
         result_file = os.path.join(output_dir, "all_results.json")
         if os.path.exists(result_file):
             with open(result_file) as f:
@@ -189,7 +187,7 @@ def run_multi_llm(args):
                 cmd = [sys.executable, os.path.abspath(__file__),
                        '--llm', llm,
                        '--dataset', args.dataset,
-                       '--version', args.version,
+                       '--name', args.name,
                        '--config', args.config]
                 if args.resume_from:
                     cmd.extend(['--resume_from', str(args.resume_from)])
@@ -223,7 +221,7 @@ def run_multi_llm(args):
                 cmd = [sys.executable, os.path.abspath(__file__),
                        '--llm', llm,
                        '--dataset', args.dataset,
-                       '--version', args.version,
+                       '--name', args.name,
                        '--config', args.config]
                 if args.resume_from:
                     cmd.extend(['--resume_from', str(args.resume_from)])
@@ -252,87 +250,22 @@ def run_multi_llm(args):
     evaluate_with_config(args)
 
 
-def _parse_per_llm_arg(values):
-    """Parse a nargs='+' arg into (default_value, {llm: override_value}).
-
-    Examples:
-        ['qwen_tf_score']                                → ('qwen_tf_score', {})
-        ['qwen_tf_score', 'maverick=avg_blip_qwen_tf']   → ('qwen_tf_score', {'maverick': 'avg_blip_qwen_tf'})
-        ['maverick=avg_blip_qwen_tf']                     → (None, {'maverick': 'avg_blip_qwen_tf'})
-        ['1.0', 'maverick=0.9', 'mistral_large=0.9']     → ('1.0', {'maverick': '0.9', 'mistral_large': '0.9'})
-    """
-    if values is None:
-        return None, {}
-    default = None
-    overrides = {}
-    for v in values:
-        if '=' in v:
-            llm, val = v.split('=', 1)
-            overrides[llm] = val
-        else:
-            default = v
-    return default, overrides
-
-
 def evaluate_with_config(args):
     """Apply scoring config to collected results and report ensemble accuracy."""
     import math
     import multiprocessing as mp
+    from src.eval.problog_utils import threshold_fn
 
     llm_list = args.llm if isinstance(args.llm, list) else [args.llm]
-    preset_thresh = _ALL_CONFIGS[args.config]["threshold"]
-    thresh_base = args.thresh_base if args.thresh_base is not None else preset_thresh["base"]
-    thresh_slope = args.thresh_slope if args.thresh_slope is not None else preset_thresh["slope"]
-
-    # Parse per-LLM CLI args once
-    attr_default, attr_overrides = _parse_per_llm_arg(args.attr_score)
-    rel_default, rel_overrides = _parse_per_llm_arg(args.rel_score)
-    ep_default, ep_overrides = _parse_per_llm_arg(args.entity_prob)
-    da_default, da_overrides = _parse_per_llm_arg(args.dampened_alpha)
-    ag_default, ag_overrides = _parse_per_llm_arg(args.agreement)
-
-    def _resolve(default, overrides, llm, cfg_key):
-        """Get the value for an LLM: CLI override > CLI default > per-LLM default (already in cfg)."""
-        if llm in overrides:
-            return overrides[llm]
-        if default is not None:
-            return default
-        return None  # keep existing per-LLM default
-
-    def _build_llm_config(llm):
-        """Build scoring config for an LLM: start with per-LLM defaults, override with CLI args."""
-        preset = _ALL_CONFIGS[args.config]
-        cfg = preset["llm_configs"].get(llm, preset["fallback"]).copy()
-
-        val = _resolve(attr_default, attr_overrides, llm, "attr_score_type")
-        if val is not None:
-            cfg["attr_score_type"] = val
-
-        val = _resolve(rel_default, rel_overrides, llm, "rel_score_type")
-        if val is not None:
-            cfg["rel_score_type"] = val
-
-        val = _resolve(ep_default, ep_overrides, llm, "entity_prob")
-        if val is not None:
-            cfg["entity_prob"] = None if val == "orig" else float(val)
-
-        val = _resolve(da_default, da_overrides, llm, "dampened_alpha")
-        if val is not None:
-            cfg["dampened_alpha"] = float(val)
-
-        val = _resolve(ag_default, ag_overrides, llm, "agreement_mode")
-        if val is not None:
-            cfg["agreement_mode"] = None if val == "none" else val
-
-        return cfg
-
-    from src.eval.problog_utils import threshold_fn
+    preset = _ALL_CONFIGS[args.config]
+    thresh_base = preset["threshold"]["base"]
+    thresh_slope = preset["threshold"]["slope"]
 
     # Load results for each LLM
     all_data = {}   # llm -> {ident: sample} (success only, for ProbLog)
     labels = {}     # ident -> bool label (all samples, success + fail)
     for llm in llm_list:
-        result_path = f"eval/{args.version}_{args.dataset}_{llm}/all_results.json"
+        result_path = f"eval/{args.name}_{args.dataset}_{llm}/all_results.json"
         if not os.path.exists(result_path):
             print(f"  WARNING: {result_path} not found, skipping {llm}")
             continue
@@ -358,10 +291,10 @@ def evaluate_with_config(args):
     active_llms = sorted(all_data.keys())
 
     print(f"\n  Evaluating {n} samples, {len(active_llms)} LLMs: {', '.join(active_llms)}")
-    print(f"  Threshold: log(b={thresh_base}, s={thresh_slope})")
+    print(f"  Config: {args.config}, Threshold: log(b={thresh_base}, s={thresh_slope})")
     llm_cfgs = {}
     for llm in active_llms:
-        llm_cfgs[llm] = _build_llm_config(llm)
+        llm_cfgs[llm] = preset["llm_configs"].get(llm, preset["fallback"]).copy()
         c = llm_cfgs[llm]
         ep = "orig" if c["entity_prob"] is None else c["entity_prob"]
         ag = c["agreement_mode"] or "none"
@@ -470,7 +403,7 @@ def evaluate_with_config(args):
 
     # Write post-hoc PROVE/DePROVE probs back into each LLM's results file
     for llm in active_llms:
-        result_path = f"eval/{args.version}_{args.dataset}_{llm}/all_results.json"
+        result_path = f"eval/{args.name}_{args.dataset}_{llm}/all_results.json"
         with open(result_path) as f:
             data = json.load(f)
         updated = 0
@@ -482,15 +415,15 @@ def evaluate_with_config(args):
             if entry is not None:
                 prove_prob, dep_prob, nf = entry
                 thresh = threshold_fn(nf, thresh_base, thresh_slope)
-                s['posthoc_prove_prob'] = prove_prob
-                s['posthoc_prove_pred'] = prove_prob >= thresh if prove_prob is not None else None
-                s['posthoc_deprove_prob'] = dep_prob
-                s['posthoc_deprove_pred'] = dep_prob >= 0.5 if dep_prob is not None else None
-                s['posthoc_n_facts'] = nf
+                s['optimized_prove_prob'] = prove_prob
+                s['optimized_prove_pred'] = prove_prob >= thresh if prove_prob is not None else None
+                s['optimized_deprove_prob'] = dep_prob
+                s['optimized_deprove_pred'] = dep_prob >= 0.5 if dep_prob is not None else None
+                s['optimized_n_facts'] = nf
                 updated += 1
         with open(result_path, 'w') as f:
             json.dump(data, f, indent=2)
-        print(f"  Wrote posthoc probs to {result_path} ({updated} samples)")
+        print(f"  Wrote optimized predictions to {result_path} ({updated} samples)")
 
 
 def main():
@@ -502,8 +435,8 @@ def main():
     parser.add_argument("--dataset", default="test1",
                         help=f"Dataset preset ({', '.join(DATASET_PRESETS.keys())}) "
                              f"or 'nlvr2'/'gqa' for manual paths")
-    parser.add_argument("--version", default="v5",
-                        help="Version prefix for auto output_dir (default: v5)")
+    parser.add_argument("--name", default="v5",
+                        help="Run name prefix for output dirs, e.g. eval/{name}_{dataset}_{llm} (default: v5)")
     parser.add_argument("--data_root", default=None,
                         help="Root directory for datasets (overrides PROVE_DATA_ROOT env var)")
     parser.add_argument("--test_json", default=None,
@@ -511,7 +444,7 @@ def main():
     parser.add_argument("--img_dir", default=None,
                         help="Path to images directory (overrides dataset preset)")
     parser.add_argument("--output_dir", default=None,
-                        help="Output directory (auto-generated from --version/--dataset/--llm if not set)")
+                        help="Output directory (auto-generated from --name/--dataset/--llm if not set)")
     parser.add_argument("--max_samples", type=int, default=0,
                         help="Max samples to process (0 = all)")
     parser.add_argument("--resume_from", type=int, default=0,
@@ -524,30 +457,11 @@ def main():
                         help="Enable Claude extended thinking with this token budget (e.g. 4096)")
     parser.add_argument("--cot", action="store_true",
                         help="Enable prompt-level chain-of-thought reasoning")
-    parser.add_argument("--blip_lora_path", type=str, default=None,
-                        help="Path to fine-tuned BLIP LoRA adapter (e.g. eval/vqa_finetune/blip_lora_best)")
     parser.add_argument("--retry_failed", action="store_true",
                         help="Remove failed entries from results and retry them")
-
-    # ── Scoring config ───────────────────────────────────────────────
     parser.add_argument("--config", type=str, default="v5_perlm",
                         choices=list(_ALL_CONFIGS.keys()),
                         help="Scoring config preset from configs.json (default: v5_perlm)")
-    # Per-LLM overrides (optional, override the preset):
-    parser.add_argument("--attr_score", nargs='+', default=None,
-                        help="Attribute score type override. Values: blip_score, qwen_tf_score, avg_blip_qwen_tf")
-    parser.add_argument("--rel_score", nargs='+', default=None,
-                        help="Relation score type override. Same values as --attr_score")
-    parser.add_argument("--entity_prob", nargs='+', default=None,
-                        help="Entity probability override: 'orig' or a float")
-    parser.add_argument("--dampened_alpha", nargs='+', default=None,
-                        help="Dampening alpha override: float, 1.0=standard, <1=dampened")
-    parser.add_argument("--agreement", nargs='+', default=None,
-                        help="VQA agreement override: none, sharpen, dampen_0.5, dampen_0.3, both")
-    parser.add_argument("--thresh_base", type=float, default=None,
-                        help="Log threshold base (default: from config preset)")
-    parser.add_argument("--thresh_slope", type=float, default=None,
-                        help="Log threshold slope (default: from config preset)")
     args = parser.parse_args()
 
     # ── Multi-LLM mode: orchestrate parallel runs + ensemble eval ─────
@@ -574,36 +488,25 @@ def main():
         if args.z_filter is None and preset["z_filter"] is not None:
             args.z_filter = preset["z_filter"]
         # Map preset type for pipeline logic
-        is_gqa_dataset = preset["type"] == "gqa"
-    elif args.dataset == "gqa":
-        if args.test_json is None:
-            args.test_json = os.path.join(data_root, "gqa_data/testdev_balanced_yn.json")
-        if args.img_dir is None:
-            args.img_dir = os.path.join(data_root, "gqa_data/images")
-        is_gqa_dataset = True
+        is_single_image = preset["type"] == "single"
     else:
-        # Fallback: treat as nlvr2
-        if args.test_json is None:
-            args.test_json = os.path.join(data_root, "nlvr2_data/balanced_test1.json")
-        if args.img_dir is None:
-            args.img_dir = os.path.join(data_root, "nlvr2_data/images")
-        is_gqa_dataset = False
+        # Unknown dataset — require --test_json and --img_dir, default to paired
+        is_single_image = False
 
     # ── Auto-generate output_dir ─────────────────────────────────────────
     if args.output_dir is None:
         llm_suffix = f"_{args.llm}" if args.llm else ""
         dataset_name = args.dataset if args.dataset in DATASET_PRESETS else args.dataset
-        args.output_dir = f"eval/{args.version}_{dataset_name}{llm_suffix}"
+        args.output_dir = f"eval/{args.name}_{dataset_name}{llm_suffix}"
         print(f"Output dir: {args.output_dir}")
 
     os.makedirs(args.output_dir, exist_ok=True)
 
     # Load test data
-    is_gqa = is_gqa_dataset
     print(f"Loading test data ({args.dataset})...")
 
-    if is_gqa:
-        samples = load_gqa_samples(args.test_json, args.img_dir)
+    if is_single_image:
+        samples = load_single_image_samples(args.test_json, args.img_dir)
     else:
         # NLVR2: JSONL format
         samples = []
@@ -624,7 +527,7 @@ def main():
         valid_samples = []
         skipped = 0
         for s in samples:
-            if is_gqa:
+            if is_single_image:
                 valid = os.path.exists(s["image_path"])
             else:
                 img_a, img_b = nlvr2_id_to_image_paths(
@@ -659,11 +562,6 @@ def main():
             thinking_budget=args.thinking_budget,
             cot_enabled=args.cot
         )
-
-    # Load fine-tuned BLIP if LoRA path provided
-    if args.blip_lora_path:
-        print(f"Using fine-tuned BLIP from {args.blip_lora_path}")
-        mm._models['blip_verifier'] = BLIPVerifier(device="auto", lora_path=args.blip_lora_path)
 
     detector = Detector()
     executor = ProbLogExecutor()
@@ -720,7 +618,7 @@ def main():
         label = label_str if isinstance(label_str, bool) else label_str.lower() == "true"
 
         # Build image_paths dict based on dataset type
-        if is_gqa:
+        if is_single_image:
             img_path = sample["image_path"]
             image_paths = {"image_a": img_path}
             missing_images = not os.path.exists(img_path)
@@ -763,7 +661,7 @@ def main():
                     ]
                 result["detections"] = det_info
 
-                # Step 2: Evidence collection (uses BLIP for verification)
+                # Step 2: Evidence collection (collects both BLIP and Qwen scores)
                 evidence = agent.collect_evidence(
                     question=sentence,
                     images=kb.images,
@@ -800,7 +698,7 @@ def main():
                     for f in prob_facts
                 ]
 
-                # Run ProbLog with BLIP scores (default)
+                # Run ProbLog (scoring config applied post-hoc in Phase 2)
                 prob_result, det_result = executor.execute_dual(
                     question=sentence,
                     evidence=evidence,

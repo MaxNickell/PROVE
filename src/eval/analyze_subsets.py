@@ -17,6 +17,8 @@ parser = argparse.ArgumentParser(
     epilog='Positional args: name=path pairs.')
 parser.add_argument('files', nargs='+', metavar='name=path',
                     help='LLM result files as name=path')
+parser.add_argument('--output', '-o', type=str, default=None,
+                    help='Save results to JSON file')
 args = parser.parse_args()
 
 LLM_FILES = {}
@@ -41,24 +43,24 @@ print(f"LLMs: {', '.join(LLM_NAMES)}")
 print(f"Loading data from {len(LLM_FILES)} LLMs...", flush=True)
 
 all_labels = {}   # ident -> bool label
-llm_data = {}     # llm -> {ident: sample} (successful with posthoc predictions)
+llm_data = {}     # llm -> {ident: sample} (successful with optimized predictions)
 
 for llm, path in LLM_FILES.items():
     with open(path) as f:
         data = json.load(f)
-    n_posthoc = 0
+    n_optimized = 0
     idx = {}
     for s in data:
         ident = s.get('identifier')
         if not ident or s.get('label') is None:
             continue
         all_labels[ident] = to_bool_label(s['label'])
-        if s.get('success') and s.get('posthoc_prove_pred') is not None:
+        if s.get('success') and s.get('optimized_prove_pred') is not None:
             s['label'] = to_bool_label(s['label'])
             idx[ident] = s
-            n_posthoc += 1
+            n_optimized += 1
     llm_data[llm] = idx
-    print(f"  {llm}: {n_posthoc} with posthoc predictions / {len(data)} total")
+    print(f"  {llm}: {n_optimized} with optimized predictions / {len(data)} total")
 
 all_ids = sorted(all_labels.keys())
 n = len(all_ids)
@@ -73,16 +75,16 @@ n_missing = 0
 for ident in all_ids:
     label = all_labels[ident]
 
-    # Get per-LLM predictions from stored posthoc values
+    # Get per-LLM predictions from stored optimized values
     llm_prove_pred = {}
     llm_prove_prob = {}
     llm_dep_pred = {}
     for llm in LLM_NAMES:
         s = llm_data.get(llm, {}).get(ident)
         if s is not None:
-            llm_prove_pred[llm] = s['posthoc_prove_pred']
-            llm_prove_prob[llm] = s.get('posthoc_prove_prob')
-            llm_dep_pred[llm] = s['posthoc_deprove_pred']
+            llm_prove_pred[llm] = s['optimized_prove_pred']
+            llm_prove_prob[llm] = s.get('optimized_prove_prob')
+            llm_dep_pred[llm] = s['optimized_deprove_pred']
         else:
             llm_prove_pred[llm] = None
             llm_prove_prob[llm] = None
@@ -261,12 +263,12 @@ SUBSETS = {
 }
 
 
-# ─── Print analysis ──────────────────────────────────────────────────────────
+# ─── Compute results ─────────────────────────────────────────────────────────
 
-def print_subset(name, subset_samples):
+def compute_subset(subset_samples):
     ns = len(subset_samples)
     if ns == 0:
-        return
+        return None
 
     prove_correct = sum(1 for s in subset_samples if s['prove_pred'] == s['label'])
     prove_acc = 100 * prove_correct / ns
@@ -279,22 +281,49 @@ def print_subset(name, subset_samples):
     maj_correct = sum(1 for s in subset_samples if s['dep_majority'] == s['label'])
     maj_acc = 100 * maj_correct / ns
 
-    dep_parts = "  ".join(f"DeP({llm[:3].title()})={dep_accs[llm]:5.1f}%" for llm in LLM_NAMES)
-    print(f"  {name:40s} n={ns:4d} | PROVE={prove_acc:5.1f}%  {dep_parts}  DeP(Maj)={maj_acc:5.1f}%")
+    best_dep = max(dep_accs.values())
 
+    return {
+        'n': ns,
+        'prove_acc': round(prove_acc, 2),
+        'deprove_per_llm': {llm: round(acc, 2) for llm, acc in dep_accs.items()},
+        'deprove_majority_acc': round(maj_acc, 2),
+        'deprove_best_acc': round(best_dep, 2),
+        'delta_best': round(prove_acc - best_dep, 2),
+        'delta_majority': round(prove_acc - maj_acc, 2),
+    }
+
+
+# Compute all results
+results = {'llms': LLM_NAMES, 'n_total': n, 'n_samples': len(samples), 'n_partial': n_missing}
+results['overall'] = compute_subset(samples)
+results['subsets'] = {}
+
+for group_name, subsets in SUBSETS.items():
+    results['subsets'][group_name] = {}
+    for subset_name, filter_fn in subsets.items():
+        filtered = [s for s in samples if filter_fn(s)]
+        r = compute_subset(filtered)
+        if r is not None:
+            results['subsets'][group_name][subset_name] = r
+
+# ─── Print analysis ──────────────────────────────────────────────────────────
+
+def print_row(name, r):
+    dep_parts = "  ".join(f"DeP({llm[:3].title()})={r['deprove_per_llm'][llm]:5.1f}%" for llm in LLM_NAMES)
+    print(f"  {name:40s} n={r['n']:4d} | PROVE={r['prove_acc']:5.1f}%  {dep_parts}  DeP(Maj)={r['deprove_majority_acc']:5.1f}%")
 
 print(f"{'='*120}")
 print(f"SUBSET ANALYSIS")
 print(f"  LLMs: {', '.join(LLM_NAMES)}")
 print(f"{'='*120}")
 print()
-print_subset("OVERALL", samples)
+print_row("OVERALL", results['overall'])
 
-for group_name, subsets in SUBSETS.items():
+for group_name, group in results['subsets'].items():
     print(f"\n  --- {group_name} ---")
-    for subset_name, filter_fn in subsets.items():
-        filtered = [s for s in samples if filter_fn(s)]
-        print_subset(subset_name, filtered)
+    for subset_name, r in group.items():
+        print_row(subset_name, r)
 
 # ─── PROVE vs best-DePROVE delta per subset ──────────────────────────────────
 
@@ -302,24 +331,19 @@ print(f"\n\n{'='*120}")
 print(f"PROVE vs BEST SINGLE-LLM DePROVE (delta)")
 print(f"{'='*120}")
 
-def print_delta(name, subset_samples):
-    ns = len(subset_samples)
-    if ns == 0:
-        return
-    prove_acc = 100 * sum(1 for s in subset_samples if s['prove_pred'] == s['label']) / ns
-    best_dep = max(
-        100 * sum(1 for s in subset_samples if s['dep_preds'][l] == s['label']) / ns
-        for l in LLM_NAMES
-    )
-    maj_acc = 100 * sum(1 for s in subset_samples if s['dep_majority'] == s['label']) / ns
-    delta_best = prove_acc - best_dep
-    delta_maj = prove_acc - maj_acc
-    print(f"  {name:40s} n={ns:4d} | PROVE={prove_acc:5.1f}%  BestDeP={best_dep:5.1f}%  Maj={maj_acc:5.1f}%  d(best)={delta_best:+5.1f}%  d(maj)={delta_maj:+5.1f}%")
+def print_delta(name, r):
+    print(f"  {name:40s} n={r['n']:4d} | PROVE={r['prove_acc']:5.1f}%  BestDeP={r['deprove_best_acc']:5.1f}%  Maj={r['deprove_majority_acc']:5.1f}%  d(best)={r['delta_best']:+5.1f}%  d(maj)={r['delta_majority']:+5.1f}%")
 
 print()
-print_delta("OVERALL", samples)
-for group_name, subsets in SUBSETS.items():
+print_delta("OVERALL", results['overall'])
+for group_name, group in results['subsets'].items():
     print(f"\n  --- {group_name} ---")
-    for subset_name, filter_fn in subsets.items():
-        filtered = [s for s in samples if filter_fn(s)]
-        print_delta(subset_name, filtered)
+    for subset_name, r in group.items():
+        print_delta(subset_name, r)
+
+# ─── Save to JSON ────────────────────────────────────────────────────────────
+
+if args.output:
+    with open(args.output, 'w') as f:
+        json.dump(results, f, indent=2)
+    print(f"\nResults saved to {args.output}")
