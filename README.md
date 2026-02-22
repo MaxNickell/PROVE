@@ -10,7 +10,7 @@ Neuro-symbolic visual question answering using agentic evidence collection and p
 
 - Python 3.9+
 - CUDA-compatible GPU (recommended: 24GB+ VRAM)
-- AWS Bedrock access for Llama 3.3 70B
+- AWS Bedrock access (Llama 3.3 70B or other supported LLMs)
 
 ### Setup
 
@@ -32,17 +32,21 @@ export AWS_DEFAULT_REGION=us-west-2
 
 ## Quick Start
 
-### Run on NLVR2 Example
+### Run on a Single Example
 
 ```bash
-# Random example
-python run_example.py
+# Random NLVR2 test1 example
+python src/eval/run_example.py
 
-# Specific example
-python run_example.py --identifier test1-366-0-0
+# Specific NLVR2 example
+python src/eval/run_example.py --identifier test1-366-0-0
+
+# GQA or VQAv2 example
+python src/eval/run_example.py --dataset gqa
+python src/eval/run_example.py --dataset vqav2
 
 # With logging
-python run_example.py --save-logs
+python src/eval/run_example.py --save-logs
 ```
 
 ### Programmatic Usage
@@ -50,20 +54,22 @@ python run_example.py --save-logs
 ```python
 from src import PROVE
 
-# Initialize model (threshold=0.5 by default)
 model = PROVE(threshold=0.5)
 
-# Run inference - returns both probabilistic and deterministic results
+# Paired images (NLVR2)
 result = model.predict(
-    "image_a.jpg",
-    "image_b.jpg",
+    {"image_a": "img1.jpg", "image_b": "img2.jpg"},
     "Is there a white bird on top of another animal in both images?"
 )
 
-# Access results
-print(result.probabilistic.final_answer)  # "True" or "False"
-print(result.deterministic.final_answer)  # "True" or "False"
-print(f"Modes agree: {result.probabilistic.final_answer == result.deterministic.final_answer}")
+# Single image (GQA, VQAv2)
+result = model.predict(
+    {"image_a": "photo.jpg"},
+    "Is the dog sitting on the couch?"
+)
+
+print(result.probabilistic.final_answer)   # True or False
+print(result.deterministic.final_answer)   # True or False
 ```
 
 ---
@@ -99,15 +105,15 @@ Question + Images → Detection → Agent (Perceive/Verify) → ProbLog → Answ
 
 **Purpose**: Collect probabilistic evidence through agentic VLM reasoning
 
-**Architecture**: ReAct agent loop (max 15 iterations)
+**Architecture**: ReAct agent loop (max 20 iterations)
 
 **Agent Actions** (Pydantic-validated):
 
 | Action | Purpose | Returns |
 |--------|---------|---------|
 | `perceive` | Ask open-ended question about entity | Text answer (context gathering) |
-| `verify_attribute` | Check if entity has specific attribute | Probability from BLIP-ITM |
-| `verify_relationship` | Check spatial relationship between entities | Probability from BLIP-ITM |
+| `verify_attribute` | Check if entity has specific attribute | Probability (BLIP-ITM + Qwen logits) |
+| `verify_relationship` | Check spatial relationship between entities | Probability (BLIP-ITM + Qwen logits) |
 | `verify_count` | Count objects of a class | Poisson-Binomial distribution |
 | `done` | Evidence collection complete | - |
 
@@ -132,8 +138,8 @@ Result: p=0.787
 
 **Evidence Types**:
 
-1. **Attributes**: BLIP-ITM verification on cropped entity (e.g., "an orange dog")
-2. **Relationships**: BLIP-ITM on union bbox (e.g., "a bird on top of a buffalo")
+1. **Attributes**: Dual-model verification on cropped entity — BLIP-ITM score + Qwen VL logit probability (e.g., "an orange dog")
+2. **Relationships**: Dual-model verification on union bbox (e.g., "a bird on top of a buffalo")
 3. **Counts**: Poisson-Binomial distribution from detection confidences
 
 **Output**: `EvidenceCollection(attributes, relationships, counts, action_history)`
@@ -211,9 +217,9 @@ The threshold determines how probabilities map to binary values in deterministic
 | Model | Purpose | Notes |
 |-------|---------|-------|
 | **Florence-2-large** | Object detection | Open vocabulary, BF16 |
-| **Llama 3.3 70B** (AWS Bedrock) | Entity extraction, agent reasoning, rule generation | API call |
+| **LLM** (AWS Bedrock) | Entity extraction, agent reasoning, rule generation | Llama 3.3 70B, Maverick, Mistral Large, etc. |
 | **BLIP-ITM-large** | Attribute & relationship verification | Well-calibrated ITM head |
-| **Qwen-2.5-VL-7B** | Open-ended perception | For `perceive` action |
+| **Qwen-2.5-VL-7B** | Perception + attribute/relationship verification | Open-ended + logit-based True/False scoring |
 
 ---
 
@@ -261,21 +267,26 @@ src/
 │   ├── probability.py          # Detector confidence calibration
 │   └── image_utils.py          # Image loading utilities
 ├── language/
-│   ├── llm_client.py           # Llama 3.3 client (AWS Bedrock)
+│   ├── llm_client.py           # LLM client (AWS Bedrock)
 │   └── output_models.py        # Pydantic models for agent actions
 ├── pipeline/
 │   ├── detector.py             # Question-based detection
 │   ├── unified_agent.py        # ReAct evidence collection agent
 │   ├── problog_builder.py      # Evidence to ProbLog facts
 │   └── problog_executor.py     # ProbLog execution
-└── vision/
-    ├── florence2.py            # Florence-2 wrapper
-    ├── blip_verifier.py        # BLIP-ITM verification
-    ├── qwen_vl.py              # Qwen VL for perception
-    └── spatial_reasoning.py    # Spatial relationship utilities
-
-run_example.py                  # Run on NLVR2 examples
-spatial_test.py                 # Spatial reasoning tests
+├── vision/
+│   ├── florence2.py            # Florence-2 wrapper
+│   ├── blip_verifier.py        # BLIP-ITM verification
+│   ├── qwen_vl.py              # Qwen VL model wrapper
+│   └── qwen_verifier.py        # Qwen logit-based True/False verification
+└── eval/
+    ├── configs.json            # Scoring config presets (v5_perlm, shared_best)
+    ├── run_eval.py             # Batch evaluation with dual-model scoring
+    ├── run_example.py          # Run on a single example
+    ├── run_prove_sweep.py      # Post-hoc scoring config sweep
+    ├── analyze_subsets.py      # Subset analysis
+    ├── problog_utils.py        # ProbLog helpers (semiring, fact rebuilding)
+    └── eval_gaussian_ablation.py  # Gaussian noise ablation
 ```
 
 ---
@@ -290,9 +301,8 @@ from src import PROVE
 model = PROVE(threshold=0.5)
 
 result = model.predict(
-    image_a_path="img1.jpg",
-    image_b_path="img2.jpg",
-    question="Are there more birds in image A than image B?"
+    {"image_a": "img1.jpg", "image_b": "img2.jpg"},
+    "Are there more birds in image A than image B?"
 )
 
 print(f"Probabilistic: {result.probabilistic.final_answer}")
@@ -303,8 +313,7 @@ print(f"Deterministic: {result.deterministic.final_answer}")
 
 ```python
 result = model.predict_with_details(
-    image_a_path="img1.jpg",
-    image_b_path="img2.jpg",
+    image_paths={"image_a": "img1.jpg", "image_b": "img2.jpg"},
     question="Are there more birds in image A than image B?",
     save_logs=True,
     log_dir="logs"
@@ -368,21 +377,21 @@ Modes AGREE
 
 ## Key Technical Details
 
-### BLIP-ITM Verification
+### Dual-Model Verification
 
-**Attribute Verification**:
+Both BLIP-ITM and Qwen VL scores are collected for every verification action. The scoring config (selected post-hoc) determines which scores are used.
+
+**BLIP-ITM**: Image-text matching score on cropped region
 ```python
 cropped = crop_with_padding(image, bbox, padding=0.15)
 prompt = f"a {attr_value} {object_class}"  # "an orange cat"
 probability = softmax(model(cropped, prompt).itm_score)[1]
 ```
 
-**Relationship Verification**:
+**Qwen VL**: Logit-based True/False probability
 ```python
-union_bbox = union(bbox1, bbox2)
-cropped = crop_with_padding(image, union_bbox, padding=0.15)
-prompt = f"a {obj1} {relation} a {obj2}"  # "a bird on top of a buffalo"
-probability = softmax(model(cropped, prompt).itm_score)[1]
+statement = f"The {object_class} is {attr_value}"  # "The cat is orange"
+probability = softmax(logits["True"], logits["False"])[0]  # P(True)
 ```
 
 ### Poisson-Binomial Counting
@@ -413,4 +422,4 @@ PROVE transforms visual questions into probabilistic answers through:
 2. **Agentic Evidence**: ReAct agent collects verification evidence
 3. **Probabilistic Logic**: ProbLog composes evidence mathematically
 
-**Key Innovation**: Neuro-symbolic architecture combining neural perception (BLIP-ITM, Qwen VL) with symbolic reasoning (ProbLog) via agentic orchestration.
+**Key Innovation**: Neuro-symbolic architecture combining dual-model neural perception (BLIP-ITM + Qwen VL) with symbolic reasoning (ProbLog) via agentic orchestration.

@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 """
-Run PROVE pipeline on a single example from NLVR2 or GQA.
+Run PROVE pipeline on a single example.
 
 Usage:
-    python run_example.py                                          # random NLVR2 example
+    python run_example.py                                          # random test1 example
     python run_example.py --identifier test1-366-0-0               # specific NLVR2 example
     python run_example.py --dataset gqa                            # random GQA example
     python run_example.py --dataset gqa --identifier 201307251     # specific GQA example
+    python run_example.py --dataset vqav2                          # random VQAv2 example
     python run_example.py --save-logs                              # save detailed logs
 """
 
@@ -14,20 +15,18 @@ import argparse
 import json
 import os
 import random
+import sys
+from pathlib import Path
+
+_PROJECT_ROOT = str(Path(__file__).resolve().parent.parent.parent)
+sys.path.insert(0, _PROJECT_ROOT)
 
 from src import PROVE
+from src.eval.run_eval import DATASET_PRESETS, nlvr2_id_to_image_paths, load_single_image_samples
 
 
-# Default data paths (set PROVE_DATA_ROOT env var or use --data-file/--img-dir)
-_DATA_ROOT = os.environ.get("PROVE_DATA_ROOT", "")
-NLVR2_DATA = f"{_DATA_ROOT}/nlvr2_data/balanced_test1.json"
-NLVR2_IMAGES = f"{_DATA_ROOT}/nlvr2_data/images"
-GQA_DATA = f"{_DATA_ROOT}/gqa_data/testdev_balanced_yn.json"
-GQA_IMAGES = f"{_DATA_ROOT}/gqa_data/images"
-
-
-def load_nlvr2_examples(data_file, img_dir):
-    """Load NLVR2 examples where both images exist."""
+def load_paired_examples(data_file, img_dir, z_filter=0):
+    """Load NLVR2-style paired-image examples where both images exist."""
     examples = []
     with open(data_file) as f:
         for line in f:
@@ -36,67 +35,57 @@ def load_nlvr2_examples(data_file, img_dir):
                 continue
             ex = json.loads(line)
             ident = ex["identifier"]
-            prefix = ident.rsplit("-", 1)[0]
-            img0 = os.path.join(img_dir, f"{prefix}-img0.png")
-            img1 = os.path.join(img_dir, f"{prefix}-img1.png")
-            if os.path.exists(img0) and os.path.exists(img1):
+            if z_filter is not None and not ident.endswith(f'-{z_filter}'):
+                continue
+            img_a, img_b = nlvr2_id_to_image_paths(ident, img_dir, directory=ex.get("directory"))
+            if os.path.exists(img_a) and os.path.exists(img_b):
                 examples.append({
                     "identifier": ident,
                     "question": ex["sentence"],
                     "label": ex["label"] == "True" if isinstance(ex["label"], str) else bool(ex["label"]),
-                    "image_paths": {"image_a": img0, "image_b": img1},
+                    "image_paths": {"image_a": img_a, "image_b": img_b},
                 })
     return examples
 
 
-def load_gqa_examples(data_file, img_dir):
-    """Load GQA yes/no examples where image exists."""
-    with open(data_file) as f:
-        data = json.load(f)
+def load_single_examples(data_file, img_dir):
+    """Load single-image yes/no examples (GQA, VQAv2, etc.) where image exists."""
+    samples = load_single_image_samples(data_file, img_dir)
     examples = []
-    for qid, entry in data.items():
-        img_id = entry["imageId"]
-        img_path = os.path.join(img_dir, f"{img_id}.jpg")
-        if not os.path.exists(img_path):
-            continue
-        answer = entry["answer"].strip().lower()
-        if answer not in ("yes", "no"):
-            continue
-        examples.append({
-            "identifier": qid,
-            "question": entry["question"],
-            "label": answer == "yes",
-            "image_paths": {"image_a": img_path},
-        })
+    for s in samples:
+        if os.path.exists(s["image_path"]):
+            examples.append({
+                "identifier": s["identifier"],
+                "question": s["sentence"],
+                "label": s["label"],
+                "image_paths": {"image_a": s["image_path"]},
+            })
     return examples
 
 
 def main():
     parser = argparse.ArgumentParser(description="Run PROVE on a single example")
-    parser.add_argument("--dataset", choices=["nlvr2", "gqa"], default="nlvr2",
-                        help="Dataset to use (default: nlvr2)")
+    parser.add_argument("--dataset", choices=list(DATASET_PRESETS.keys()), default="test1",
+                        help=f"Dataset preset (default: test1)")
     parser.add_argument("--identifier", type=str, help="Specific example identifier")
     parser.add_argument("--save-logs", action="store_true", help="Save detailed logs")
     parser.add_argument("--threshold", type=float, default=0.5,
                         help="Decision threshold (default: 0.5)")
-    parser.add_argument("--data-file", type=str, help="Override default data file path")
-    parser.add_argument("--img-dir", type=str, help="Override default image directory")
+    parser.add_argument("--data_root", type=str, default=None,
+                        help="Root directory for datasets (overrides PROVE_DATA_ROOT)")
     args = parser.parse_args()
 
-    # Set paths
-    if args.dataset == "gqa":
-        data_file = args.data_file or GQA_DATA
-        img_dir = args.img_dir or GQA_IMAGES
-    else:
-        data_file = args.data_file or NLVR2_DATA
-        img_dir = args.img_dir or NLVR2_IMAGES
+    data_root = args.data_root or os.environ.get("PROVE_DATA_ROOT", "")
+    preset = DATASET_PRESETS[args.dataset]
+    data_file = os.path.join(data_root, preset["test_json"])
+    img_dir = os.path.join(data_root, preset["img_dir"])
 
     # Load examples
-    print(f"Loading {args.dataset.upper()} examples from {data_file}...")
-    if args.dataset == "gqa":
-        examples = load_gqa_examples(data_file, img_dir)
+    print(f"Loading {args.dataset} examples from {data_file}...")
+    if preset["type"] == "single":
+        examples = load_single_examples(data_file, img_dir)
     else:
-        examples = load_nlvr2_examples(data_file, img_dir)
+        examples = load_paired_examples(data_file, img_dir, z_filter=preset["z_filter"])
     print(f"Found {len(examples)} valid examples\n")
 
     if not examples:
@@ -114,7 +103,7 @@ def main():
 
     # Print info
     print("=" * 60)
-    print(f"Dataset:      {args.dataset.upper()}")
+    print(f"Dataset:      {args.dataset}")
     print(f"Example:      {example['identifier']}")
     print(f"Question:     {example['question']}")
     print(f"Ground Truth: {example['label']}")
