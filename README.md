@@ -168,17 +168,12 @@ Result: p=0.787
 0.906::relation(image_a, bird_a_1, buffalo_a_0, on_top_of).
 0.787::attribute(image_a, bird_a_1, white).
 
-% Sugar rules
-has_attribute(I,E,A) :- attribute(I,E,A).
-is_category(I,E,C) :- entity(I,E,C).
-has_relationship(I,A,B,R) :- relation(I,A,B,R).
-
 % Generated rule
 white_bird_on_animal(I) :-
-    is_category(I, B, bird),
-    is_category(I, A, buffalo),
-    has_relationship(I, B, A, on_top_of),
-    has_attribute(I, B, white).
+    entity(I, B, bird),
+    entity(I, A, buffalo),
+    relation(I, B, A, on_top_of),
+    attribute(I, B, white).
 
 query(white_bird_on_animal(image_a)).
 % Result: P=0.5847
