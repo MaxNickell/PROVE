@@ -28,6 +28,7 @@ from src.pipeline.detector import Detector
 from src.pipeline.unified_agent import UnifiedAgent
 from src.pipeline.problog_executor import ProbLogExecutor
 from src.pipeline.problog_builder import ProbLogFactBuilder
+from src.core.types import ProbLogFact
 from src.vision.qwen_verifier import QwenVerifier
 
 # ── LLM model registry ──────────────────────────────────────────────────────
@@ -64,6 +65,12 @@ DATASET_PRESETS = {
         "type": "single",
         "test_json": "vqav2_data/val_balanced_yn.json",
         "img_dir":   "vqav2_data/images",
+        "z_filter":  None,
+    },
+    "vsr": {
+        "type": "single",
+        "test_json": "vsr_data/test_balanced.json",
+        "img_dir":   "vsr_data/images",
         "z_filter":  None,
     },
 }
@@ -301,40 +308,59 @@ def evaluate_with_config(args):
         print(f"  {llm}: attr={c['attr_score_type']}, rel={c['rel_score_type']}, "
               f"ep={ep}, da={c['dampened_alpha']}, ag={ag}")
 
-    # Build work items for parallel ProbLog execution
-    work_items = []
-    for llm in active_llms:
-        cfg = llm_cfgs[llm]
-        for ident, sample in all_data[llm].items():
-            work_items.append((llm, ident, sample, cfg))
-
-    print(f"  {len(work_items)} ProbLog executions across {len(active_llms)} LLMs...")
-
-    # Run ProbLog in parallel
-    slurm_cpus = os.environ.get('SLURM_CPUS_PER_TASK')
-    n_workers = max(1, int(slurm_cpus) - 2) if slurm_cpus else min(mp.cpu_count() - 1, 12)
+    # Check if results are pre-optimized with the matching config
+    pre_optimized = all(
+        sample.get('scoring_config') == args.config
+        for llm_data in all_data.values()
+        for sample in llm_data.values()
+    ) if all_data else False
 
     t0 = time.time()
     results_map = {}  # (llm, ident) -> (prove_prob, dep_prob, n_facts)
 
-    if n_workers > 1:
-        with mp.Pool(n_workers, maxtasksperchild=200) as pool:
-            for i, result in enumerate(pool.imap_unordered(_eval_sample_worker, work_items, chunksize=10)):
+    if pre_optimized:
+        # Fast path: read stored optimized probs directly (no ProbLog re-execution)
+        print(f"  Results pre-optimized with config '{args.config}' — reading stored probs")
+        for llm in active_llms:
+            for ident, sample in all_data[llm].items():
+                r = sample.get('results', {})
+                prove_prob = r.get('prove_prob')
+                dep_prob = r.get('deprove_prob')
+                nf = len(sample.get('problog', {}).get('facts', []))
+                if prove_prob is not None or dep_prob is not None:
+                    results_map[(llm, ident)] = (prove_prob, dep_prob, nf)
+        print(f"  Loaded {len(results_map)} results in {time.time()-t0:.1f}s")
+    else:
+        # Legacy path: rebuild facts and re-run ProbLog with scoring config
+        work_items = []
+        for llm in active_llms:
+            cfg = llm_cfgs[llm]
+            for ident, sample in all_data[llm].items():
+                work_items.append((llm, ident, sample, cfg))
+
+        print(f"  {len(work_items)} ProbLog executions across {len(active_llms)} LLMs...")
+
+        slurm_cpus = os.environ.get('SLURM_CPUS_PER_TASK')
+        n_workers = max(1, int(slurm_cpus) - 2) if slurm_cpus else min(mp.cpu_count() - 1, 12)
+
+        if n_workers > 1:
+            with mp.Pool(n_workers, maxtasksperchild=200) as pool:
+                for i, result in enumerate(pool.imap_unordered(_eval_sample_worker, work_items, chunksize=10)):
+                    llm, ident, prove_prob, dep_prob, nf = result
+                    if prove_prob is not None or dep_prob is not None:
+                        results_map[(llm, ident)] = (prove_prob, dep_prob, nf)
+                    if (i + 1) % 500 == 0:
+                        print(f"    {i+1}/{len(work_items)} done ({time.time()-t0:.0f}s)")
+        else:
+            for i, item in enumerate(work_items):
+                result = _eval_sample_worker(item)
                 llm, ident, prove_prob, dep_prob, nf = result
                 if prove_prob is not None or dep_prob is not None:
                     results_map[(llm, ident)] = (prove_prob, dep_prob, nf)
-                if (i + 1) % 500 == 0:
+                if (i + 1) % 200 == 0:
                     print(f"    {i+1}/{len(work_items)} done ({time.time()-t0:.0f}s)")
-    else:
-        for i, item in enumerate(work_items):
-            result = _eval_sample_worker(item)
-            llm, ident, prove_prob, dep_prob, nf = result
-            if prove_prob is not None or dep_prob is not None:
-                results_map[(llm, ident)] = (prove_prob, dep_prob, nf)
-            if (i + 1) % 200 == 0:
-                print(f"    {i+1}/{len(work_items)} done ({time.time()-t0:.0f}s)")
 
-    print(f"  ProbLog done: {len(results_map)} results in {time.time()-t0:.1f}s")
+        print(f"  ProbLog done: {len(results_map)} results in {time.time()-t0:.1f}s")
 
     # Compute ensemble accuracy
     prove_correct = 0
@@ -402,28 +428,30 @@ def evaluate_with_config(args):
         print(f"DePROVE (majority): {maj_correct}/{n} = {maj_correct/n*100:.2f}%")
 
     # Write post-hoc PROVE/DePROVE probs back into each LLM's results file
-    for llm in active_llms:
-        result_path = f"eval/{args.name}_{args.dataset}_{llm}/all_results.json"
-        with open(result_path) as f:
-            data = json.load(f)
-        updated = 0
-        for s in data:
-            ident = s.get('identifier')
-            if not ident:
-                continue
-            entry = results_map.get((llm, ident))
-            if entry is not None:
-                prove_prob, dep_prob, nf = entry
-                thresh = threshold_fn(nf, thresh_base, thresh_slope)
-                s['optimized_prove_prob'] = prove_prob
-                s['optimized_prove_pred'] = prove_prob >= thresh if prove_prob is not None else None
-                s['optimized_deprove_prob'] = dep_prob
-                s['optimized_deprove_pred'] = dep_prob >= 0.5 if dep_prob is not None else None
-                s['optimized_n_facts'] = nf
-                updated += 1
-        with open(result_path, 'w') as f:
-            json.dump(data, f, indent=2)
-        print(f"  Wrote optimized predictions to {result_path} ({updated} samples)")
+    # (skip for pre-optimized results — probs are already in the main results)
+    if not pre_optimized:
+        for llm in active_llms:
+            result_path = f"eval/{args.name}_{args.dataset}_{llm}/all_results.json"
+            with open(result_path) as f:
+                data = json.load(f)
+            updated = 0
+            for s in data:
+                ident = s.get('identifier')
+                if not ident:
+                    continue
+                entry = results_map.get((llm, ident))
+                if entry is not None:
+                    prove_prob, dep_prob, nf = entry
+                    thresh = threshold_fn(nf, thresh_base, thresh_slope)
+                    s['optimized_prove_prob'] = prove_prob
+                    s['optimized_prove_pred'] = prove_prob >= thresh if prove_prob is not None else None
+                    s['optimized_deprove_prob'] = dep_prob
+                    s['optimized_deprove_pred'] = dep_prob >= 0.5 if dep_prob is not None else None
+                    s['optimized_n_facts'] = nf
+                    updated += 1
+            with open(result_path, 'w') as f:
+                json.dump(data, f, indent=2)
+            print(f"  Wrote optimized predictions to {result_path} ({updated} samples)")
 
 
 def main():
@@ -574,6 +602,16 @@ def main():
 
     print("All models loaded.\n")
 
+    # Load LLM-specific scoring config for Phase 1 optimized ProbLog execution
+    from src.eval.problog_utils import apply_config_to_facts
+    scoring_preset = _ALL_CONFIGS[args.config]
+    llm_cfg = scoring_preset['llm_configs'].get(args.llm, scoring_preset['fallback'])
+    dampened_alpha = llm_cfg['dampened_alpha']
+    ep = "orig" if llm_cfg["entity_prob"] is None else llm_cfg["entity_prob"]
+    ag = llm_cfg["agreement_mode"] or "none"
+    print(f"Scoring config ({args.config}): attr={llm_cfg['attr_score_type']}, "
+          f"rel={llm_cfg['rel_score_type']}, ep={ep}, da={dampened_alpha}, ag={ag}")
+
     # Process samples
     results_file = os.path.join(args.output_dir, "all_results.json")
 
@@ -688,29 +726,47 @@ def main():
                     "action_history": evidence.action_history,
                 }
 
-                # Step 4: ProbLog execution
+                # Step 4: ProbLog execution with optimized scoring config
                 prob_facts = fact_builder.build_facts(evidence, kb.images)
 
-                # Save facts for post-hoc re-execution
+                # Save BLIP-only facts (baseline for rebuild_facts if config changes)
                 facts_data = [
                     {"predicate": f.predicate, "arguments": f.arguments,
                      "probability": f.probability}
                     for f in prob_facts
                 ]
 
-                # Run ProbLog (scoring config applied post-hoc in Phase 2)
+                # Apply scoring config (Qwen scores, agreement mode, entity_prob)
+                optimized_facts_data = apply_config_to_facts(
+                    facts_data, evidence.attribute_scores, evidence.relationship_scores,
+                    llm_cfg['attr_score_type'], llm_cfg['rel_score_type'],
+                    entity_prob=llm_cfg['entity_prob'],
+                    agreement_mode=llm_cfg['agreement_mode'])
+
+                # Convert to ProbLogFact objects for executor
+                optimized_facts = [
+                    ProbLogFact(probability=f['probability'],
+                                predicate=f['predicate'],
+                                arguments=f['arguments'])
+                    for f in optimized_facts_data
+                ]
+
+                # Run ProbLog with optimized facts + dampened semiring
                 prob_result, det_result = executor.execute_dual(
                     question=sentence,
                     evidence=evidence,
                     images=kb.images,
-                    threshold=0.5
+                    threshold=0.5,
+                    facts=optimized_facts,
+                    dampened_alpha=dampened_alpha
                 )
 
                 result["problog"] = {
                     "rules": "",  # Will be filled from problog_program
                     "query": "",
-                    "facts": facts_data,
+                    "facts": facts_data,  # BLIP-only baseline
                 }
+                result["scoring_config"] = args.config
 
                 # Extract rules and query from problog program
                 program = prob_result.problog_program

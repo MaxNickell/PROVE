@@ -1,8 +1,8 @@
 """
-Shared ProbLog helpers for post-hoc evaluation.
+Shared ProbLog helpers for evaluation.
 
 Provides: SemiringDampened, quote_arg, build_score_lookups, get_score,
-          rebuild_facts, execute_problog_direct.
+          apply_config_to_facts, rebuild_facts, execute_problog_direct.
 """
 
 from problog.program import PrologString
@@ -80,23 +80,37 @@ def get_score(ev, score_type):
 
 # ─── Fact building ───────────────────────────────────────────────────────────
 
-def rebuild_facts(sample, attr_score_type, rel_score_type, entity_prob=None, agreement_mode=None):
-    """
-    Rebuild ProbLog facts with separate score types for attributes and relations.
+def apply_config_to_facts(facts_data, attr_scores, rel_scores,
+                          attr_score_type, rel_score_type,
+                          entity_prob=None, agreement_mode=None):
+    """Apply scoring config to a list of ProbLog fact dicts.
 
-    agreement_mode:
-        None          - no adjustment
-        'dampen_0.5'  - disagree: pull toward 0.5 by 50%
-        'dampen_0.3'  - disagree: pull toward 0.5 by 70%
-        'sharpen'     - agree: push away from 0.5 by 50% (factor 1.5)
-        'both'        - disagree: dampen 0.5, agree: sharpen 1.5
+    Can be called during Phase 1 (with live EvidenceCollection score lists)
+    or post-hoc (via rebuild_facts wrapper with stored JSON).
+
+    Args:
+        facts_data: list of {predicate, arguments, probability} dicts
+        attr_scores: list of rich score dicts (with blip_score, qwen_tf_score, etc.)
+        rel_scores: list of rich score dicts for relationships
+        attr_score_type: which score to use for attributes (e.g. 'qwen_tf_score')
+        rel_score_type: which score to use for relations (e.g. 'avg_blip_qwen_tf')
+        entity_prob: optional override for entity fact probabilities
+        agreement_mode: None, 'dampen_0.5', 'dampen_0.3', 'sharpen', or 'both'
+
+    Returns: new list of fact dicts with updated probabilities
     """
-    stored_facts = sample.get('problog', {}).get('facts', [])
-    if not stored_facts:
+    if not facts_data:
         return None
 
-    attr_lookup, rel_lookup = build_score_lookups(sample)
-    new_facts = []
+    # Build lookups from score lists
+    attr_lookup = {}
+    for attr in attr_scores:
+        key = (attr.get('entity_id'), attr.get('value'))
+        attr_lookup[key] = attr
+    rel_lookup = {}
+    for rel in rel_scores:
+        key = (rel.get('subject_id'), rel.get('object_id'), rel.get('relation'))
+        rel_lookup[key] = rel
 
     # Parse agreement mode into dampen/sharpen factors
     dampen_factor = None
@@ -111,7 +125,8 @@ def rebuild_facts(sample, attr_score_type, rel_score_type, entity_prob=None, agr
         dampen_factor = 0.5
         sharpen_factor = 1.5
 
-    for fact in stored_facts:
+    new_facts = []
+    for fact in facts_data:
         pred = fact.get('predicate', '')
         args = fact.get('arguments', [])
         prob = fact.get('probability', 0.5)
@@ -156,6 +171,23 @@ def rebuild_facts(sample, attr_score_type, rel_score_type, entity_prob=None, agr
 
         new_facts.append({**fact, 'probability': max(1e-7, min(1 - 1e-7, prob))})
     return new_facts
+
+
+def rebuild_facts(sample, attr_score_type, rel_score_type, entity_prob=None, agreement_mode=None):
+    """Rebuild ProbLog facts from a stored sample dict (backward-compat wrapper).
+
+    Extracts facts and evidence from the sample dict and delegates to
+    apply_config_to_facts().
+    """
+    stored_facts = sample.get('problog', {}).get('facts', [])
+    if not stored_facts:
+        return None
+    attr_scores = sample.get('evidence', {}).get('attributes', [])
+    rel_scores = sample.get('evidence', {}).get('relationships', [])
+    return apply_config_to_facts(
+        stored_facts, attr_scores, rel_scores,
+        attr_score_type, rel_score_type,
+        entity_prob=entity_prob, agreement_mode=agreement_mode)
 
 
 # ─── Threshold ───────────────────────────────────────────────────────────────
