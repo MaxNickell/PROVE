@@ -13,6 +13,20 @@
     "fallback": {"attr_score_type": "qwen_tf_score", "rel_score_type": "qwen_tf_score",
                  "entity_prob": 1.0, "dampened_alpha": 1.0, "agreement_mode": "sharpen"}
   },
+  "blip_only": {
+    "description": "BLIP-only baseline (no Qwen, no sharpening, no dampening)",
+    "threshold": {"base": 0.45, "slope": -0.1},
+    "llm_configs": {
+      "llama":         {"attr_score_type": "blip_score", "rel_score_type": "blip_score",
+                        "entity_prob": null, "dampened_alpha": 1.0, "agreement_mode": null},
+      "maverick":      {"attr_score_type": "blip_score", "rel_score_type": "blip_score",
+                        "entity_prob": null, "dampened_alpha": 1.0, "agreement_mode": null},
+      "mistral_large": {"attr_score_type": "blip_score", "rel_score_type": "blip_score",
+                        "entity_prob": null, "dampened_alpha": 1.0, "agreement_mode": null}
+    },
+    "fallback": {"attr_score_type": "blip_score", "rel_score_type": "blip_score",
+                 "entity_prob": null, "dampened_alpha": 1.0, "agreement_mode": null}
+  },
   "shared_best": {
     "description": "Best shared config (qwen_tf, ep=1.0, da=1.0, sharpen)",
     "threshold": {"base": 0.45, "slope": -0.1},

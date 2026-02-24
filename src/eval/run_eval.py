@@ -135,10 +135,13 @@ def load_single_image_samples(json_path, img_dir):
     return samples
 
 
-
 def _eval_sample_worker(args_tuple):
     """Worker function for parallel post-hoc ProbLog evaluation (picklable)."""
+    import signal
     from src.eval.problog_utils import rebuild_facts, execute_problog_direct, SemiringDampened
+
+    def _timeout_handler(signum, frame):
+        raise TimeoutError("ProbLog evaluation timed out")
 
     llm, ident, sample, cfg = args_tuple
     facts = rebuild_facts(sample, cfg['attr_score_type'], cfg['rel_score_type'],
@@ -149,12 +152,26 @@ def _eval_sample_worker(args_tuple):
     if facts is None or not rules or not query:
         return llm, ident, None, None, 0
 
-    da = cfg['dampened_alpha']
-    sr = SemiringDampened(alpha=da) if da != 1.0 else None
-    prove_prob = execute_problog_direct(facts, rules, query, semiring=sr)
+    # Set per-sample timeout (30s) to prevent hanging on complex programs
+    old_handler = signal.signal(signal.SIGALRM, _timeout_handler)
+    try:
+        da = cfg['dampened_alpha']
+        sr = SemiringDampened(alpha=da) if da != 1.0 else None
 
-    dep_facts = [{**f, 'probability': 1.0 if f['probability'] >= 0.5 else 0.0} for f in facts]
-    dep_prob = execute_problog_direct(dep_facts, rules, query, semiring=None)
+        signal.alarm(30)
+        prove_prob = execute_problog_direct(facts, rules, query, semiring=sr)
+
+        signal.alarm(30)
+        dep_facts = [{**f, 'probability': 1.0 if f['probability'] >= 0.5 else 0.0} for f in facts]
+        dep_prob = execute_problog_direct(dep_facts, rules, query, semiring=None)
+
+        signal.alarm(0)
+    except TimeoutError:
+        prove_prob = None
+        dep_prob = None
+    finally:
+        signal.alarm(0)
+        signal.signal(signal.SIGALRM, old_handler)
 
     return llm, ident, prove_prob, dep_prob, len(facts)
 

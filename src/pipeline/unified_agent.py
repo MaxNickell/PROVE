@@ -40,8 +40,8 @@ class CountEvidence:
     object_class: str
     probability: float
     image_id: str = None  # For single-image queries
-    image_id_a: str = None  # For comparison/total queries
-    image_id_b: str = None  # For comparison/total queries
+    image_id_a: str = None  # For comparison/total queries (2 images)
+    image_id_b: str = None  # For comparison/total queries (2 images)
     value: int = None  # For queries with N
 
 
@@ -744,15 +744,11 @@ What is your next action? Output JSON only:"""
             image_word = "ONE image"
             images_list = f"- Image A, image_id: {image_ids[0]}"
         else:
-            image_word = f"{n_images} images"
-            image_labels = []
-            for img_id in image_ids:
-                letter = img_id.replace("image_", "").upper()
-                image_labels.append(f"- Image {letter}, image_id: {img_id}")
-            if n_images == 2:
-                image_labels[0] += " (the question may refer to Image A as the left or the first image)"
-                image_labels[1] += " (the question may refer to Image B as the right or the second image)"
-            images_list = "\n".join(image_labels)
+            image_word = "TWO images"
+            images_list = (
+                f"- Image A, image_id: {image_ids[0]} (the question may refer to Image A as the left or the first image)\n"
+                f"- Image B, image_id: {image_ids[1]} (the question may refer to Image B as the right or the second image)"
+            )
 
         # Valid image_id values for the rules section
         valid_ids = ", ".join(f'"{i}"' for i in image_ids)

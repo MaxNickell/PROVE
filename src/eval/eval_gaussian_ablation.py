@@ -32,6 +32,10 @@ parser.add_argument('--gauss_mean', type=float, default=0.5, help='Gaussian mean
 parser.add_argument('--gauss_std', type=float, default=0.2, help='Gaussian std (default: 0.2)')
 parser.add_argument('--output', '-o', type=str, default=None,
                     help='Save results to JSON file')
+parser.add_argument('--subset', type=int, default=None,
+                    help='Stratified random subset size (e.g. 4000 for val4k)')
+parser.add_argument('--subset_seed', type=int, default=42,
+                    help='Random seed for subset sampling (default: 42)')
 parser.add_argument('files', nargs='+', metavar='name=path',
                     help='LLM result files as name=path')
 args = parser.parse_args()
@@ -142,6 +146,18 @@ if __name__ == '__main__':
         print(f"  {llm}: {len(idx)} success / {len(data)} total")
 
     all_ids = sorted(all_labels.keys())
+
+    # Stratified subset sampling
+    if args.subset:
+        import random as _rng
+        _rng.seed(args.subset_seed)
+        true_ids = [i for i in all_ids if all_labels[i]]
+        false_ids = [i for i in all_ids if not all_labels[i]]
+        half = args.subset // 2
+        subset = set(_rng.sample(true_ids, half) + _rng.sample(false_ids, half))
+        all_ids = sorted(subset)
+        print(f"  Stratified subset: {half} True + {half} False = {len(all_ids)} (seed={args.subset_seed})")
+
     n = len(all_ids)
     labels_arr = np.array([all_labels[ident] for ident in all_ids], dtype=bool)
     print(f"  n = {n}")
@@ -157,12 +173,14 @@ if __name__ == '__main__':
                     work_items.append((llm, ident, sample, da, seed))
 
     print(f"  {len(work_items)} work items ({NUM_SEEDS} seeds x {len(LLM_NAMES)} LLMs x ~{n} samples)")
-    print(f"  Using {os.cpu_count()} workers...", flush=True)
+    n_workers = int(os.environ.get('SLURM_CPUS_PER_TASK', 0)) or os.cpu_count() or 4
+    n_workers = min(n_workers, 32)
+    print(f"  Using {n_workers} workers...", flush=True)
 
     # results[seed][llm][ident] = (prove_prob, dep_prob, n_facts)
     results = {s: {l: {} for l in LLM_NAMES} for s in range(NUM_SEEDS)}
 
-    with mp.Pool(min(os.cpu_count() or 4, 90), maxtasksperchild=50) as pool:
+    with mp.Pool(n_workers, maxtasksperchild=20) as pool:
         for i, result in enumerate(pool.imap_unordered(_worker, work_items, chunksize=20)):
             llm, ident, seed, prove_prob, dep_prob, n_facts = result
             if prove_prob is not None:
