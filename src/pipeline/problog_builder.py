@@ -29,6 +29,7 @@ class ProbLogFactBuilder:
     - count_total_exactly(image_id_a, image_id_b, class, N)
     - count_total_at_least(image_id_a, image_id_b, class, N)
     - count_total_at_most(image_id_a, image_id_b, class, N)
+
     """
 
     def build_facts(

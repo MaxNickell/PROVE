@@ -8,7 +8,7 @@ Usage:
                             maverick=eval/v5_test1_maverick/all_results.json \
                             mistral_large=eval/v5_test1_mistral_large/all_results.json
 """
-import json, sys, argparse
+import json, sys, argparse, math
 
 # ─── Parse arguments ─────────────────────────────────────────────────────────
 
@@ -103,12 +103,18 @@ for ident in all_ids:
     if raw is None:
         continue
 
-    # PROVE ensemble: perlm_soft — avg probs over valid LLMs
+    # PROVE ensemble: perlm_soft — avg probs over valid LLMs, then threshold
     valid_probs = [llm_prove_prob[l] for l in LLM_NAMES if llm_prove_prob[l] is not None]
-    valid_preds = [llm_prove_pred[l] for l in LLM_NAMES if llm_prove_pred[l] is not None]
-    if valid_preds:
-        # Majority of per-LLM predictions
-        prove_pred = sum(valid_preds) > len(valid_preds) / 2
+    valid_nfacts = []
+    for llm in LLM_NAMES:
+        s = llm_data.get(llm, {}).get(ident)
+        if s is not None and llm_prove_prob[llm] is not None and s.get('optimized_n_facts') is not None:
+            valid_nfacts.append(s['optimized_n_facts'])
+    if valid_probs:
+        avg_prove_prob = sum(valid_probs) / len(valid_probs)
+        avg_nf = sum(valid_nfacts) / len(valid_nfacts) if valid_nfacts else len(raw.get('problog', {}).get('facts', []))
+        thresh = max(0, min(1, 0.45 - 0.1 * math.log(avg_nf + 1)))
+        prove_pred = avg_prove_prob >= thresh
     else:
         prove_pred = not label  # all missing = wrong
 
@@ -121,6 +127,7 @@ for ident in all_ids:
     evidence = raw.get('evidence', {})
     facts = raw.get('problog', {}).get('facts', [])
 
+    n_entity = sum(1 for f in facts if f.get('predicate') == 'entity')
     n_attr = sum(1 for f in facts if f.get('predicate') == 'attribute')
     n_rel = sum(1 for f in facts if f.get('predicate') == 'relation')
     n_total_facts = len(facts)
@@ -137,6 +144,13 @@ for ident in all_ids:
     has_negation = '\\+' in rules
     has_disjunction = ';' in rules
     n_helper_rules = max(0, rules.count(':-') - 1) if rules else 0
+
+    # Statement length (word count) — intrinsic prompt complexity
+    sentence = raw.get('sentence', '')
+    n_words = len(sentence.split())
+
+    # Cross-image reasoning — does the rule reference both image_a and image_b?
+    cross_image = ('image_a' in rules and 'image_b' in rules)
 
     # VQA agreement: BLIP vs Qwen TF
     agree_tf = 0
@@ -179,9 +193,12 @@ for ident in all_ids:
         'high_conf_ratio': high_conf_ratio,
         'uncertain_count': uncertain_count,
         'agreement_tf_ratio': agreement_tf_ratio,
+        'n_entity': n_entity,
         'n_attr': n_attr,
         'n_rel': n_rel,
         'n_vqa_facts': n_vqa_facts,
+        'n_words': n_words,
+        'cross_image': cross_image,
     })
 
 print(f"  {len(samples)} samples ({n_missing} partial)\n")
@@ -195,8 +212,20 @@ SUBSETS = {
     },
     'Fact Count': {
         'Few (1-5)': lambda s: s['n_total_facts'] <= 5,
-        'Medium (6-10)': lambda s: 5 < s['n_total_facts'] <= 10,
-        'Many (11+)': lambda s: s['n_total_facts'] > 10,
+        'Many (6+)': lambda s: s['n_total_facts'] > 5,
+    },
+    'Entity Count': {
+        '<=2 entities': lambda s: s['n_entity'] <= 2,
+        '3-4 entities': lambda s: 3 <= s['n_entity'] <= 4,
+        '5+ entities': lambda s: s['n_entity'] >= 5,
+    },
+    'Statement Length': {
+        'Short (<=15 words)': lambda s: s['n_words'] <= 15,
+        'Long (16+ words)': lambda s: s['n_words'] >= 16,
+    },
+    'Cross-Image Reasoning': {
+        'Both images': lambda s: s['cross_image'],
+        'Single image': lambda s: not s['cross_image'],
     },
     'VQA Fact Count': {
         '<=2 VQA facts': lambda s: s['n_vqa_facts'] <= 2,

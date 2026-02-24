@@ -120,14 +120,14 @@ class VerifyCountAction(BaseModel):
     query_type: Literal[
         "at_least", "at_most", "exactly",  # Single image
         "more", "fewer", "equal",  # Cross-image comparison
-        "total_exactly", "total_at_least", "total_at_most"  # Total across both
+        "total_exactly", "total_at_least", "total_at_most",  # Total across both (2 images)
     ] = Field(..., description="Type of count query")
     object_class: str = Field(..., description="Object class to count (e.g., 'dog', 'bird')")
 
     # For single-image queries (at_least, at_most, exactly)
     image_id: str | None = Field(None, description="Image for single-image queries (e.g., 'image_a')")
 
-    # For cross-image and total queries
+    # For cross-image and total queries (2-image)
     image_id_a: str | None = Field(None, description="First image for comparison/total queries")
     image_id_b: str | None = Field(None, description="Second image for comparison/total queries")
 
@@ -147,7 +147,6 @@ class VerifyCountAction(BaseModel):
         if v is not None:
             return _validate_image_id(v)
         return v
-
 
 class DoneAction(BaseModel):
     """Stop evidence collection when sufficient evidence has been gathered."""

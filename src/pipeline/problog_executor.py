@@ -224,7 +224,6 @@ class ProbLogExecutor:
             connectives = """- LOGICAL CONNECTIVES: Use `,` (AND) to combine multiple conditions that must all hold. Use `;` (OR) when at least one condition suffices."""
 
         # Build example patterns based on image count
-        # (All examples are real NLVR2 training programs from the ICE pool)
         img_a = image_ids[0]
         if multi_image:
             img_b = image_ids[1]
