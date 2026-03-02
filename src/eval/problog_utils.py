@@ -100,7 +100,7 @@ def apply_config_to_facts(facts_data, attr_scores, rel_scores,
     Returns: new list of fact dicts with updated probabilities
     """
     if not facts_data:
-        return None
+        return []
 
     # Build lookups from score lists
     attr_lookup = {}

@@ -39,6 +39,10 @@ LLM_MODELS = {
     "nova_pro":       "us.amazon.nova-pro-v1:0",
     "nova_premier":   "us.amazon.nova-premier-v1:0",
     "sonnet":         "us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+    # OpenAI models
+    "gpt4o":          "gpt-4o",
+    "gpt4o_mini":     "gpt-4o-mini",
+    "gpt35_turbo":    "gpt-3.5-turbo",
 }
 
 # ── Dataset presets ──────────────────────────────────────────────────────────
@@ -594,7 +598,7 @@ def main():
 
     # Pre-initialize LLM client with model ID and thinking/CoT settings
     # (singleton ensures all pipeline components use the same instance)
-    from src.language.llm_client import LLMClient
+    from src.language import create_llm_client
     model_id = os.getenv("LLAMA33_MODEL_ID")
     if args.thinking_budget or args.cot or model_id:
         if args.thinking_budget:
@@ -602,7 +606,7 @@ def main():
         if args.cot:
             print(f"Enabling prompt-level chain-of-thought")
         print(f"Model ID: {model_id}")
-        mm._models['llm_client'] = LLMClient(
+        mm._models['llm_client'] = create_llm_client(
             model_id=model_id,
             thinking_budget=args.thinking_budget,
             cot_enabled=args.cot

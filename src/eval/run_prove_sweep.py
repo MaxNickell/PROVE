@@ -53,6 +53,12 @@ def parse_args():
                         help='LLM result files as name=path (e.g. llama=eval/v5_test1_llama/all_results.json)')
     parser.add_argument('--output_dir', '-o', default='eval/prove_sweep',
                         help='Output directory for results and cache (default: eval/prove_sweep)')
+    parser.add_argument('--restrict_to', metavar='name',
+                        help='Restrict sweep to only sample IDs present in this LLM (e.g. gpt4o_mini)')
+    parser.add_argument('--top_k', type=int, default=25,
+                        help='Top-K configs per LLM for perlm_soft sweep (default: 25)')
+    parser.add_argument('--max_combo_size', type=int, default=0,
+                        help='Max ensemble size (0 = all, 3 = up to triples)')
     return parser.parse_args()
 
 
@@ -460,7 +466,7 @@ def precompute_all(all_llm_indices, all_ids_by_llm, score_configs, output_dir):
 # EVALUATION
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def evaluate_all(precomputed, all_llm_indices, all_labels, score_configs, threshold_configs):
+def evaluate_all(precomputed, all_llm_indices, all_labels, score_configs, threshold_configs, max_combo_size=0):
     """
     Sweep all configs: score_config × threshold × LLM combo × vote type.
     Fully vectorized: all thresholds processed simultaneously via numpy broadcasting.
@@ -473,7 +479,8 @@ def evaluate_all(precomputed, all_llm_indices, all_labels, score_configs, thresh
     llm_combos = []
     for llm in llm_names:
         llm_combos.append(([llm], f"{llm}"))
-    for r in range(2, len(llm_names) + 1):
+    max_r = len(llm_names) + 1 if max_combo_size == 0 else max_combo_size + 1
+    for r in range(2, max_r):
         for combo in combinations(llm_names, r):
             llm_combos.append((sorted(combo), "+".join(sorted(combo))))
 
@@ -649,8 +656,8 @@ def evaluate_all(precomputed, all_llm_indices, all_labels, score_configs, thresh
 
 
 def evaluate_perlm_configs(precomputed, all_llm_indices, all_labels,
-                           score_configs, threshold_configs, top_k=10,
-                           max_results=10000):
+                           score_configs, threshold_configs, top_k=25,
+                           max_results=10000, max_combo_size=0):
     """
     Per-LLM config optimization: each LLM uses its own best score config,
     but all share the same threshold. Vectorized with numpy.
@@ -662,33 +669,53 @@ def evaluate_perlm_configs(precomputed, all_llm_indices, all_labels,
     thr_names = [name for name, _ in threshold_configs]
     labels_arr = np.array([all_labels[ident] for ident in all_sample_ids], dtype=bool)
 
-    # Step 1: Find top-K score configs per LLM (vectorized)
-    print(f"  Finding top-{top_k} score configs per LLM...")
+    # Step 1: Find top-K score configs per LLM using multiple pre-filter
+    # thresholds. Using a single threshold (e.g. 0.3) can miss configs that
+    # are optimal at higher thresholds — take the union across several.
+    prefilter_thresholds = [0.2, 0.3, 0.4, 0.5]
+    print(f"  Finding top-{top_k} score configs per LLM "
+          f"(pre-filter thresholds: {prefilter_thresholds})...")
     topk_per_llm = {}
 
     for llm in llm_names:
-        config_accs = []
+        # Precompute prove_probs for all score configs once
+        all_prove_probs = {}
         for score_key in score_configs:
             prove_probs = np.full(n, np.nan)
             for i, ident in enumerate(all_sample_ids):
                 entry = precomputed[llm].get((score_key, ident))
                 if entry is not None:
                     prove_probs[i] = entry[0]
-            valid = ~np.isnan(prove_probs)
-            preds = np.where(valid, prove_probs >= 0.3, ~labels_arr)
-            correct = (preds == labels_arr).sum()
-            config_accs.append((correct / n, score_key))
+            all_prove_probs[score_key] = prove_probs
 
-        config_accs.sort(reverse=True)
-        topk_per_llm[llm] = [sk for _, sk in config_accs[:top_k]]
-        print(f"    {llm}: top-{top_k} configs (best single acc={100*config_accs[0][0]:.2f}%)")
-        for acc, sk in config_accs[:3]:
-            print(f"      {100*acc:.2f}% | {sk}")
+        # Rank at each pre-filter threshold, take union of top-K
+        selected = set()
+        best_acc_overall = 0.0
+        best_key_overall = None
+        for pf_thr in prefilter_thresholds:
+            config_accs = []
+            for score_key, prove_probs in all_prove_probs.items():
+                valid = ~np.isnan(prove_probs)
+                preds = np.where(valid, prove_probs >= pf_thr, ~labels_arr)
+                correct = (preds == labels_arr).sum()
+                acc = correct / n
+                config_accs.append((acc, score_key))
+                if acc > best_acc_overall:
+                    best_acc_overall = acc
+                    best_key_overall = score_key
+            config_accs.sort(reverse=True)
+            for _, sk in config_accs[:top_k]:
+                selected.add(sk)
+
+        topk_per_llm[llm] = list(selected)
+        print(f"    {llm}: {len(selected)} unique configs "
+              f"(best single acc={100*best_acc_overall:.2f}% | {best_key_overall})")
 
     from itertools import product
 
     llm_combos = []
-    for r in range(2, len(llm_names) + 1):
+    max_r = len(llm_names) + 1 if max_combo_size == 0 else max_combo_size + 1
+    for r in range(2, max_r):
         for combo in combinations(llm_names, r):
             llm_combos.append((sorted(combo), "+".join(sorted(combo))))
 
@@ -700,12 +727,12 @@ def evaluate_perlm_configs(precomputed, all_llm_indices, all_labels,
     t0 = time.time()
 
     for llms, combo_name in llm_combos:
-        effective_k = top_k  # Full top_k for ALL ensemble sizes
-        per_llm_configs = [topk_per_llm[llm][:effective_k] for llm in llms]
+        per_llm_configs = [topk_per_llm[llm] for llm in llms]
         n_combos = 1
         for c in per_llm_configs:
             n_combos *= len(c)
-        print(f"  {combo_name}: {n_combos} score combos × {len(threshold_configs)} thresholds (top_k={effective_k})")
+        per_llm_sizes = [len(c) for c in per_llm_configs]
+        print(f"  {combo_name}: {n_combos} score combos × {len(threshold_configs)} thresholds (per-LLM: {per_llm_sizes})")
         num_llms = len(llms)
 
         for score_combo in product(*per_llm_configs):
@@ -963,6 +990,22 @@ def main():
         n_failed = sum(1 for s in data if s.get('identifier') and not s.get('success', False) and s.get('label') is not None)
         print(f"Loaded {llm_name}: {len(idx)} valid samples, {n_failed} failed (excluded from sweep)")
 
+    # Optionally restrict to sample IDs from a specific LLM
+    if args.restrict_to:
+        restrict_llm = args.restrict_to
+        if restrict_llm not in all_llm_indices:
+            print(f"Error: --restrict_to '{restrict_llm}' not found in loaded LLMs: {list(all_llm_indices.keys())}")
+            sys.exit(1)
+        allowed_ids = set(all_llm_indices[restrict_llm].keys())
+        print(f"\nRestricting to {len(allowed_ids)} sample IDs from {restrict_llm}")
+        for llm_name in list(all_llm_indices.keys()):
+            before = len(all_llm_indices[llm_name])
+            all_llm_indices[llm_name] = {k: v for k, v in all_llm_indices[llm_name].items() if k in allowed_ids}
+            all_ids_by_llm[llm_name] = sorted(all_llm_indices[llm_name].keys())
+            print(f"  {llm_name}: {before} -> {len(all_llm_indices[llm_name])}")
+        all_labels = {k: v for k, v in all_labels.items() if k in allowed_ids}
+        print(f"  labels: {len(all_labels)}")
+
     # Build score configs
     score_configs = make_score_configs()
     print(f"\nScore configs: {len(score_configs)}")
@@ -983,7 +1026,7 @@ def main():
     print(f"\n{'='*80}")
     print("EVALUATING all configs...")
     print(f"{'='*80}")
-    all_results = evaluate_all(precomputed, all_llm_indices, all_labels, score_configs, threshold_configs)
+    all_results = evaluate_all(precomputed, all_llm_indices, all_labels, score_configs, threshold_configs, max_combo_size=args.max_combo_size)
 
     # Print summary
     print_summary(all_results)
@@ -993,7 +1036,9 @@ def main():
     print("PER-LLM CONFIG OPTIMIZATION (shared threshold, per-LLM score config)")
     print(f"{'='*80}")
     perlm_results = evaluate_perlm_configs(precomputed, all_llm_indices, all_labels,
-                                            score_configs, threshold_configs)
+                                            score_configs, threshold_configs,
+                                            top_k=args.top_k,
+                                            max_combo_size=args.max_combo_size)
     all_results.extend(perlm_results)
 
     # Print summary
