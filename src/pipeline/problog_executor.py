@@ -72,7 +72,6 @@ class ProbLogExecutor:
         evidence: 'EvidenceCollection',
         images: Dict[str, 'ImageData'],
         threshold: float = 0.5,
-        ices: list = None,
         facts: List[ProbLogFact] = None,
         dampened_alpha: float = None
     ) -> Tuple[ModeResult, ModeResult]:
@@ -105,7 +104,7 @@ class ProbLogExecutor:
         print(f"  Facts: {len(prob_facts)}")
 
         # Generate rules + query (once, reuse for both modes)
-        rules, query = self._generate_query(question, prob_facts, llm, ices=ices)
+        rules, query = self._generate_query(question, prob_facts, llm)
 
         # Build deterministic facts (always threshold at 0.5)
         det_facts = ProbLogFactBuilder.threshold_facts(prob_facts, 0.5)
@@ -144,7 +143,7 @@ class ProbLogExecutor:
         )
 
     @staticmethod
-    def _build_prompt(question: str, facts_str: str, ices: list = None) -> str:
+    def _build_prompt(question: str, facts_str: str) -> str:
         """Build the ProbLog generation prompt.
 
         Dynamically detects which count predicates appear in the facts
@@ -291,15 +290,6 @@ human_standing_front_of_car(I) :-
 answer :- human_standing_front_of_car({img_a}).
 query(answer)."""
 
-        # When ICE is provided, replace hardcoded examples with ICE examples
-        if ices:
-            ice_parts = ["REFERENCE EXAMPLES (real questions with correct ProbLog programs — use these as style/pattern guides, but write rules using YOUR facts above, not theirs):"]
-            for i, ice in enumerate(ices):
-                ice_parts.append(f"\n--- Example {i+1} ---")
-                ice_parts.append(f"Question: {ice['question']}")
-                ice_parts.append(f"Program:\n{ice['program']}")
-            examples = "\n".join(ice_parts)
-
         prompt = f"""Generate ProbLog rules and query to answer this question.
 
 {predicate_section}
@@ -333,14 +323,13 @@ Output rules and query only, no explanation:"""
         self,
         question: str,
         facts: List[ProbLogFact],
-        llm,
-        ices: list = None
+        llm
     ) -> Tuple[str, str]:
         """LLM generates ProbLog rules and query for the question."""
 
         facts_str = ProbLogFactBuilder.facts_to_string(facts)
 
-        prompt = self._build_prompt(question, facts_str, ices=ices)
+        prompt = self._build_prompt(question, facts_str)
 
         messages = [
             {"role": "system", "content": "Generate valid ProbLog syntax only. No markdown, no explanations."},

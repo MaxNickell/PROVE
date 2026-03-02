@@ -77,7 +77,13 @@ class Detector:
     def _extract_entities(self, question: str, llm_client) -> List[str]:
         """Extract detectable object nouns from question using LLM."""
 
-        messages = [
+        messages = self._build_default_entity_prompt(question)
+
+        return self._call_entity_extraction(messages, llm_client)
+
+    def _build_default_entity_prompt(self, question: str) -> List[Dict]:
+        """Default entity extraction prompt."""
+        return [
             {
                 "role": "system",
                 "content": "Extract physical objects from questions for object detection. Output singular nouns only."
@@ -120,8 +126,11 @@ Output:"""
             }
         ]
 
+    def _call_entity_extraction(self, messages, llm_client) -> List[str]:
+        """Call LLM for entity extraction with retry logic."""
+
         # Retry on any failure — API errors (throttling/timeouts) are retried
-        # in LLMClient.chat(), but JSON/validation failures from non-deterministic
+        # in the LLM client's chat(), but JSON/validation failures from non-deterministic
         # LLM output need an outer retry since chat_with_validation's 3 internal
         # retries may all fail on unlucky runs
         import time

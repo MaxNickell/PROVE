@@ -10,7 +10,7 @@ import torch
 from src.vision.florence2 import Florence2
 from src.vision.qwen_vl import QwenVL
 from src.vision.blip_verifier import BLIPVerifier
-from src.language.llm_client import LLMClient
+from src.language import create_llm_client
 
 
 class ModelManager:
@@ -69,7 +69,7 @@ class ModelManager:
             self._models['blip_verifier'] = BLIPVerifier(device="auto")
         return self._models['blip_verifier']
 
-    def get_llm_client(self) -> LLMClient:
+    def get_llm_client(self):
         """
         Get LLM client instance (Llama 3.3 70B via AWS Bedrock).
 
@@ -77,7 +77,7 @@ class ModelManager:
             LLMClient: The LLM client instance
         """
         if 'llm_client' not in self._models:
-            self._models['llm_client'] = LLMClient()
+            self._models['llm_client'] = create_llm_client()
         return self._models['llm_client']
 
     def is_model_loaded(self, model_name: str) -> bool:

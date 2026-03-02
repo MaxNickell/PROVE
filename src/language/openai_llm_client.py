@@ -5,8 +5,6 @@ import re
 import time
 from typing import Any, List, Dict, Type, TypeVar
 from dotenv import load_dotenv
-import boto3
-from botocore.config import Config as BotoConfig
 from pydantic import BaseModel, ValidationError
 
 from .output_models import (
@@ -22,40 +20,34 @@ from .output_models import (
 T = TypeVar('T', bound=BaseModel)
 
 
-class LLMClient:
-    """LLM client via AWS Bedrock (supports Llama, Claude, Nova, etc.)."""
+class OpenAILLMClient:
+    """LLM client via OpenAI API (supports GPT-4o, GPT-4o-mini, etc.)."""
 
     def __init__(self, model_id: str | None = None, thinking_budget: int | None = None,
                  cot_enabled: bool = False) -> None:
-        """Initialize LLM client via AWS Bedrock.
+        """Initialize LLM client via OpenAI API.
 
         Args:
-            model_id: Bedrock model ID (falls back to LLAMA33_MODEL_ID env var)
-            thinking_budget: Enable Claude extended thinking with this token budget
-            cot_enabled: Enable prompt-level chain-of-thought for non-Claude models
+            model_id: OpenAI model name (e.g. 'gpt-4o', 'gpt-4o-mini')
+            thinking_budget: Ignored (not applicable to OpenAI models)
+            cot_enabled: Enable prompt-level chain-of-thought
         """
         load_dotenv()
 
-        # AWS Bedrock configuration
-        self.region = os.getenv("AWS_REGION", "us-east-1")
+        from openai import OpenAI
+
         self.model_id = model_id or os.getenv("LLAMA33_MODEL_ID")
-        self.thinking_budget = thinking_budget
+        self.thinking_budget = None  # not supported
         self.cot_enabled = cot_enabled
 
-        # Initialize Bedrock client with socket-level timeouts
-        self.client = boto3.client(
-            service_name='bedrock-runtime',
-            region_name=self.region,
-            config=BotoConfig(
-                read_timeout=120,       # 2 min per API read
-                connect_timeout=10,     # 10s connection timeout
-                retries={'max_attempts': 0}  # we handle retries ourselves
-            )
+        self.client = OpenAI(
+            api_key=os.getenv("OPENAI_API_KEY"),
+            timeout=120.0,
+            max_retries=0,  # we handle retries ourselves
         )
 
     def chat(self, messages: List[Dict[str, str]], **kwargs: Any) -> str:
-        """
-        Generate a response using Llama 3.3 via AWS Bedrock.
+        """Generate a response using OpenAI API.
 
         Args:
             messages: List of message dicts with 'role' and 'content' keys
@@ -65,25 +57,12 @@ class LLMClient:
             Generated response text
         """
         try:
-            # Extract parameters with defaults
             temperature = kwargs.get("temperature", 0.0)
             max_tokens = kwargs.get("max_tokens", kwargs.get("max_new_tokens", 2048))
 
-            # Separate system messages from conversation messages
-            system_messages = []
-            bedrock_messages = []
-
-            for msg in messages:
-                role = msg["role"]
-                if role == "system":
-                    # System messages go in separate parameter
-                    system_messages.append({"text": msg["content"]})
-                else:
-                    # User and assistant messages go in messages array
-                    bedrock_messages.append({
-                        "role": role,
-                        "content": [{"text": msg["content"]}]
-                    })
+            # OpenAI accepts messages as-is (role + content dicts)
+            openai_messages = [{"role": msg["role"], "content": msg["content"]}
+                               for msg in messages]
 
             # Prompt-level CoT: append reasoning instruction to system messages
             if self.cot_enabled:
@@ -91,69 +70,49 @@ class LLMClient:
                     "\n\nBefore providing your final answer, think step by step about the problem. "
                     "Write your reasoning first, then provide your final answer."
                 )
-                if system_messages:
-                    system_messages[-1]["text"] += cot_instruction
-                else:
-                    system_messages.append({"text": cot_instruction.strip()})
+                # Append to last system message, or insert one
+                appended = False
+                for i in range(len(openai_messages) - 1, -1, -1):
+                    if openai_messages[i]["role"] == "system":
+                        openai_messages[i]["content"] += cot_instruction
+                        appended = True
+                        break
+                if not appended:
+                    openai_messages.insert(0, {"role": "system",
+                                               "content": cot_instruction.strip()})
 
-            # Build converse API parameters
-            converse_params = {
-                "modelId": self.model_id,
-                "messages": bedrock_messages,
-                "inferenceConfig": {
-                    "temperature": temperature,
-                    "maxTokens": max_tokens
-                }
-            }
-
-            # Add system messages if present
-            if system_messages:
-                converse_params["system"] = system_messages
-
-            # Claude extended thinking via Bedrock API
-            if self.thinking_budget and "anthropic" in (self.model_id or ""):
-                converse_params["additionalModelRequestFields"] = {
-                    "thinking": {
-                        "type": "enabled",
-                        "budget_tokens": self.thinking_budget
-                    }
-                }
-                # Extended thinking requires temperature=1 for Claude
-                converse_params["inferenceConfig"]["temperature"] = 1.0
-
-            # Call AWS Bedrock Converse API with retry on transient errors
+            # Call OpenAI API with retry on transient errors
             _TRANSIENT_KEYWORDS = (
-                'ThrottlingException', 'Too many requests', 'timeout',
-                'ServiceUnavailable', 'ServiceException', 'ConnectionError',
-                'EndpointConnectionError', 'ReadTimeoutError',
+                'rate_limit', 'Rate limit', 'RateLimitError',
+                'timeout', 'timed out', 'APITimeoutError',
+                'server_error', 'ServiceUnavailable', 'overloaded',
+                'APIConnectionError', 'InternalServerError',
             )
             max_api_retries = 5
             for attempt in range(max_api_retries):
                 try:
-                    response = self.client.converse(**converse_params)
-                    break  # success
+                    response = self.client.chat.completions.create(
+                        model=self.model_id,
+                        messages=openai_messages,
+                        temperature=temperature,
+                        max_tokens=max_tokens,
+                    )
+                    return response.choices[0].message.content
                 except Exception as api_err:
                     err_str = str(api_err)
                     is_transient = any(kw in err_str for kw in _TRANSIENT_KEYWORDS)
                     if is_transient and attempt < max_api_retries - 1:
                         wait = 2 ** attempt  # 1, 2, 4, 8s
-                        print(f"  Warning: Bedrock API transient error (attempt {attempt+1}/{max_api_retries}), "
+                        print(f"  Warning: OpenAI API transient error (attempt {attempt+1}/{max_api_retries}), "
                               f"retrying in {wait}s: {err_str[:120]}")
                         time.sleep(wait)
                         continue
                     raise  # non-transient or final attempt
 
-            # Extract the generated text (skip thinking blocks for Claude)
-            content_blocks = response['output']['message']['content']
-            for block in content_blocks:
-                if 'text' in block:
-                    return block['text']
-
-            # Fallback
-            return content_blocks[0].get('text', str(content_blocks[0]))
+            raise RuntimeError("OpenAI API: max retries exceeded")
 
         except Exception as e:
-            raise RuntimeError(f"LLM generation via AWS Bedrock failed: {e}")
+            raise RuntimeError(f"LLM generation via OpenAI failed: {e}")
 
     def chat_with_validation(
         self,
@@ -162,8 +121,7 @@ class LLMClient:
         max_retries: int = 3,
         **kwargs: Any
     ) -> T:
-        """
-        Generate a response with automatic JSON parsing and Pydantic validation.
+        """Generate a response with automatic JSON parsing and Pydantic validation.
 
         Args:
             messages: List of message dicts with 'role' and 'content' keys
@@ -176,31 +134,23 @@ class LLMClient:
         """
         for attempt in range(max_retries):
             try:
-                # Generate response
                 response = self.chat(messages, **kwargs)
-
-                # Try to extract JSON from response
                 json_str = self._extract_json(response)
 
-                # Parse and validate with Pydantic
                 try:
                     parsed_json = json.loads(json_str)
                 except json.JSONDecodeError:
-                    # Fix common LLM JSON issues: single quotes, trailing commas
                     fixed = json_str.replace("'", '"')
                     fixed = re.sub(r',\s*([}\]])', r'\1', fixed)
                     parsed_json = json.loads(fixed)
 
                 validated_output = output_model(**parsed_json)
-
                 return validated_output
 
             except (json.JSONDecodeError, ValidationError, TypeError) as e:
                 if attempt == max_retries - 1:
                     raise RuntimeError(f"Failed to get valid JSON after {max_retries} attempts. Last error: {e}")
 
-                # Add JSON format instruction for retry — use a concrete example
-                # instead of the raw schema (some models parrot the schema back)
                 if messages[-1]["role"] == "user":
                     messages[-1]["content"] += (
                         '\n\nIMPORTANT: Respond with ONLY a valid JSON object, no other text. '
@@ -211,34 +161,21 @@ class LLMClient:
         raise RuntimeError("Unexpected error in chat_with_validation")
 
     def _extract_json(self, response: str) -> str:
-        """
-        Extract JSON from response text, handling various formats.
-
-        Args:
-            response: Raw response from the model
-
-        Returns:
-            Extracted JSON string
-        """
-        # Try to find JSON in the response
+        """Extract JSON from response text, handling various formats."""
         response = response.strip()
 
-        # Check if entire response is JSON
         if response.startswith('{') and response.endswith('}'):
             return response
 
-        # Look for JSON block markers
         json_markers = ['```json', '```JSON', '```']
         for marker in json_markers:
             if marker in response:
                 parts = response.split(marker)
                 if len(parts) >= 3:
-                    # Extract content between markers
                     json_content = parts[1].strip()
                     if json_content.startswith('{') and json_content.endswith('}'):
                         return json_content
 
-        # Try to find JSON-like content between braces
         start = response.find('{')
         if start != -1:
             brace_count = 0
@@ -250,10 +187,8 @@ class LLMClient:
                     if brace_count == 0:
                         return response[start:i+1]
 
-        # If no JSON found, return the response as-is and let JSON parser handle the error
         return response
 
-    # Convenience methods for specific pipeline components
     def extract_entities(self, messages: List[Dict[str, str]], **kwargs) -> EntityExtractionResponse:
         """Extract entities from questions with validation."""
         return self.chat_with_validation(messages, EntityExtractionResponse, **kwargs)
@@ -264,22 +199,7 @@ class LLMClient:
         max_retries: int = 3,
         **kwargs: Any
     ) -> AgentAction:
-        """
-        Parse agent action from LLM response using discriminated union.
-
-        Determines action type from 'action' field and validates with appropriate model.
-
-        Args:
-            messages: List of message dicts with 'role' and 'content' keys
-            max_retries: Number of retries for malformed JSON
-            **kwargs: Additional generation parameters
-
-        Returns:
-            Validated action (PerceiveAction, VerifyAttributeAction, etc.)
-
-        Raises:
-            RuntimeError: If parsing fails after max_retries
-        """
+        """Parse agent action from LLM response using discriminated union."""
         action_models = {
             "perceive": PerceiveAction,
             "verify_attribute": VerifyAttributeAction,
@@ -291,24 +211,16 @@ class LLMClient:
         last_error = None
         for attempt in range(max_retries):
             try:
-                # Generate response
                 response = self.chat(messages, **kwargs)
-
-                # Extract JSON from response
                 json_str = self._extract_json(response)
-
-                # Parse JSON
                 parsed_json = json.loads(json_str)
 
-                # Determine action type
                 action_type = parsed_json.get("action")
                 if action_type not in action_models:
                     raise ValueError(f"Unknown action type: {action_type}. Must be one of: {list(action_models.keys())}")
 
-                # Validate with appropriate model
                 model_class = action_models[action_type]
                 validated_action = model_class(**parsed_json)
-
                 return validated_action
 
             except (json.JSONDecodeError, ValidationError, ValueError, TypeError) as e:
@@ -316,7 +228,6 @@ class LLMClient:
                 if attempt == max_retries - 1:
                     break
 
-                # Add format hint for retry
                 if messages[-1]["role"] == "user":
                     messages[-1]["content"] += (
                         "\n\nIMPORTANT: Respond with ONLY valid JSON. "
